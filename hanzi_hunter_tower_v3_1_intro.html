@@ -5662,6 +5662,542 @@
       return r;
     };
 
+
+    // ══════════════════════════════════════════════════
+    // v4.2 · QUEST BOARD — กระดานภารกิจ 20 เควส
+    // ══════════════════════════════════════════════════
+    /* ชั้นนี้ไม่แก้โค้ด v4.0 / v4.1 เลยแม้แต่บรรทัดเดียว — ใช้วิธีห่อฟังก์ชันเหมือนชั้น SYSTEM
+       ทุกอย่างขึ้นต้นด้วย q / Q_ · ลบทั้งบล็อกนี้ทิ้งแล้วเกมยังเล่นได้ปกติ
+
+       บาลานซ์ที่ล็อกไว้ (Quest Board Balance):
+         รายวัน   7 เควส · 10-25 ทอง/เควส   รวม 115 ทอง/วัน   (< เคลียร์ชั้นปกติ 1 ชั้น = 150)
+         รายสัปดาห์ 6 เควส · 60-100 ทอง + ไอเทม 1 ชิ้น  รวม 485 ทอง/สัปดาห์
+         ระยะยาว  7 เควส · 150-500 ทอง  ทำครั้งเดียวจบ (one-time) ไม่วนกลับมาเป็นรายได้ประจำ
+
+       กันเงินเฟ้อ 2 ชั้น:
+         1. ทองรางวัลเควส "ไม่" บวกเข้า G.totalGoldEarned → ปั๊มทองจากเควสแล้วเอามานับ
+            เงื่อนไขเควส 19 (สะสมทองตลอดชีพ 3,000) ไม่ได้ — ต้องหาจากการต่อสู้จริงเท่านั้น
+         2. เควสระยะยาวเก็บสถานะไว้ที่ done.L ตลอดชีพ รีเซ็ตรายวัน/รายสัปดาห์ไม่แตะ */
+
+    const Q_KEYS = ['ans', 'kill', 'fast', 'streak', 'floor', 'boss', 'skill', 'gold', 'redeem'];
+
+    /* ── 20 เควส: 01-07 รายวัน · 08-13 รายสัปดาห์ · 14-20 ระยะยาว ── */
+    const Q_DEFS = [
+      /* ── รายวัน (รีเซ็ตเที่ยงคืน) ─────────────────────── */
+      { id:'D1', no:1, cat:'d', icon:'📖', name:'ปฐมบทประจำวัน',
+        cond:'ตอบถูก 10 ข้อ', key:'ans', goal:10, gold:10, exp:20 },
+      { id:'D2', no:2, cat:'d', icon:'⚔️', name:'ล่าอสูรอักขระ',
+        cond:'ปราบอสูรอักขระ 5 ตัว', key:'kill', goal:5, gold:12, exp:25 },
+      { id:'D3', no:3, cat:'d', icon:'⚡', name:'สายฟ้าแลบ',
+        cond:'ตอบถูกภายใน 5 วินาที 5 ครั้ง', key:'fast', goal:5, gold:15, exp:30 },
+      { id:'D4', no:4, cat:'d', icon:'🔥', name:'คอมโบเพลิง',
+        cond:'ทำสตรีคให้ถึง 8', key:'streak', goal:8, gold:15, exp:30 },
+      { id:'D5', no:5, cat:'d', icon:'🏯', name:'ผู้พิชิตชั้น',
+        cond:'เคลียร์หอคอย 1 ชั้น', key:'floor', goal:1, gold:18, exp:40 },
+      { id:'D6', no:6, cat:'d', icon:'🔮', name:'ปลุกพลังสกิล',
+        cond:'ร่ายสกิล 3 ครั้ง', key:'skill', goal:3, gold:20, exp:35 },
+      /* เดิมออกแบบให้ผูกกับ "โหมดฝึกจุดอ่อน" แต่โหมดนั้นเข้าได้จากหน้า Analytics ซึ่งล็อกที่ S-RANK (ชั้น 20)
+         เควสรายวันที่ต้องถึงชั้น 20 ก่อนถึงจะเริ่มทำได้ = เควสตาย จึงเปลี่ยนมานับ "แก้มือคำที่เคยตอบผิด"
+         ซึ่งวัดเป้าหมายการเรียนอันเดียวกันแต่ทำได้ตั้งแต่ชั้น 1 */
+      { id:'D7', no:7, cat:'d', icon:'🧠', name:'ทบทวนจุดอ่อน',
+        cond:'ตอบถูกในคำที่เคยตอบผิดมาก่อน 8 ครั้ง', key:'redeem', goal:8, gold:25, exp:50 },
+
+      /* ── รายสัปดาห์ (รีเซ็ตเช้าวันจันทร์) ─────────────── */
+      { id:'W1', no:8, cat:'w', icon:'📚', name:'นักล่าขยัน',
+        cond:'ตอบถูก 120 ข้อภายในสัปดาห์', key:'ans', goal:120, gold:60, exp:150, item:'mystery' },
+      { id:'W2', no:9, cat:'w', icon:'🗼', name:'เก็บกวาดหอคอย',
+        cond:'เคลียร์หอคอย 6 ชั้น', key:'floor', goal:6, gold:70, exp:180, item:'potion' },
+      { id:'W3', no:10, cat:'w', icon:'👑', name:'ปราบเจ้าประจำชั้น',
+        cond:'ปราบบอสประจำชั้น 2 ตัว', key:'boss', goal:2, gold:80, exp:200, item:'scroll' },
+      { id:'W4', no:11, cat:'w', icon:'🗡️', name:'คมมีดไร้พลาด',
+        cond:'ทำสตรีคสูงสุดให้ถึง 15', key:'streak', goal:15, gold:85, exp:220, item:'glass' },
+      { id:'W5', no:12, cat:'w', icon:'🪙', name:'นักสะสมประจำสัปดาห์',
+        cond:'หาทองจากการต่อสู้ 800 ทอง', key:'gold', goal:800, gold:90, exp:200, item:'freeze' },
+      { id:'W6', no:13, cat:'w', icon:'✨', name:'จอมยุทธ์มานา',
+        cond:'ร่ายสกิลรวม 20 ครั้ง', key:'skill', goal:20, gold:100, exp:250, item:'insurance' },
+
+      /* ── ระยะยาว (ทำครั้งเดียวจบตลอดชีพ) ──────────────── */
+      { id:'L1', no:14, cat:'L', icon:'🧗', name:'ก้าวแรกสู่ยอดหอคอย',
+        cond:'ไต่หอคอยให้ถึงชั้น 10', goal:10, gold:150, exp:300,
+        prog: s => s.maxFloor || 1 },
+      { id:'L2', no:15, cat:'L', icon:'📜', name:'นักล่าอักขระห้าร้อย',
+        cond:'ตอบถูกสะสมตลอดชีพ 500 ข้อ', goal:500, gold:200, exp:400,
+        prog: s => s.correct || 0 },
+      { id:'L3', no:16, cat:'L', icon:'💀', name:'ผู้ทลายเจ้าประจำชั้น',
+        cond:'ปราบบอสสะสม 4 ตัว', goal:4, gold:250, exp:500, item:'mystery',
+        prog: s => s.bossClears || 0 },
+      { id:'L4', no:17, cat:'L', icon:'🛡️', name:'กำแพงไร้บาดแผล',
+        cond:'ผ่านบอสประจำชั้นโดยไม่เสีย HP', goal:1, gold:180, exp:350, item:'insurance',
+        prog: s => s.ironwallDone === true ? 1 : 0 },
+      { id:'L5', no:18, cat:'L', icon:'🏆', name:'ผู้พิชิตหอคอย',
+        cond:'พิชิตหอคอยครบ 20 ชั้น 1 รอบ', goal:1, gold:500, exp:1000, item:'focus',
+        prog: s => s.towerClears || 0 },
+      { id:'L6', no:19, cat:'L', icon:'💰', name:'มหาเศรษฐีฮันเตอร์',
+        cond:'สะสมทองรวมตลอดชีพ 3,000 ทอง', goal:3000, gold:300, exp:0,
+        prog: s => s.totalGoldEarned || 0,
+        note: () => 'นับเฉพาะทองที่หาได้จากการต่อสู้ · ทองรางวัลเควสไม่ถูกนับซ้ำ' },
+      { id:'L7', no:20, cat:'L', icon:'🐲', name:'ปรมาจารย์ภาษาจีน',
+        cond:'ความแม่นยำตลอดกาล ≥ 95% จาก 200 ข้อขึ้นไป', goal:200, gold:400, exp:800,
+        title:'grandmaster',
+        prog: s => (s.correct || 0) + (s.wrong || 0),
+        ok: s => { const n = (s.correct || 0) + (s.wrong || 0); return n >= 200 && (s.correct || 0) / n >= 0.95; },
+        note: s => { const n = (s.correct || 0) + (s.wrong || 0);
+                     return 'แม่นยำตอนนี้ ' + (n ? Math.round((s.correct || 0) / n * 100) : 0) + '% (ต้อง ≥ 95%)'; } }
+    ];
+
+    /* ── ชุดแจ้งเตือนของกระดานภารกิจ ──────────────────────
+       แยกสารบัญของตัวเองเป็น QUEST 01/06–06/06 ไม่ไปกินเลข 01/25–25/25 ของ SYS_NOTIF
+       แต่ยืมกลไกโชว์ (snShowToast / snShowGate) ของชั้น SYSTEM มาใช้ */
+    const Q_NOTIF = {
+      READY: { tag:'QUEST 01/06', tone:'good',
+        title: d => `📜 ภารกิจสำเร็จ — ${d.name}`,
+        body:  d => `เงื่อนไข: <i>${d.cond}</i>\nรางวัลที่รอรับ: <b>🪙 ${d.gold} ทอง</b>${d.exp ? ` · <b>⭐ ${d.exp} EXP</b>` : ''}${d.item ? ` · <b>${d.item}</b>` : ''}\nเปิด <b>📜 QUESTS — กระดานภารกิจ</b> แล้วกด "รับรางวัล"` },
+
+      READY_MANY: { tag:'QUEST 02/06', tone:'good',
+        title: d => `📜 ภารกิจสำเร็จพร้อมกัน ${d.count} รายการ`,
+        body:  d => `รายการที่พร้อมรับ: <b>${d.names}</b>\nรวมรางวัล: <b>🪙 ${d.gold} ทอง</b> · <b>⭐ ${d.exp} EXP</b>\nรางวัลค้างไว้ได้จนกว่าจะหมดรอบ — รีบรับก่อนรีเซ็ต` },
+
+      CLAIM: { tag:'QUEST 03/06', tone:'good',
+        title: d => `🎁 รับรางวัลภารกิจ — ${d.name}`,
+        body:  d => `${d.no} · <i>${d.cond}</i>\nได้รับ: <b>🪙 ${d.gold} ทอง</b>${d.exp ? ` · <b>⭐ ${d.exp} EXP</b>` : ' (ภารกิจนี้ไม่ให้ EXP)'}${d.item ? `\nไอเทมติดกระเป๋า: <b>${d.item}</b>` : ''}\nทองในกระเป๋าตอนนี้: <b>${d.wallet}</b> ทอง` },
+
+      TITLE: { tag:'QUEST 04/06', tone:'good', gate:true, btn:'✨ รับฉายาปรมาจารย์',
+        title: d => `🐲 ปลดล็อกฉายา ${d.title}`,
+        body:  d => `ภารกิจ <b>${d.name}</b> สำเร็จครบเงื่อนไขระดับปลายเกม\nฉายานี้ให้โบนัส <i>${d.bonus}</i> และเปลี่ยนป้ายชื่อเป็น <b>ข้อความทองคำ</b>\nไปสวมได้ที่ <i>📊 STATUS — สถานะ</i>` },
+
+      BAGFULL: { tag:'QUEST 05/06', tone:'warn',
+        title: d => `🎒 กระเป๋าเต็ม — ยังรับรางวัลไม่ได้`,
+        body:  d => `<b>${d.name}</b> แถมไอเทม <b>${d.item}</b> มาด้วย\nกระเป๋าตอนนี้ <i>${d.count}/${d.max}</i> ช่อง ไม่มีที่ว่าง\nขาย/ใช้ไอเทมให้เหลือช่องว่างก่อน แล้วค่อยกดรับใหม่ (รางวัลไม่หาย)` },
+
+      RESET: { tag:'QUEST 06/06', tone:'',
+        title: d => `🔄 รีเซ็ตรอบภารกิจ${d.week ? 'รายสัปดาห์' : 'รายวัน'}แล้ว`,
+        body:  d => `${d.day ? 'ภารกิจรายวัน 7 รายการ' : ''}${d.day && d.week ? ' และ' : ''}${d.week ? 'ภารกิจรายสัปดาห์ 6 รายการ' : ''} เริ่มนับใหม่หมด\nรางวัลรอบก่อนที่ไม่ได้กดรับถือว่าหมดอายุ\nภารกิจระยะยาว 7 รายการ <b>ไม่รีเซ็ต</b> — เก็บความคืบหน้าไว้ตลอดชีพ` }
+    };
+
+    /* ── รอบเวลา ────────────────────────────────────────── */
+    function qPad(n) { return (n < 10 ? '0' : '') + n; }
+    function qDayKey(d) { d = d || new Date(); return d.getFullYear() + '-' + qPad(d.getMonth() + 1) + '-' + qPad(d.getDate()); }
+
+    /* สัปดาห์เริ่มวันจันทร์ — ใช้วันที่ของ "วันจันทร์ของสัปดาห์นี้" เป็นคีย์ ไม่ต้องยุ่งกับเลขสัปดาห์ ISO */
+    function qWeekKey() {
+      const d = new Date();
+      d.setHours(0, 0, 0, 0);
+      d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+      return 'W' + qDayKey(d);
+    }
+
+    function qBlank() { return { day:'', week:'', d:{}, w:{}, done:{ d:[], w:[], L:[] } }; }
+
+    /* ทำให้ก้อน quest ถูกฟอร์แมตเสมอ + รีเซ็ตรอบที่หมดอายุ — ต้อง idempotent
+       เพราะถูกเรียกทั้งจาก migrateAccount (ทุกครั้งที่อ่าน store) และจาก qSync() ระหว่างเล่น */
+    function qEnsureQ(q) {
+      if (!q || typeof q !== 'object') q = qBlank();
+      if (typeof q.day !== 'string')  q.day = '';
+      if (typeof q.week !== 'string') q.week = '';
+      if (!q.d || typeof q.d !== 'object') q.d = {};
+      if (!q.w || typeof q.w !== 'object') q.w = {};
+      if (!q.done || typeof q.done !== 'object') q.done = {};
+      ['d', 'w', 'L'].forEach(function (k) { if (!Array.isArray(q.done[k])) q.done[k] = []; });
+
+      const today = qDayKey(), week = qWeekKey();
+      if (q.day  !== today) { q.day  = today; q.d = {}; q.done.d = []; }
+      if (q.week !== week)  { q.week = week;  q.w = {}; q.done.w = []; }
+
+      Q_KEYS.forEach(function (k) {
+        if (typeof q.d[k] !== 'number' || !isFinite(q.d[k]) || q.d[k] < 0) q.d[k] = 0;
+        if (typeof q.w[k] !== 'number' || !isFinite(q.w[k]) || q.w[k] < 0) q.w[k] = 0;
+      });
+
+      /* กัน id เพี้ยน/ซ้ำในรายการที่กดรับแล้ว ไม่งั้นตัวนับ "รับแล้วกี่เควส" จะเกินจำนวนจริง */
+      ['d', 'w', 'L'].forEach(function (cat) {
+        q.done[cat] = q.done[cat].filter(function (id, i, arr) {
+          const def = qById(id);
+          return def && def.cat === cat && arr.indexOf(id) === i;
+        });
+      });
+      return q;
+    }
+
+    function qClone(q) { try { return JSON.parse(JSON.stringify(q)); } catch (e) { return qBlank(); } }
+    function qById(id) { for (let i = 0; i < Q_DEFS.length; i++) if (Q_DEFS[i].id === id) return Q_DEFS[i]; return null; }
+    function qCatName(cat) { return cat === 'd' ? 'รายวัน' : cat === 'w' ? 'รายสัปดาห์' : 'ระยะยาว'; }
+
+    function qCur(def, s) {
+      if (def.cat === 'L') return def.prog(s);
+      if (!s.quest) return 0;
+      return (def.cat === 'd' ? s.quest.d : s.quest.w)[def.key] || 0;
+    }
+    function qOk(def, s)     { return def.ok ? def.ok(s) : qCur(def, s) >= def.goal; }
+    function qIsDone(id, s)  { const src = s || G; const def = qById(id);
+                               return !!(def && src.quest && src.quest.done[def.cat].indexOf(id) !== -1); }
+    function qClaimable(def) { return qOk(def, G) && !qIsDone(def.id); }
+
+    let Q_DIRTY = false;          /* มีความคืบหน้าที่ยังไม่ได้เขียนลง localStorage */
+    let Q_SEEN  = {};             /* edge-trigger กันแจ้งเตือน "ภารกิจสำเร็จ" ซ้ำรัว (กติกาเดียวกับ SN_MP_SEEN) */
+
+    function qSeedSeen() {
+      Q_SEEN = {};
+      Q_DEFS.forEach(function (def) { Q_SEEN[def.id] = !G.quest || qOk(def, G) || qIsDone(def.id); });
+    }
+
+    /* เช็กรอบเวลาให้ตรงปัจจุบันก่อนอ่าน/เขียนตัวนับทุกครั้ง — เล่นค้างข้ามเที่ยงคืนก็รีเซ็ตถูก */
+    function qSync() {
+      if (!G.quest) return null;
+      const wasDay = G.quest.day, wasWeek = G.quest.week;
+      G.quest = qEnsureQ(G.quest);
+      const dayReset  = G.quest.day  !== wasDay;
+      const weekReset = G.quest.week !== wasWeek;
+      if (dayReset || weekReset) {
+        Q_DIRTY = true;
+        qSeedSeen();
+        qNotify('RESET', { day: dayReset, week: weekReset });
+      }
+      return G.quest;
+    }
+
+    function qAdd(key, n) {
+      const q = G.quest;
+      if (!q || !(n > 0)) return;
+      q.d[key] = (q.d[key] || 0) + n;
+      q.w[key] = (q.w[key] || 0) + n;
+      Q_DIRTY = true;
+    }
+
+    function qMax(key, v) {
+      const q = G.quest;
+      if (!q || !(v > 0)) return;
+      if (v > (q.d[key] || 0)) { q.d[key] = v; Q_DIRTY = true; }
+      if (v > (q.w[key] || 0)) { q.w[key] = v; Q_DIRTY = true; }
+    }
+
+    function qNotify(key, data) {
+      const def = Q_NOTIF[key];
+      if (!def) return;
+      const d = data || {};
+      let title, body;
+      try { title = def.title(d); body = def.body(d); } catch (e) { return; }
+      if (def.gate) { snShowGate(def, title, body, null); return; }
+      snShowToast(def, title, body);
+    }
+
+    function qItemLabel(key) { const it = itemOf(key); return it ? it.icon + ' ' + it.name : ''; }
+
+    /* เรียกหลังตัวนับขยับทุกครั้ง: แจ้งเตือนเควสที่เพิ่งสำเร็จ + อัปเดตป้ายบนปุ่ม
+       รวมเป็นใบเดียวเมื่อสำเร็จพร้อมกันหลายเควส — กันคิว toast ล้นตอนเคลียร์ชั้นบอส */
+    function qAfterProgress() {
+      if (!G.quest) return;
+      const fresh = [];
+      Q_DEFS.forEach(function (def) {
+        const ok = qOk(def, G) && !qIsDone(def.id);
+        if (ok && !Q_SEEN[def.id]) { Q_SEEN[def.id] = true; fresh.push(def); }
+        else if (!ok) { Q_SEEN[def.id] = false; }
+      });
+
+      if (fresh.length === 1) {
+        const def = fresh[0];
+        qNotify('READY', { name: def.name, cond: def.cond, gold: def.gold, exp: def.exp,
+                           item: def.item ? qItemLabel(def.item) : '' });
+      } else if (fresh.length > 1) {
+        qNotify('READY_MANY', {
+          count: fresh.length,
+          names: fresh.map(function (x) { return x.name; }).join(' · '),
+          gold:  fresh.reduce(function (s, x) { return s + x.gold; }, 0),
+          exp:   fresh.reduce(function (s, x) { return s + x.exp; }, 0)
+        });
+      }
+      qRenderBadge();
+      if (document.getElementById('qBoard') &&
+          document.getElementById('qBoard').classList.contains('active')) qRenderBoard();
+
+      /* v4.0 เซฟไปแล้วก่อนตัวนับเควสจะขยับ (renderStats อยู่กลาง resolveAnswer)
+         ถ้าไม่เซฟซ้ำตรงนี้ ความคืบหน้าเควสจะช้ากว่าความจริงอยู่ 1 ข้อเสมอ */
+      if (Q_DIRTY) saveProgress();
+    }
+
+    // ── รับรางวัล ────────────────────────────────────────
+    function qClaim(id) {
+      const def = qById(id);
+      if (!def || !G.quest) return;
+      qSync();
+      if (qIsDone(id) || !qOk(def, G)) { qRenderBoard(); return; }
+
+      /* ของแถมต้องมีที่เก็บก่อน ไม่งั้นรางวัลหายเปล่า — บล็อกไว้ให้ไปเคลียร์ช่องแล้วกลับมากดใหม่ */
+      if (def.item && bagFull()) {
+        qNotify('BAGFULL', { name: def.name, item: qItemLabel(def.item), count: bagCount(), max: BAG_SLOTS });
+        return;
+      }
+
+      /* ทองรางวัลเควสไม่บวกเข้า totalGoldEarned — กันวนปั๊มเข้าเงื่อนไขเควส 19 */
+      G.gold += def.gold;
+      if (def.exp) { G.exp += def.exp; levelUpCheck(); }
+      if (def.item) addItem(def.item, 1);
+
+      G.quest.done[def.cat].push(id);
+      Q_SEEN[id] = true;
+      Q_DIRTY = true;
+
+      const gained = checkTitles(G);
+      recalcStats();
+      renderStats();      /* renderStats → saveProgress → เขียน quest ลง store */
+      qRenderBoard();
+
+      qNotify('CLAIM', { name: def.name, no: qPad(def.no) + '/20 · ภารกิจ' + qCatName(def.cat),
+                         cond: def.cond, gold: def.gold, exp: def.exp,
+                         item: def.item ? qItemLabel(def.item) : '', wallet: G.gold });
+
+      gained.forEach(function (t) {
+        const bonus = Object.keys(t.bonus || {}).map(function (k) { return k.toUpperCase() + ' +' + t.bonus[k]; }).join(', ') || 'ไม่มีโบนัส';
+        qNotify('TITLE', { title: t.icon + ' ' + t.name, name: def.name, bonus: bonus });
+      });
+    }
+
+    // ── หน้าจอกระดานภารกิจ ───────────────────────────────
+    function qOpenBoard() {
+      if (!G.quest) return;
+      qSync();
+      qRenderBoard();
+      document.getElementById('qBoard').classList.add('active');
+    }
+    function qCloseBoard() { document.getElementById('qBoard').classList.remove('active'); }
+
+    function qRow(def) {
+      const cur   = qCur(def, G);
+      const done  = qIsDone(def.id);
+      const ready = !done && qOk(def, G);
+      const pct   = Math.max(0, Math.min(1, def.goal ? cur / def.goal : 0));
+
+      /* ห่อรางวัลทีละก้อนด้วย nowrap — ไม่งั้นบนจอมือถือจะตัดคำกลางคัน เช่น "⭐ 400" ขึ้นบรรทัดใหม่ทิ้ง "EXP" ไว้ */
+      const parts = ['🪙 ' + def.gold + ' ทอง'];
+      if (def.exp)   parts.push('⭐ ' + def.exp + ' EXP');
+      if (def.item)  parts.push(qItemLabel(def.item));
+      if (def.title) parts.push('🏅 ฉายา ' + esc(titleOf(def.title).name));
+      const reward = parts.map(function (x) { return '<span class="q-rwi">' + x + '</span>'; }).join(' · ');
+
+      const note = def.note ? '<div class="q-meta">' + esc(def.note(G)) + '</div>' : '';
+
+      return '<div class="q-row' + (done ? ' done' : ready ? ' ready' : '') + '">' +
+        '<div class="q-ic">' + def.icon + '</div>' +
+        '<div class="q-info">' +
+          '<div class="q-name">' + qPad(def.no) + ' · ' + esc(def.name) + '</div>' +
+          '<div class="q-cond">' + esc(def.cond) + '</div>' +
+          '<div class="q-bar"><div class="q-bar-fill" style="transform:scaleX(' + pct.toFixed(3) + ')"></div></div>' +
+          '<div class="q-meta"><span class="q-rwi">' + Math.min(cur, def.goal).toLocaleString('en-US') + ' / ' +
+            def.goal.toLocaleString('en-US') + '</span> · <span class="q-rw">' + reward + '</span></div>' +
+          note +
+        '</div>' +
+        '<button class="q-claim' + (ready ? ' on' : '') + '" onclick="qClaim(\'' + def.id + '\')"' +
+          (ready ? '' : ' disabled') + '>' + (done ? '✓ รับแล้ว' : ready ? '🎁 รับรางวัล' : '⏳ ยังไม่ครบ') + '</button>' +
+      '</div>';
+    }
+
+    function qSection(cat, head, sub) {
+      const list  = Q_DEFS.filter(function (x) { return x.cat === cat; });
+      const done  = list.filter(function (x) { return qIsDone(x.id); }).length;
+      const ready = list.filter(function (x) { return qClaimable(x); }).length;
+      return '<div class="g-sec-title">' + head + ' — รับแล้ว ' + done + '/' + list.length +
+             (ready ? ' <span class="q-rw">· พร้อมรับ ' + ready + '</span>' : '') + '</div>' +
+             '<div class="q-sum">' + sub + '</div>' +
+             list.map(qRow).join('');
+    }
+
+    function qRenderBoard() {
+      if (!G.quest) return;
+      const ready = Q_DEFS.filter(qClaimable).length;
+      const doneAll = Q_DEFS.filter(function (x) { return qIsDone(x.id); }).length;
+
+      const head =
+        '<div class="g-mrow"><div class="g-mlabel">สถานะกระดาน</div><div class="g-mtext">รับรางวัลแล้ว ' +
+          doneAll + '/' + Q_DEFS.length + ' ภารกิจ · พร้อมรับตอนนี้ ' + ready + ' รายการ</div></div>' +
+        '<div class="g-mrow"><div class="g-mlabel">ทอง / กระเป๋า</div><div class="g-mtext">🪙 ' + G.gold +
+          ' ทอง · 🎒 ' + bagCount() + '/' + BAG_SLOTS + ' ช่อง</div></div>';
+
+      document.getElementById('qBoardBody').innerHTML = head +
+        qSection('d', '🌅 ภารกิจรายวัน', 'รีเซ็ตทุกเที่ยงคืน · รอบวันที่ ' + G.quest.day +
+                 ' · รางวัลรวม 115 ทอง/วัน (น้อยกว่าเคลียร์หอคอย 1 ชั้น)') +
+        qSection('w', '🗓️ ภารกิจรายสัปดาห์', 'รีเซ็ตเช้าวันจันทร์ · รอบสัปดาห์ของ ' + G.quest.week.slice(1) +
+                 ' · แถมไอเทมสนับสนุนทุกรายการ') +
+        qSection('L', '🐉 ภารกิจระยะยาว', 'ทำครั้งเดียวจบตลอดชีพ ไม่รีเซ็ต · รางวัลใหญ่ 150-500 ทอง พร้อมฉายาปลายเกม');
+    }
+
+    function qRenderBadge() {
+      const b = document.getElementById('qBadge');
+      if (!b) return;
+      const n = G.quest ? Q_DEFS.filter(qClaimable).length : 0;
+      b.textContent = n;
+      b.style.display = n ? 'inline-block' : 'none';
+    }
+
+    /* ป้ายชื่อเปลี่ยนเป็นข้อความทองคำเมื่อสวมฉายาปรมาจารย์ (เอฟเฟกต์รางวัลเควส 20) */
+    function qPaintTitle() {
+      const tag = document.getElementById('gTitleTag');
+      if (tag) tag.classList.toggle('qgold', G.equippedTitle === 'grandmaster');
+    }
+
+    // ── ห่อฟังก์ชัน v4.0 (ไม่แก้ของเดิม) ─────────────────
+    /* บัญชีเก่าที่เล่นมาก่อนมีระบบเควสต้องได้ก้อน quest ครบเหมือนบัญชีใหม่ */
+    const _qMigrateAccount = migrateAccount;
+    migrateAccount = function (a) {
+      const r = _qMigrateAccount(a);
+      if (r && typeof r === 'object') {
+        r.quest = qEnsureQ(r.quest);
+        checkTitles(r);          /* ฉายาปรมาจารย์อ่านจาก r.quest ต้องเช็กหลัง quest พร้อมแล้ว */
+      }
+      return r;
+    };
+
+    const _qStartGame = startGame;
+    startGame = function (username) {
+      const r = _qStartGame(username);
+      const acc = loadStore()[username];
+      G.quest = qEnsureQ(acc ? qClone(acc.quest) : null);
+      Q_DIRTY = true;
+      qSeedSeen();
+      qPaintTitle();
+      qRenderBadge();
+      return r;
+    };
+
+    /* v4.0 saveProgress ไม่รู้จักฟิลด์ quest — เขียนต่อท้ายเองเฉพาะตอนมีความคืบหน้าจริง
+       (renderStats เรียก saveProgress ทุกเฟรม ถ้าเขียนทุกครั้งจะอ่าน/เขียน store ถี่เกินจำเป็น) */
+    const _qSaveProgress = saveProgress;
+    saveProgress = function () {
+      const r = _qSaveProgress.apply(this, arguments);
+      if (Q_DIRTY && CURRENT_USER && G.quest) {
+        Q_DIRTY = false;
+        const s = loadStore();
+        const a = s[CURRENT_USER];
+        if (a) { a.quest = qClone(G.quest); saveStore(s); }
+      }
+      return r;
+    };
+
+    const _qResolveAnswer = resolveAnswer;
+    resolveAnswer = function (choice, btn, timedOut) {
+      const m = G.currentMonster;
+      const before = {
+        correct: G.correct, fast: G.fastAnswers || 0, gold: G.gold,
+        /* "เคยตอบผิดคำนี้มาก่อน" ต้องอ่านก่อนให้ v4.0 บันทึกผลข้อนี้ ไม่งั้นตอบผิดข้อนี้เองก็เข้าเงื่อนไข */
+        weak: !!(m && G.wordStats && G.wordStats[m.id] && G.wordStats[m.id].wrong > 0)
+      };
+      const r = _qResolveAnswer(choice, btn, timedOut);
+      if (G.quest) {
+        qSync();
+        if (G.correct > before.correct) {
+          qAdd('ans', 1);
+          if (before.weak) qAdd('redeem', 1);
+          if ((G.fastAnswers || 0) > before.fast) qAdd('fast', 1);
+        }
+        qMax('streak', G.streak);
+        qAdd('gold', Math.max(0, Math.round(G.gold - before.gold)));
+        qAfterProgress();
+      }
+      return r;
+    };
+
+    const _qOnMonsterDefeated = onMonsterDefeated;
+    onMonsterDefeated = function () {
+      if (G.quest && !G.practiceMode) { qSync(); qAdd('kill', 1); }
+      const r = _qOnMonsterDefeated();
+      if (G.quest) qAfterProgress();
+      return r;
+    };
+
+    const _qClearFloor = clearFloor;
+    clearFloor = function (boss) {
+      const goldBefore = G.gold;
+      if (G.quest && !G.practiceMode) { qSync(); qAdd('floor', 1); if (boss) qAdd('boss', 1); }
+      const r = _qClearFloor(boss);
+      if (G.quest) {
+        qAdd('gold', Math.max(0, Math.round(G.gold - goldBefore)));
+        qAfterProgress();
+      }
+      return r;
+    };
+
+    /* นับเฉพาะครั้งที่ร่ายติดจริง — ดูจาก MP ที่ถูกหักไป ไม่ใช่จำนวนครั้งที่กดปุ่ม */
+    const _qUseSkill = useSkill;
+    useSkill = function (key) {
+      const mpBefore = G.mp;
+      const r = _qUseSkill(key);
+      if (G.quest && G.mp < mpBefore) { qSync(); qAdd('skill', 1); qAfterProgress(); }
+      return r;
+    };
+
+    const _qRenderStats = renderStats;
+    renderStats = function () {
+      const r = _qRenderStats();
+      qPaintTitle();
+      qRenderBadge();
+      return r;
+    };
+
+    // ── ติดตั้งชั้นนี้ลง DOM (สไตล์ + แผง + ปุ่ม) ─────────
+    (function qInstall() {
+      /* ฉายารางวัลเควส 20 — ต่อท้าย TITLES ของ v4.0 ไม่แก้รายการเดิม
+         โบนัสตั้งไว้ต่ำกว่า 🐲 ราชันย์อักขระโบราณ (ทุกค่า +12) เพื่อไม่ให้ล้มบาลานซ์ค่าพลังเดิม */
+      if (!TITLES.some(function (t) { return t.key === 'grandmaster'; })) {
+        TITLES.push({
+          key:'grandmaster', icon:'🐲', name:'ปรมาจารย์ฮันเตอร์',
+          cond:'รับรางวัลภารกิจ 20 · ปรมาจารย์ภาษาจีน',
+          bonus:{ str:10, int:10, luk:5 },
+          check: s => !!(s && s.quest && s.quest.done && Array.isArray(s.quest.done.L) && s.quest.done.L.indexOf('L7') !== -1)
+        });
+      }
+
+      if (!document.getElementById('qStyle')) {
+        document.head.insertAdjacentHTML('beforeend',
+          '<style id="qStyle">' +
+          '.q-badge{display:inline-block;min-width:17px;padding:0 5px;margin-left:6px;border-radius:99px;' +
+            'background:#ff5a6e;color:#fff;font-size:10px;font-weight:800;line-height:16px;text-align:center;vertical-align:middle}' +
+          '.q-sum{font-size:10.5px;color:#8a97b5;line-height:1.55;margin:0 0 8px;text-align:left}' +
+          '.q-row{display:flex;align-items:flex-start;gap:9px;padding:9px;margin-bottom:7px;border-radius:9px;' +
+            'background:rgba(255,255,255,.04);border-left:3px solid rgba(143,216,255,.42);text-align:left}' +
+          '.q-row.ready{border-left-color:#2ef2d0;background:rgba(46,242,208,.09)}' +
+          '.q-row.done{opacity:.48;border-left-color:#55627f}' +
+          '.q-ic{flex:0 0 auto;font-size:18px;line-height:1.25}' +
+          '.q-info{flex:1;min-width:0}' +
+          '.q-name{font-size:12.5px;font-weight:700;color:#ffc845}' +
+          '.q-cond{font-size:10.5px;color:#8a97b5;margin-top:1px;line-height:1.45}' +
+          '.q-bar{height:6px;margin:5px 0 4px;border-radius:99px;background:rgba(255,255,255,.09);overflow:hidden}' +
+          '.q-bar-fill{height:100%;border-radius:99px;transform-origin:left center;transform:scaleX(0);' +
+            'background:linear-gradient(90deg,#38b6ff,#2ef2d0);transition:transform .35s ease}' +
+          '.q-row.ready .q-bar-fill{background:linear-gradient(90deg,#2ef2d0,#ffc845)}' +
+          '.q-meta{font-size:10.5px;color:#a9b8cc;line-height:1.5;word-break:break-word}' +
+          '.q-rw{color:#ffc845;font-weight:700}' +
+          '.q-rwi{white-space:nowrap}' +
+          '.q-claim{flex:0 0 auto;align-self:center;padding:7px 9px;border-radius:8px;font-family:inherit;' +
+            'font-size:10.5px;font-weight:700;cursor:pointer;white-space:nowrap;' +
+            'border:1px solid rgba(46,242,208,.45);background:linear-gradient(180deg,#1b2745,#0d131d);color:#2ef2d0}' +
+          '.q-claim.on{background:linear-gradient(180deg,#2ef2d0,#12a58c);color:#04231f;border-color:#2ef2d0;' +
+            'box-shadow:0 0 12px rgba(46,242,208,.45)}' +
+          '.q-claim:disabled{opacity:.38;cursor:not-allowed}' +
+          /* เอฟเฟกต์ข้อความทองคำของฉายาปรมาจารย์ */
+          '#gTitleTag.qgold{background:linear-gradient(92deg,#fff3c4 0%,#ffc845 32%,#fffbe6 50%,#ffb020 68%,#ffe98a 100%);' +
+            'background-size:220% 100%;-webkit-background-clip:text;background-clip:text;' +
+            '-webkit-text-fill-color:transparent;color:transparent;animation:qGoldFlow 3.4s linear infinite}' +
+          '@keyframes qGoldFlow{0%{background-position:0% 50%}100%{background-position:220% 50%}}' +
+          '</style>');
+      }
+
+      if (!document.getElementById('qBoard')) {
+        document.body.insertAdjacentHTML('beforeend',
+          '<div class="g-modal" id="qBoard">' +
+            '<div class="g-modal-inner">' +
+              '<div class="g-modal-title">[ระบบ] 📜 QUEST BOARD — กระดานภารกิจ</div>' +
+              '<div id="qBoardBody"></div>' +
+              '<button class="g-btn next" style="margin-top:12px" onclick="qCloseBoard()">✕ ปิดกระดาน</button>' +
+            '</div>' +
+          '</div>');
+      }
+
+      /* ปุ่มเปิดกระดาน — แทรกครั้งเดียว (กติกาข้อ 2 ของ CLAUDE.md: wrapper ที่ยัด DOM ต้องกันแทรกซ้ำ) */
+      const act = document.querySelector('.g-actions');
+      if (act && !document.getElementById('qBoardBtn')) {
+        act.insertAdjacentHTML('afterbegin',
+          '<button class="g-btn hint" id="qBoardBtn" onclick="qOpenBoard()">' +
+          '📜 QUESTS — กระดานภารกิจ<span class="q-badge" id="qBadge" style="display:none">0</span></button>');
+      }
+    })();
   </script>
 </body>
 </html>

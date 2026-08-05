@@ -6250,6 +6250,1291 @@
           '📜 QUESTS — กระดานภารกิจ<span class="q-badge" id="qBadge" style="display:none">0</span></button>');
       }
     })();
+
+
+    // ══════════════════════════════════════════════════════════════
+    // v4.3 · GM CONTROL — เครื่องมือหลังบ้านของครู 6 ระบบ
+    // ══════════════════════════════════════════════════════════════
+    /* ชั้นนี้ไม่แก้โค้ด v4.0 / v4.1 / v4.2 เลยแม้แต่บรรทัดเดียว — ห่อฟังก์ชันเหมือนสองชั้นก่อนหน้า
+       ทุกอย่างขึ้นต้นด้วย gc / GC_ · ลบทั้งบล็อกนี้ทิ้งแล้วเกมและแผง GM เดิมยังทำงานปกติ
+
+       6 ระบบที่เพิ่มเข้ามา:
+         1. จำแนกกลุ่มห้องเรียน  — ตัวกรอง #gcRoom + ย้ายกลุ่มรายคน/ยกกลุ่ม (อ่านฟิลด์ classroom เดิมของ v4.0)
+         2. ประวัติกิจกรรมย้อนหลัง — a.gcLog / a.sessions / a.playMs + คำที่ตอบผิดบ่อย (ยืม weakWordsOf ของ v4.0)
+         3. เสกไอเทมรายบุคคล     — เพิ่ม/ยึดไอเทมทีละชิ้น เคารพเพดาน BAG_SLOTS
+         4. เติม HP/MP ฉุกเฉิน    — ปุ่ม 💊 ในตาราง + แท็บสถานะในแฟ้มฮันเตอร์
+         5. กู้คืนเซสชันฉุกเฉิน   — ซ่อมพิกัดชั้น/คูลดาวน์ในข้อมูล + ปลดล็อกหน้าจอที่ค้างจริง
+         6. Error Log            — ดัก window.onerror / unhandledrejection / console.error มาโชว์บนแผง GM
+
+       ข้อควรระวังที่ยึดไว้:
+         · migrateAccount ถูกห่อเพื่อเติมฟิลด์ใหม่ให้บัญชีเก่า (กฎ "เพิ่มฟิลด์ต้องเติม default")
+         · ทุก wrapper ที่ยัด DOM เช็ก querySelector ก่อนเสมอ (กับดักข้อ 2 ของ CLAUDE.md)
+         · ปุ่มที่สร้างเองผูก onclick ด้วย JS ไม่ฝังชื่อผู้ใช้ลง attribute — กันชื่อที่มีอัญประกาศ
+         · GM แก้ข้อมูลของคนที่กำลังเล่นอยู่บนเครื่องนี้ ต้องดัน G ตามด้วย (gcLive) ไม่งั้น
+           saveProgress รอบถัดไปจะเขียนค่าเก่าทับทันที */
+
+    const GC_EKEY     = 'yao_errlog';   /* log ข้อผิดพลาด — ระดับเครื่อง ไม่ผูกกับบัญชีใดบัญชีหนึ่ง */
+    const GC_ELOG_MAX = 60;             /* เก็บ error ล่าสุดกี่รายการ */
+    const GC_LOG_MAX  = 40;             /* ไทม์ไลน์กิจกรรมต่อบัญชี */
+    const GC_SESS_MAX = 20;             /* เวลาเข้าเล่นย้อนหลังต่อบัญชี */
+    const GC_ROOM_MAX = 24;             /* ความยาวชื่อกลุ่ม/ห้องเรียน */
+    const GC_FLUSH_MS = 60000;          /* คาบเขียนเวลาเล่นสะสมลง store */
+
+    let GC_ROOM = '';      /* กลุ่มที่กรองอยู่ '' = ทุกกลุ่ม */
+    let GC_SEL  = null;    /* รหัสฮันเตอร์ที่เปิดแฟ้มอยู่ (null = โหมด Error Log) */
+    let GC_TAB  = 'log';   /* log · bag · buff · fix · err */
+    let GC_PREV = null;    /* สแนปช็อตค่าใน G ไว้เทียบหาเหตุการณ์ที่ควรบันทึก */
+    let GC_TICK = 0;       /* เวลาที่เขียน playMs ลง store ครั้งล่าสุด */
+    let GC_ERR_BUSY = false;
+    let GC_TIP_T = null;
+
+    // ── helper ทั่วไป ─────────────────────────────────
+    function gcRoomOf(a) {
+      const r = (a && typeof a.classroom === 'string') ? a.classroom.trim() : '';
+      return r || DEFAULT_ROOM;
+    }
+
+    function gcRooms() {
+      const s = loadStore(), set = {};
+      Object.keys(s).forEach(function (k) { set[gcRoomOf(s[k])] = 1; });
+      set[DEFAULT_ROOM] = 1;
+      return Object.keys(set).sort(function (a, b) { return a.localeCompare(b, 'th'); });
+    }
+
+    function gcTime(ts) {
+      if (!ts) return '—';
+      const d = new Date(ts), p = function (n) { return (n < 10 ? '0' : '') + n; };
+      return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) +
+             ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+    }
+
+    function gcDur(ms) {
+      const m = Math.floor(Math.max(0, ms || 0) / 60000);
+      if (m < 60) return m + ' นาที';
+      return Math.floor(m / 60) + ' ชม. ' + (m % 60) + ' นาที';
+    }
+
+    function gcStr(x) {
+      if (x instanceof Error) return x.message || String(x);
+      if (x && typeof x === 'object') { try { return JSON.stringify(x).slice(0, 200); } catch (e) { return '[object]'; } }
+      return String(x);
+    }
+
+    /* toast เล็ก ๆ ของแผง GM — ไม่ยุ่งกับ #snLayer ของชั้น SYSTEM (คนละ z-index คนละอายุ) */
+    function gcTip(msg) {
+      let el = document.getElementById('gcTip');
+      if (!el) {
+        document.body.insertAdjacentHTML('beforeend', '<div id="gcTip"></div>');
+        el = document.getElementById('gcTip');
+      }
+      el.textContent = msg;
+      el.classList.add('on');
+      clearTimeout(GC_TIP_T);
+      GC_TIP_T = setTimeout(function () { el.classList.remove('on'); }, 2600);
+    }
+
+    // ══════════════════════════════════════════════════
+    // 2. ประวัติกิจกรรม — โครงข้อมูลและตัวเขียน log
+    // ══════════════════════════════════════════════════
+
+    /* เติมฟิลด์ของชั้น v4.3 ให้บัญชี — ต้อง idempotent เพราะถูกเรียกทุกครั้งที่อ่าน store */
+    function gcEnsure(a) {
+      if (!a || typeof a !== 'object') return a;
+
+      let room = (typeof a.classroom === 'string' ? a.classroom : '').trim();
+      a.classroom = (room || DEFAULT_ROOM).slice(0, GC_ROOM_MAX);
+
+      /* ตีตรารุ่นไว้ เพื่อแยก "บัญชีที่เกิดก่อนชั้นนี้" ออกจาก "บัญชีที่เพิ่งสมัครเดี๋ยวนี้"
+         ทั้งสองแบบมี lastActive เท่ากันหมด ถ้าเดาจาก lastActive อย่างเดียว บัญชีใหม่จะถูก
+         นับว่าเข้าเกทไปแล้ว 1 ครั้งตั้งแต่ยังไม่ได้เริ่มเล่น แล้ว startGame จะบวกซ้ำเป็น 2 */
+      if (typeof a.gcv !== 'number') {
+        const played = ((a.correct || 0) + (a.wrong || 0)) > 0;
+        a.lastLogin  = played ? (a.lastActive || 0) : 0;
+        a.loginCount = played ? 1 : 0;
+        a.sessions   = played && a.lastLogin ? [a.lastLogin] : [];
+        a.playMs     = 0;
+        a.gcLog      = [];
+        a.gcv = 1;
+      }
+
+      if (typeof a.lastLogin !== 'number' || !isFinite(a.lastLogin) || a.lastLogin < 0) a.lastLogin = 0;
+      if (typeof a.loginCount !== 'number' || !isFinite(a.loginCount) || a.loginCount < 0) a.loginCount = 0;
+      if (typeof a.playMs !== 'number' || !isFinite(a.playMs) || a.playMs < 0) a.playMs = 0;
+
+      if (!Array.isArray(a.sessions)) a.sessions = [];
+      a.sessions = a.sessions.filter(function (t) { return typeof t === 'number' && isFinite(t) && t > 0; });
+      if (a.sessions.length > GC_SESS_MAX) a.sessions = a.sessions.slice(-GC_SESS_MAX);
+
+      if (!Array.isArray(a.gcLog)) a.gcLog = [];
+      a.gcLog = a.gcLog.filter(function (e) { return e && typeof e === 'object' && typeof e.t === 'number'; });
+      if (a.gcLog.length > GC_LOG_MAX) a.gcLog = a.gcLog.slice(-GC_LOG_MAX);
+
+      return a;
+    }
+
+    /* เขียนลง log ของบัญชี แต่ "ไม่" saveStore ให้ — ผู้เรียกรวบเขียนทีเดียวเอง */
+    function gcPush(a, icon, msg) {
+      if (!a) return;
+      if (!Array.isArray(a.gcLog)) a.gcLog = [];
+      a.gcLog.push({ t: Date.now(), i: icon, m: String(msg).slice(0, 160) });
+      if (a.gcLog.length > GC_LOG_MAX) a.gcLog = a.gcLog.slice(-GC_LOG_MAX);
+    }
+
+    function gcSnapshot() {
+      return { floor: G.floor || 1, maxFloor: G.maxFloor || 1, level: G.level || 1,
+               boss: G.bossClears || 0, tower: G.towerClears || 0,
+               titles: Array.isArray(G.titles) ? G.titles.slice() : [] };
+    }
+
+    // ══════════════════════════════════════════════════
+    // 6. ERROR / DIAGNOSTIC LOG
+    // ══════════════════════════════════════════════════
+
+    function gcErrLoad() {
+      try { const a = JSON.parse(localStorage.getItem(GC_EKEY) || '[]'); return Array.isArray(a) ? a : []; }
+      catch (e) { return []; }
+    }
+
+    function gcErrSave(list) {
+      try { localStorage.setItem(GC_EKEY, JSON.stringify(list.slice(-GC_ELOG_MAX))); } catch (e) {}
+    }
+
+    /* สแนปช็อตสถานะหน้าจอ ณ วินาทีที่เกิดปัญหา — ไฟล์เดียวจบจึงแนบภาพจริงไม่ได้
+       (ต้องพึ่ง lib ภายนอก) เก็บเป็นข้อความบอก "อยู่หน้าไหน ค้างตรงไหน" แทน ซึ่งพอวิเคราะห์ได้ */
+    function gcSnapText() {
+      const bits = [];
+      try {
+        const game = document.getElementById('gameScreen');
+        const gm   = document.getElementById('gmPanel');
+        bits.push('หน้าจอ=' + (gm && gm.classList.contains('active') ? 'GM Panel'
+                             : game && game.classList.contains('active') ? 'ในเกม' : 'หน้าล็อกอิน/intro'));
+        const open = [];
+        Array.prototype.forEach.call(
+          document.querySelectorAll('.g-modal.active, .sn-gate.active, #gmModal.active, #gcModal.active'),
+          function (el) { if (el.id) open.push('#' + el.id); });
+        const warp = document.getElementById('gWarp');
+        if (warp && warp.style.display !== 'none') open.push('#gWarp');
+        bits.push('หน้าต่างที่เปิด=' + (open.join(' ') || 'ไม่มี'));
+        bits.push('ผู้เล่น=' + (CURRENT_USER || '-'));
+        if (CURRENT_USER) {
+          bits.push('ชั้น=' + G.floor + '/' + FLOOR_MAX + ' (' + G.floorProgress + '/' + MONSTERS_PER_FLOOR + ')');
+          bits.push('HP=' + Math.round(G.hp) + '/' + G.maxHp + ' MP=' + Math.round(G.mp));
+          bits.push('locked=' + (G.locked ? 'ใช่' : 'ไม่'));
+          bits.push('คำปัจจุบัน=' + (G.currentMonster ? G.currentMonster.word : '-'));
+        }
+        bits.push('จอ=' + window.innerWidth + '×' + window.innerHeight);
+      } catch (e) { bits.push('อ่านสถานะไม่ได้: ' + gcStr(e)); }
+      return bits.join(' · ');
+    }
+
+    function gcErrPush(ty, msg, src, stack) {
+      if (GC_ERR_BUSY) return;          /* กันวนซ้ำ ถ้าตัวเขียน log เองพัง */
+      GC_ERR_BUSY = true;
+      try {
+        const list = gcErrLoad();
+        const m = String(msg == null ? '' : msg).slice(0, 400);
+        const last = list[list.length - 1];
+        /* ข้อความเดิมซ้ำ ๆ (error ที่เกิดในลูป render) นับรวมเป็นรายการเดียว ไม่งั้น log ล้นใน 1 วินาที */
+        if (last && last.ty === ty && last.m === m) {
+          last.n = (last.n || 1) + 1;
+          last.t = Date.now();
+        } else {
+          list.push({ t: Date.now(), ty: ty, m: m, n: 1,
+                      u: CURRENT_USER || '-',
+                      s: String(src || '').slice(0, 200),
+                      k: String(stack || '').slice(0, 700),
+                      snap: gcSnapText() });
+        }
+        gcErrSave(list);
+      } catch (e) {}
+      GC_ERR_BUSY = false;
+      gcErrBadge();
+    }
+
+    function gcErrBadge() {
+      const b = document.getElementById('gcErrCount');
+      if (!b) return;
+      const n = gcErrLoad().filter(function (e) { return e.ty !== 'snap'; }).length;
+      b.textContent = n;
+      b.style.display = n ? 'inline-block' : 'none';
+    }
+
+    function gcErrClear() {
+      gmConfirm('[ระบบ] 🗑️ ล้าง Error Log', 'ลบบันทึกข้อผิดพลาดทั้งหมดบนเครื่องนี้?', function () {
+        try { localStorage.removeItem(GC_EKEY); } catch (e) {}
+        gcErrBadge();
+        gcPaint();
+        gcTip('🗑️ ล้าง Error Log แล้ว');
+      });
+    }
+
+    function gcErrSnapNow() {
+      gcErrPush('snap', 'สแนปช็อตหน้าจอที่ GM กดบันทึกเอง', '', '');
+      gcPaint();
+      gcTip('📸 บันทึกสแนปช็อตสถานะหน้าจอแล้ว');
+    }
+
+    function gcErrText() {
+      const list = gcErrLoad();
+      const head = ['HANZI HUNTER — DIAGNOSTIC LOG',
+                    'ออกรายงาน: ' + gcTime(Date.now()),
+                    'อุปกรณ์: ' + navigator.userAgent,
+                    'หน้าจอ: ' + window.innerWidth + '×' + window.innerHeight +
+                      ' (screen ' + (screen.width || '?') + '×' + (screen.height || '?') + ')',
+                    'จำนวนรายการ: ' + list.length,
+                    '─────────────────────────────'];
+      list.slice().reverse().forEach(function (e, i) {
+        head.push((i + 1) + ') [' + e.ty + '] ' + gcTime(e.t) + (e.n > 1 ? ' ×' + e.n : ''));
+        head.push('   ผู้เล่น: ' + (e.u || '-'));
+        head.push('   ข้อความ: ' + e.m);
+        if (e.s) head.push('   ตำแหน่ง: ' + e.s);
+        if (e.snap) head.push('   สถานะจอ: ' + e.snap);
+        if (e.k) head.push('   stack: ' + e.k.replace(/\n/g, '\n          '));
+        head.push('');
+      });
+      return head.join('\n');
+    }
+
+    function gcErrDownload() {
+      const blob = new Blob(['﻿' + gcErrText()], { type: 'text/plain;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'hanzi_hunter_errorlog_' + new Date().toISOString().slice(0, 10) + '.txt';
+      link.click();
+      URL.revokeObjectURL(url);
+      gcTip('⬇️ ดาวน์โหลดรายงานข้อผิดพลาดแล้ว');
+    }
+
+    function gcErrCopy() {
+      const txt = gcErrText();
+      const done = function () { gcTip('📋 คัดลอกรายงานลงคลิปบอร์ดแล้ว'); };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(txt).then(done, function () { gcErrDownload(); });
+      } else {
+        /* บางเบราว์เซอร์บนมือถือไม่มี clipboard API — ตกไปใช้ไฟล์แทน ดีกว่าเงียบหาย */
+        gcErrDownload();
+      }
+    }
+
+    // ── ดักข้อผิดพลาดตั้งแต่ชั้นนี้ถูกโหลด (ไม่ต้องรอเปิดแผง GM) ──
+    (function gcHookErrors() {
+      window.addEventListener('error', function (e) {
+        gcErrPush('js', e.message || 'script error',
+                  (e.filename || '') + (e.lineno ? ':' + e.lineno + ':' + e.colno : ''),
+                  e.error && e.error.stack);
+      });
+
+      window.addEventListener('unhandledrejection', function (e) {
+        const r = e.reason;
+        gcErrPush('promise', (r && r.message) ? r.message : gcStr(r), '', r && r.stack);
+      });
+
+      ['error', 'warn'].forEach(function (lvl) {
+        const orig = console[lvl];
+        console[lvl] = function () {
+          try {
+            gcErrPush(lvl === 'warn' ? 'warn' : 'console',
+                      Array.prototype.map.call(arguments, gcStr).join(' '), '', '');
+          } catch (e) {}
+          return orig.apply(console, arguments);
+        };
+      });
+    })();
+
+    // ══════════════════════════════════════════════════
+    // ตัวช่วยฝั่ง "คนที่กำลังเล่นอยู่บนเครื่องนี้"
+    // ══════════════════════════════════════════════════
+
+    /* GM แก้ข้อมูลใน store แล้วต้องดัน G ตามทันที ไม่งั้น saveProgress รอบถัดไปเขียนค่าเก่าทับ
+       (syncFromStore ของ v4.0 ดันแค่ ทอง/เลเวล/HP/EXP — ไอเทม MP โล่ พิกัดชั้น ไม่ได้ดัน) */
+    function gcLive(user) {
+      if (!CURRENT_USER || CURRENT_USER !== user) return;
+      const a = loadStore()[user];
+      if (!a) return;
+      G.gold = a.gold; G.level = a.level; G.exp = a.exp; G.maxExp = a.maxExp;
+      G.maxHp = a.maxHp; G.hp = Math.min(a.hp, a.maxHp);
+      G.mp = Math.max(0, Math.min(maxMpOf(a), a.mp));
+      G.shield = a.shield || 0;
+      G.items = Object.assign({}, a.items);
+      G.floor = a.floor; G.maxFloor = a.maxFloor; G.floorProgress = a.floorProgress;
+      G.classroom = gcRoomOf(a);
+      G.skillCd = Object.assign({}, a.skillCd || {});
+      try { renderFloor(); } catch (e) {}
+      try { renderItems(); } catch (e) {}
+      try { renderSkills(); } catch (e) {}
+      try { renderStats(); } catch (e) {}
+    }
+
+    /* ปลดล็อกหน้าจอที่ค้าง — ล้างเวลานับถอยหลัง ปิดหน้าต่างซ้อนทุกชั้น แล้วขึ้นคำใหม่
+       ใช้ได้แม้ตอนไม่มีใครเล่นอยู่ (จะทำแค่ส่วนปิดหน้าต่าง) */
+    function gcUnlockScreen() {
+      const closed = [];
+      try { clearTurnTimer(); } catch (e) {}
+      try { clearQuestionTimer(); } catch (e) {}
+      try { clearVfx(); } catch (e) {}
+
+      Array.prototype.forEach.call(document.querySelectorAll('.g-modal.active, .sn-gate.active'),
+        function (el) { el.classList.remove('active'); if (el.id) closed.push('#' + el.id); });
+
+      const layer = document.getElementById('snLayer');
+      if (layer && layer.children.length) { layer.innerHTML = ''; closed.push('toast ค้าง'); }
+
+      const gate = document.getElementById('gcModal');
+      if (gate) gate.classList.remove('active');
+
+      try { closeWarp(); } catch (e) {}
+
+      if (CURRENT_USER) {
+        G.locked = false;
+        G.practiceMode = false;
+        G.warpOpen = false;
+        if (!(G.hp > 0)) G.hp = G.maxHp;
+        try { nextMonster(); } catch (e) {}
+        try { renderFloor(); renderItems(); renderSkills(); renderStats(); } catch (e) {}
+        closed.push('ปลดล็อกปุ่มตอบ + ขึ้นคำใหม่');
+      }
+      return closed;
+    }
+
+    // ══════════════════════════════════════════════════
+    // 1. กลุ่มห้องเรียน
+    // ══════════════════════════════════════════════════
+
+    function gcSetRoom(v) { GC_ROOM = v || ''; gmRender(); }
+
+    function gcSyncRoomSelect() {
+      const sel = document.getElementById('gcRoom');
+      if (!sel) return;
+      const rooms = gcRooms();
+      if (GC_ROOM && rooms.indexOf(GC_ROOM) === -1) GC_ROOM = '';
+      sel.innerHTML = '<option value="">🏫 ทุกกลุ่ม / ทุกห้องเรียน</option>' +
+        rooms.map(function (r) {
+          return '<option value="' + esc(r) + '"' + (r === GC_ROOM ? ' selected' : '') + '>🏫 ' + esc(r) + '</option>';
+        }).join('');
+      sel.value = GC_ROOM;
+    }
+
+    /* ย้ายกลุ่มรายคน */
+    function gcMoveRoom(user) {
+      const s = loadStore();
+      if (!s[user]) return;
+      gmPrompt('🏫 ย้ายกลุ่ม / ห้องเรียน', '[ระบบ] ของ @' + user + ' (เว้นว่าง = กลับไปกลุ่ม ' + DEFAULT_ROOM + ')',
+        'ชื่อกลุ่ม เช่น ม.4/1', gcRoomOf(s[user]), function (v) {
+          const to = (v || '').trim().slice(0, GC_ROOM_MAX) || DEFAULT_ROOM;
+          const s2 = loadStore(), a = s2[user];
+          if (!a) return;
+          const from = gcRoomOf(a);
+          if (from === to) return;
+          a.classroom = to;
+          gcPush(a, '🏫', 'GM ย้ายกลุ่ม ' + from + ' → ' + to);
+          saveStore(s2);
+          gcLive(user);
+          gmRender();
+          gcPaint();
+          gcTip('🏫 ย้าย @' + user + ' ไปกลุ่ม ' + to + ' แล้ว');
+        });
+    }
+
+    /* ย้ายยกชุด — ใช้กับ "แถวที่มองเห็นอยู่ตอนนี้" คือผลของช่องค้นหา + ตัวกรองกลุ่มรวมกัน */
+    function gcBulkRoom() {
+      const users = gcVisibleUsers();
+      if (!users.length) { gcTip('⚠️ ไม่มีฮันเตอร์ในรายการที่กรองอยู่'); return; }
+      gmPrompt('🏫 จัดกลุ่มยกชุด',
+        '[ระบบ] ย้ายฮันเตอร์ ' + users.length + ' คนที่แสดงอยู่ในตารางตอนนี้ไปกลุ่มเดียวกัน',
+        'ชื่อกลุ่มปลายทาง เช่น ม.4/2', GC_ROOM || DEFAULT_ROOM, function (v) {
+          const to = (v || '').trim().slice(0, GC_ROOM_MAX);
+          if (!to) return;
+          const s = loadStore();
+          let n = 0;
+          users.forEach(function (u) {
+            const a = s[u];
+            if (!a || gcRoomOf(a) === to) return;
+            gcPush(a, '🏫', 'GM จัดกลุ่มยกชุด ' + gcRoomOf(a) + ' → ' + to);
+            a.classroom = to;
+            n++;
+          });
+          saveStore(s);
+          GC_ROOM = to;
+          users.forEach(gcLive);
+          gmRender();
+          gcTip('🏫 ย้าย ' + n + ' คนไปกลุ่ม ' + to + ' แล้ว');
+        });
+    }
+
+    function gcVisibleUsers() {
+      const body = document.getElementById('gmBody');
+      const out = [];
+      if (!body) return out;
+      Array.prototype.forEach.call(body.rows, function (tr) {
+        if (tr.style.display !== 'none' && tr.dataset.gcUser) out.push(tr.dataset.gcUser);
+      });
+      return out;
+    }
+
+    // ══════════════════════════════════════════════════
+    // 3. เสกไอเทมรายบุคคล
+    // ══════════════════════════════════════════════════
+
+    function gcBagUsed(a) {
+      return ITEMS.reduce(function (t, it) { return t + ((a.items && a.items[it.key]) || 0); }, 0);
+    }
+
+    /* n > 0 = เสกให้ · n < 0 = ยึดคืน
+       เพดาน BAG_SLOTS สำคัญมาก: migrateAccount ของ v4.0 จะ "ขายคืนอัตโนมัติ" ทุกชิ้นที่เกิน 10 ช่อง
+       ทันทีที่อ่าน store ครั้งถัดไป ถ้าเสกทะลุเพดานของก็หายกลายเป็นทองแทน */
+    function gcItem(user, key, n) {
+      const s = loadStore(), a = s[user], it = itemOf(key);
+      if (!a || !it) return;
+      if (!a.items || typeof a.items !== 'object') a.items = {};
+      const cur = a.items[key] || 0;
+
+      if (n > 0) {
+        const room = BAG_SLOTS - gcBagUsed(a);
+        if (room <= 0) { gcTip('⚠️ กระเป๋าเต็ม ' + BAG_SLOTS + '/' + BAG_SLOTS + ' ช่อง — ยึดของอื่นออกก่อน'); return; }
+        n = Math.min(n, room);
+      } else {
+        n = -Math.min(-n, cur);
+      }
+      if (!n) return;
+
+      a.items[key] = cur + n;
+      gcPush(a, '🎒', 'GM ' + (n > 0 ? 'เสกไอเทม ' : 'ยึดไอเทม ') + it.icon + ' ' + it.name + ' ×' + Math.abs(n));
+      saveStore(s);
+      gcLive(user);
+      gmRender();
+      gcPaint();
+      gcTip((n > 0 ? '✨ เสก ' : '🚫 ยึด ') + it.icon + ' ' + it.name + ' ×' + Math.abs(n) + ' — @' + user);
+    }
+
+    function gcItemAdd(key) { if (GC_SEL) gcItem(GC_SEL, key,  1); }
+    function gcItemSub(key) { if (GC_SEL) gcItem(GC_SEL, key, -1); }
+
+    // ══════════════════════════════════════════════════
+    // 4. เติมค่าสถานะฉุกเฉิน
+    // ══════════════════════════════════════════════════
+
+    function gcHeal(user, kind) {
+      const s = loadStore(), a = s[user];
+      if (!a) return;
+      const parts = [];
+
+      if (kind === 'hp' || kind === 'all') {
+        const b = Math.round(a.hp || 0);
+        a.hp = a.maxHp;
+        parts.push('HP ' + b + ' → ' + a.maxHp);
+      }
+      if (kind === 'mp' || kind === 'all') {
+        const b = Math.round(a.mp || 0), mx = maxMpOf(a);
+        a.mp = mx;
+        parts.push('MP ' + b + ' → ' + mx);
+      }
+      if (kind === 'shield') {
+        const b = a.shield || 0;
+        a.shield = maxShield();
+        parts.push('โล่ ' + b + ' → ' + maxShield());
+      }
+      if (!parts.length) return;
+
+      gcPush(a, '💊', 'GM เติมสถานะ — ' + parts.join(' · '));
+      saveStore(s);
+      gcLive(user);
+      gmRender();
+      gcPaint();
+      gcTip('💊 @' + user + ' — ' + parts.join(' · '));
+    }
+
+    function gcHealSel(kind) { if (GC_SEL) gcHeal(GC_SEL, kind); }
+
+    function gcMoveSel() { if (GC_SEL) gcMoveRoom(GC_SEL); }
+
+    // ══════════════════════════════════════════════════
+    // 5. กู้คืนเซสชันฉุกเฉิน
+    // ══════════════════════════════════════════════════
+
+    /* ซ่อม "ข้อมูล" ที่ทำให้เข้าเกมแล้วค้าง — พิกัดชั้นเกินขอบ ค่าติดลบ คูลดาวน์ค้าง HP ศูนย์
+       ไม่ยุ่งกับ frozen (การระงับสิทธิ์เป็นเจตนาของ GM ไม่ใช่บั๊ค) */
+    function gcFixState(user) {
+      const s = loadStore(), a = s[user];
+      if (!a) return;
+      const fixed = [];
+
+      const mf = Math.round(a.maxFloor);
+      if (!isFinite(mf) || mf < 1 || mf > FLOOR_MAX) {
+        a.maxFloor = Math.min(FLOOR_MAX, Math.max(1, isFinite(mf) ? mf : 1));
+        fixed.push('ชั้นสูงสุด → ' + a.maxFloor);
+      }
+      const fl = Math.round(a.floor);
+      if (!isFinite(fl) || fl < 1 || fl > FLOOR_MAX || fl > a.maxFloor) {
+        a.floor = Math.min(a.maxFloor, Math.max(1, isFinite(fl) ? fl : 1));
+        fixed.push('ชั้นปัจจุบัน → ' + a.floor);
+      }
+      const fp = Math.round(a.floorProgress);
+      if (!isFinite(fp) || fp < 0 || fp >= MONSTERS_PER_FLOOR) {
+        a.floorProgress = 0;
+        fixed.push('ความคืบหน้าในชั้น → 0');
+      }
+      if (!(a.hp > 0)) { a.hp = a.maxHp; fixed.push('HP → เต็ม'); }
+      const mx = maxMpOf(a);
+      if (!(a.mp >= 0) || a.mp > mx) { a.mp = Math.max(0, Math.min(mx, a.mp || 0)); fixed.push('MP → ' + Math.round(a.mp)); }
+      if (!(a.shield >= 0)) { a.shield = 0; fixed.push('โล่ → 0'); }
+
+      const cd = a.skillCd && typeof a.skillCd === 'object' ? a.skillCd : {};
+      if (Object.keys(cd).some(function (k) { return cd[k] > 0; })) fixed.push('ล้างคูลดาวน์สกิล');
+      a.skillCd = {};
+
+      gcPush(a, '🚑', 'GM กู้คืนสถานะฉุกเฉิน — ' + (fixed.join(' · ') || 'ตรวจแล้วไม่พบค่าเพี้ยน'));
+      saveStore(s);
+      gcLive(user);
+
+      let live = [];
+      if (CURRENT_USER === user) live = gcUnlockScreen();
+
+      gmRender();
+      gcPaint();
+      gcTip('🚑 @' + user + ' — ' + (fixed.length ? fixed.length + ' รายการถูกซ่อม' : 'ข้อมูลปกติดี') +
+            (live.length ? ' · ปลดล็อกหน้าจอแล้ว' : ''));
+    }
+
+    function gcFixSel() { if (GC_SEL) gcFixState(GC_SEL); }
+
+    function gcUnlockNow() {
+      const closed = gcUnlockScreen();
+      gcTip('🖥️ ปลดล็อกหน้าจอแล้ว — ' + (closed.length ? closed.join(' · ') : 'ไม่พบหน้าต่างค้าง'));
+      gcPaint();
+    }
+
+    // ══════════════════════════════════════════════════
+    // แฟ้มฮันเตอร์ (โมดัลรวมเครื่องมือ 4 แท็บ + โหมด Error Log)
+    // ══════════════════════════════════════════════════
+
+    function gcOpen(user, tab) {
+      GC_SEL = user;
+      GC_TAB = tab || 'log';
+      gcInstall();
+      document.getElementById('gcModal').classList.add('active');
+      gcPaint();
+    }
+
+    function gcOpenErr() {
+      GC_SEL = null;
+      GC_TAB = 'err';
+      gcInstall();
+      document.getElementById('gcModal').classList.add('active');
+      gcPaint();
+    }
+
+    function gcClose() {
+      const m = document.getElementById('gcModal');
+      if (m) m.classList.remove('active');
+      GC_SEL = null;
+    }
+
+    function gcSetTab(t) { GC_TAB = t; gcPaint(); }
+
+    function gcCell(k, v) {
+      return '<div class="gc-cell"><div class="gc-k">' + k + '</div><div class="gc-v">' + v + '</div></div>';
+    }
+
+    function gcPaint() {
+      const modal = document.getElementById('gcModal');
+      if (!modal || !modal.classList.contains('active')) return;
+
+      const title = document.getElementById('gcTitle');
+      const tabs  = document.getElementById('gcTabs');
+      const body  = document.getElementById('gcBody');
+
+      /* โหมด Error Log ไม่ผูกกับฮันเตอร์คนใด */
+      if (GC_TAB === 'err' || !GC_SEL) {
+        GC_TAB = 'err';
+        title.innerHTML = '🐞 BUG &amp; ERROR DIAGNOSTIC LOG' +
+          '<span class="gc-h-s">บันทึกข้อผิดพลาดของเครื่องนี้ · เก็บล่าสุด ' + GC_ELOG_MAX + ' รายการ</span>';
+        tabs.innerHTML = '';
+        body.innerHTML = gcPaintErr();
+        return;
+      }
+
+      const a = loadStore()[GC_SEL];
+      if (!a) { gcClose(); return; }
+
+      title.innerHTML = '🗡️ ' + esc(a.name || a.user) +
+        '<span class="gc-h-s">@' + esc(a.user) + ' · 🏫 ' + esc(gcRoomOf(a)) +
+        ' · ' + rankOfFloor(a.maxFloor || 1).key + '-RANK · Lv.' + (a.level || 1) + '</span>';
+
+      const T = [['log', '📋 ประวัติ'], ['bag', '🎒 คลังไอเทม'], ['buff', '💊 สถานะ'], ['fix', '🚑 กู้คืน']];
+      tabs.innerHTML = T.map(function (t) {
+        return '<button class="gc-tab' + (GC_TAB === t[0] ? ' on' : '') +
+               '" onclick="gcSetTab(\'' + t[0] + '\')">' + t[1] + '</button>';
+      }).join('');
+
+      body.innerHTML = GC_TAB === 'bag'  ? gcPaintBag(a)
+                     : GC_TAB === 'buff' ? gcPaintBuff(a)
+                     : GC_TAB === 'fix'  ? gcPaintFix(a)
+                     :                     gcPaintLog(a);
+    }
+
+    // ── แท็บ 1: ประวัติกิจกรรมย้อนหลัง ──────────────────
+    function gcPaintLog(a) {
+      const tot = (a.correct || 0) + (a.wrong || 0);
+      const first = (a.sessions && a.sessions.length) ? a.sessions[0] : a.createdAt;
+
+      let h = '<div class="gc-sec">📊 สรุปฮันเตอร์</div><div class="gc-grid">' +
+        gcCell('🏯 ชั้นสูงสุดที่ไปถึง', (a.maxFloor || 1) + ' / ' + FLOOR_MAX) +
+        gcCell('📍 ชั้นที่ค้างอยู่', (a.floor || 1) + ' · ปราบแล้ว ' + (a.floorProgress || 0) + '/' + MONSTERS_PER_FLOOR) +
+        gcCell('🕘 เข้าเล่นล่าสุด', timeAgo(a.lastActive) + '<br><span class="gc-k">' + gcTime(a.lastActive) + '</span>') +
+        gcCell('🚪 เข้าเกทครั้งล่าสุด', gcTime(a.lastLogin)) +
+        gcCell('🔁 เข้าเกททั้งหมด', (a.loginCount || 0) + ' ครั้ง') +
+        gcCell('⏱️ เวลาเล่นสะสม', gcDur(a.playMs)) +
+        gcCell('🎯 ความแม่นยำ', accAccuracy(a) + '% (' + (a.correct || 0) + '/' + tot + ')') +
+        gcCell('👑 บอส / พิชิตหอคอย', (a.bossClears || 0) + ' ตัว · ' + (a.towerClears || 0) + ' รอบ') +
+        gcCell('📅 สมัครเมื่อ', gcTime(first)) +
+        gcCell('🔖 สถานะ', a.frozen ? '❄️ ถูกระงับสิทธิ์' : '✅ ปกติ') +
+        '</div>';
+
+      h += '<div class="gc-sec">🕘 ไทม์ไลน์กิจกรรม (ล่าสุด ' + GC_LOG_MAX + ' รายการ)</div>';
+      const log = (a.gcLog || []).slice().reverse();
+      h += log.length
+        ? '<div class="gc-log">' + log.map(function (e) {
+            return '<div class="gc-le"><div class="gc-li">' + esc(e.i || '•') + '</div>' +
+                   '<div class="gc-lm">' + esc(e.m) + '<span class="gc-lt">' + gcTime(e.t) + '</span></div></div>';
+          }).join('') + '</div>'
+        : '<div class="gc-empty">ยังไม่มีกิจกรรมบันทึกไว้ — จะเริ่มเก็บตั้งแต่ครั้งถัดไปที่เข้าเกท</div>';
+
+      h += '<div class="gc-sec">📉 คำศัพท์ที่ตอบผิดบ่อยที่สุด</div>';
+      const weak = weakWordsOf(a, 8);
+      h += weak.length
+        ? '<div class="gc-log">' + weak.map(function (w, i) {
+            return '<div class="gc-le"><div class="gc-li">' + (i + 1) + '</div>' +
+              '<div class="gc-lm"><b style="color:#ffc845">' + esc(w.word) + '</b> · ' + esc(w.pinyin) +
+              ' — ' + esc(w.meaning) +
+              '<span class="gc-lt">ผิด ' + w.wrong + '/' + w.seen + ' ครั้ง (' + Math.round(w.rate * 100) + '%)' +
+              (w.avgMs ? ' · เฉลี่ย ' + (w.avgMs / 1000).toFixed(1) + ' วิ' : '') + '</span></div></div>';
+          }).join('') + '</div>'
+        : '<div class="gc-empty">ยังไม่มีคำที่ตอบผิด — หรือยังตอบไม่พอให้ประเมิน</div>';
+
+      h += '<div class="gc-btns">' +
+        '<button class="gm-btn" onclick="gcMoveSel()">🏫 ย้ายกลุ่ม</button>' +
+        '<button class="gm-btn jade" onclick="gcSetTab(\'buff\')">💊 เติมสถานะ</button>' +
+        '</div>';
+      return h;
+    }
+
+    // ── แท็บ 2: คลังไอเทม + เสกไอเทม ────────────────────
+    function gcPaintBag(a) {
+      const used = gcBagUsed(a);
+      let h = '<div class="gc-sec">🎒 คลังไอเทม — ใช้ ' + used + ' / ' + BAG_SLOTS + ' ช่อง</div>';
+
+      h += ITEMS.map(function (it) {
+        const n = (a.items && a.items[it.key]) || 0;
+        return '<div class="gc-item">' +
+          '<div style="font-size:19px">' + it.icon + '</div>' +
+          '<div class="gc-item-n"><b>' + esc(it.name) + '</b>' +
+            '<small>' + esc(it.effect) + '</small></div>' +
+          '<button class="gm-btn sm" onclick="gcItemSub(\'' + it.key + '\')"' + (n ? '' : ' disabled') + '>➖</button>' +
+          '<div class="gc-cnt">' + n + '</div>' +
+          '<button class="gm-btn sm jade" onclick="gcItemAdd(\'' + it.key + '\')"' +
+            (used >= BAG_SLOTS ? ' disabled' : '') + '>➕</button>' +
+        '</div>';
+      }).join('');
+
+      h += '<div class="gc-note">⚠️ กระเป๋ามีเพดาน ' + BAG_SLOTS + ' ช่องรวมทุกชนิด — ถ้าเสกทะลุเพดาน ' +
+           'ระบบเดิมจะขายของส่วนเกินคืนเป็นทองอัตโนมัติ ปุ่ม ➕ จึงถูกปิดเมื่อเต็ม<br>' +
+           'ของที่เสกให้จะเข้ากระเป๋าของฮันเตอร์ทันที และถูกบันทึกลงไทม์ไลน์กิจกรรม</div>';
+      return h;
+    }
+
+    // ── แท็บ 3: ปรับค่าสถานะ ────────────────────────────
+    function gcPaintBuff(a) {
+      const mx = maxMpOf(a);
+      let h = '<div class="gc-sec">💊 สถานะปัจจุบัน</div><div class="gc-grid">' +
+        gcCell('❤️ HP', Math.round(a.hp || 0) + ' / ' + (a.maxHp || 0)) +
+        gcCell('🔮 MP', Math.round(a.mp || 0) + ' / ' + mx) +
+        gcCell('🛡️ โล่', (a.shield || 0) + ' / ' + maxShield()) +
+        gcCell('🪙 ทอง', (a.gold || 0)) +
+        '</div>';
+
+      h += '<div class="gc-sec">⚡ เติมทันที</div><div class="gc-btns">' +
+        '<button class="gm-btn jade" onclick="gcHealSel(\'all\')">✨ HP + MP เต็ม</button>' +
+        '<button class="gm-btn" onclick="gcHealSel(\'hp\')">❤️ HP เต็ม</button>' +
+        '<button class="gm-btn" onclick="gcHealSel(\'mp\')">🔮 MP เต็ม</button>' +
+        '<button class="gm-btn" onclick="gcHealSel(\'shield\')">🛡️ โล่เต็ม</button>' +
+        '</div>';
+
+      h += '<div class="gc-sec">🏫 กลุ่ม / ห้องเรียน</div>' +
+        '<div class="gc-cell"><div class="gc-k">กลุ่มปัจจุบัน</div><div class="gc-v">🏫 ' + esc(gcRoomOf(a)) + '</div></div>' +
+        '<div class="gc-btns"><button class="gm-btn" onclick="gcMoveSel()">🏫 ย้ายกลุ่ม / เปลี่ยนห้องเรียน</button></div>';
+
+      h += '<div class="gc-note">การเติมสถานะมีผลกับข้อมูลที่บันทึกไว้ทันที และถ้าฮันเตอร์คนนี้กำลังเล่นอยู่บนเครื่องนี้ ' +
+           'หลอด HP/MP บนจอจะขยับตามทันทีโดยไม่ต้องออกจากเกม</div>';
+      return h;
+    }
+
+    // ── แท็บ 4: กู้คืนฉุกเฉิน ───────────────────────────
+    function gcPaintFix(a) {
+      const live = CURRENT_USER === a.user;
+      const cd = a.skillCd && typeof a.skillCd === 'object' ? a.skillCd : {};
+      const cdOn = Object.keys(cd).filter(function (k) { return cd[k] > 0; });
+
+      let h = '<div class="gc-sec">🚑 ตรวจค่าที่มักทำให้ค้าง</div><div class="gc-grid">' +
+        gcCell('📍 ชั้นปัจจุบัน / สูงสุด',
+          (a.floor || 1) + ' / ' + (a.maxFloor || 1) +
+          ((a.floor > a.maxFloor || a.floor < 1 || a.floor > FLOOR_MAX) ? ' <span style="color:#ff6b7a">⚠️ เพี้ยน</span>' : ' ✅')) +
+        gcCell('🎯 ความคืบหน้าในชั้น',
+          (a.floorProgress || 0) + ' / ' + MONSTERS_PER_FLOOR +
+          ((a.floorProgress >= MONSTERS_PER_FLOOR || a.floorProgress < 0) ? ' <span style="color:#ff6b7a">⚠️ เพี้ยน</span>' : ' ✅')) +
+        gcCell('❤️ HP', Math.round(a.hp || 0) + (a.hp > 0 ? ' ✅' : ' <span style="color:#ff6b7a">⚠️ ศูนย์</span>')) +
+        gcCell('⏳ คูลดาวน์ค้าง', cdOn.length ? cdOn.join(', ') : 'ไม่มี ✅') +
+        gcCell('🖥️ กำลังเล่นบนเครื่องนี้', live ? 'ใช่ — ปลดล็อกหน้าจอได้' : 'ไม่ได้เล่นอยู่') +
+        gcCell('❄️ สิทธิ์เข้าเกท', a.frozen ? 'ถูกระงับ (ไม่แตะ)' : 'ปกติ') +
+        '</div>';
+
+      h += '<div class="gc-btns">' +
+        '<button class="gm-btn jade" onclick="gcFixSel()">🚑 ซ่อมพิกัด + ล้างคูลดาวน์</button>' +
+        '<button class="gm-btn"' + (live ? '' : ' disabled') + ' onclick="gcUnlockNow()">🖥️ ปลดล็อกหน้าจอเกม</button>' +
+        '<button class="gm-btn" onclick="gcErrSnapNow()">📸 บันทึกสแนปช็อตหน้าจอ</button>' +
+        '</div>';
+
+      h += '<div class="gc-note">🚑 <b>ซ่อมพิกัด</b> จะดึงชั้นที่เกินขอบกลับเข้าช่วง 1–' + FLOOR_MAX +
+           ' · รีเซ็ตความคืบหน้าในชั้นที่ค้างเกินโควตา · ฟื้น HP ถ้าเป็นศูนย์ · ล้างคูลดาวน์สกิลที่ค้าง ' +
+           '(ไม่แตะการระงับสิทธิ์ เพราะนั่นเป็นคำสั่งของ GM ไม่ใช่บั๊ค)<br>' +
+           '🖥️ <b>ปลดล็อกหน้าจอ</b> ใช้ตอนจอค้างจริง — ล้างนาฬิกานับถอยหลัง ปิดหน้าต่างซ้อนทุกชั้น ' +
+           'เก็บ toast ที่ค้าง แล้วขึ้นคำถามใหม่ให้เล่นต่อได้ทันที</div>';
+      return h;
+    }
+
+    // ── โหมด Error Log ──────────────────────────────────
+    function gcPaintErr() {
+      const list = gcErrLoad().slice().reverse();
+      const TY = { js: ['', '💥 JS ERROR'], promise: ['', '💥 PROMISE'],
+                   console: ['', '🖥️ CONSOLE'], warn: ['warn', '⚠️ WARNING'], snap: ['snap', '📸 SNAPSHOT'] };
+
+      let h = '<div class="gc-btns" style="margin-top:0">' +
+        '<button class="gm-btn" onclick="gcPaint()">🔄 รีเฟรช</button>' +
+        '<button class="gm-btn" onclick="gcErrSnapNow()">📸 เก็บสแนปช็อตตอนนี้</button>' +
+        '<button class="gm-btn jade" onclick="gcErrCopy()">📋 คัดลอกรายงาน</button>' +
+        '<button class="gm-btn jade" onclick="gcErrDownload()">⬇️ ดาวน์โหลด .txt</button>' +
+        '<button class="gm-btn red" onclick="gcErrClear()">🗑️ ล้าง log</button>' +
+        '</div>';
+
+      h += '<div class="gc-sec">🖥️ เครื่องที่ใช้อยู่</div>' +
+        '<div class="gc-note">' + esc(navigator.userAgent) + '<br>หน้าต่าง ' +
+        window.innerWidth + '×' + window.innerHeight + ' · ผู้เล่นที่ล็อกอินอยู่: ' +
+        esc(CURRENT_USER || 'ไม่มี') + '</div>';
+
+      h += '<div class="gc-sec">📜 รายการล่าสุด (' + list.length + ')</div>';
+      if (!list.length) {
+        h += '<div class="gc-empty">ยังไม่พบข้อผิดพลาด — ระบบกำลังเฝ้าดูอยู่<br>' +
+             '<span class="gc-k">ดัก JS error · promise ที่ไม่ถูกจับ · console.error · console.warn</span></div>';
+        return h;
+      }
+
+      h += list.map(function (e) {
+        const t = TY[e.ty] || ['', e.ty];
+        return '<div class="gc-err' + (t[0] ? ' ' + t[0] : '') + '">' +
+          '<div class="gc-err-h"><span class="gc-tag">' + t[1] + '</span>' +
+          '<span>' + gcTime(e.t) + (e.n > 1 ? ' · ซ้ำ ×' + e.n : '') + '</span>' +
+          '<span>👤 ' + esc(e.u || '-') + '</span></div>' +
+          '<div class="gc-err-m">' + esc(e.m) + '</div>' +
+          (e.s ? '<div class="gc-k" style="margin-top:3px">📍 ' + esc(e.s) + '</div>' : '') +
+          (e.snap ? '<div class="gc-k" style="margin-top:3px">🖥️ ' + esc(e.snap) + '</div>' : '') +
+          (e.k ? '<pre class="gc-pre">' + esc(e.k) + '</pre>' : '') +
+        '</div>';
+      }).join('');
+
+      return h;
+    }
+
+    // ══════════════════════════════════════════════════
+    // Export ประวัติ (CSV แยกจาก Export เดิมของ v4.0)
+    // ══════════════════════════════════════════════════
+
+    function gcExportAudit() {
+      const s = loadStore();
+      let rows = Object.keys(s).map(function (k) { return s[k]; });
+      if (GC_ROOM) rows = rows.filter(function (a) { return gcRoomOf(a) === GC_ROOM; });
+      if (!rows.length) { gcTip('⚠️ ไม่มีข้อมูลในกลุ่มที่เลือก'); return; }
+
+      rows.sort(function (a, b) {
+        return gcRoomOf(a).localeCompare(gcRoomOf(b), 'th') || (b.maxFloor || 1) - (a.maxFloor || 1);
+      });
+
+      const head = ['classroom', 'username', 'display_name', 'rank', 'level', 'max_floor',
+                    'current_floor', 'accuracy_%', 'correct', 'wrong', 'login_count',
+                    'play_time', 'first_seen', 'last_login', 'last_active',
+                    'bag_used', 'items', 'top_wrong_words', 'recent_activity', 'status'];
+      const lines = [head.join(',')];
+
+      rows.forEach(function (a) {
+        const weak = weakWordsOf(a, 5).map(function (w) {
+          return w.word + '(ผิด ' + w.wrong + '/' + w.seen + ')';
+        }).join(' · ') || '-';
+
+        const bag = ITEMS.filter(function (it) { return (a.items && a.items[it.key]) > 0; })
+          .map(function (it) { return it.name + '×' + a.items[it.key]; }).join(' · ') || '-';
+
+        const acts = (a.gcLog || []).slice(-5).reverse()
+          .map(function (e) { return gcTime(e.t) + ' ' + e.m; }).join(' | ') || '-';
+
+        const first = (a.sessions && a.sessions.length) ? a.sessions[0] : a.createdAt;
+
+        lines.push([
+          gcRoomOf(a), a.user, a.name,
+          rankOfFloor(a.maxFloor || 1).key, a.level || 1,
+          (a.maxFloor || 1) + '/' + FLOOR_MAX, a.floor || 1,
+          accAccuracy(a), a.correct || 0, a.wrong || 0,
+          a.loginCount || 0, gcDur(a.playMs),
+          gcTime(first), gcTime(a.lastLogin), gcTime(a.lastActive),
+          gcBagUsed(a) + '/' + BAG_SLOTS, bag, weak, acts,
+          a.frozen ? 'frozen' : 'active'
+        ].map(function (x) { return '"' + String(x).replace(/"/g, '""') + '"'; }).join(','));
+      });
+
+      const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'hanzi_hunter_audit_' + (GC_ROOM ? GC_ROOM.replace(/[^\w฀-๿.-]+/g, '_') + '_' : '') +
+                      new Date().toISOString().slice(0, 10) + '.csv';
+      link.click();
+      URL.revokeObjectURL(url);
+      gcTip('⬇️ Export ประวัติ ' + rows.length + ' คนแล้ว');
+    }
+
+    // ══════════════════════════════════════════════════
+    // ติดตั้งชั้นนี้ลง DOM ของแผง GM
+    // ══════════════════════════════════════════════════
+
+    function gcInstall() {
+      if (!document.getElementById('gcStyle')) {
+        document.head.insertAdjacentHTML('beforeend',
+          '<style id="gcStyle">' +
+          '#gcTip{position:fixed;left:50%;top:14px;transform:translate(-50%,-16px);z-index:900;max-width:92vw;' +
+            'padding:9px 14px;border-radius:10px;background:#16202c;border:1px solid #2ef2d0;color:#dff8f3;' +
+            'font-family:inherit;font-size:12px;font-weight:700;box-shadow:0 6px 22px rgba(0,0,0,.5);' +
+            'opacity:0;pointer-events:none;transition:opacity .22s ease,transform .22s ease;text-align:center}' +
+          '#gcTip.on{opacity:1;transform:translate(-50%,0)}' +
+          '#gcScope{margin-top:8px;font-size:11.5px;font-weight:700;color:#8fd8ff;text-align:left;line-height:1.5}' +
+          /* ปุ่มของชั้นนี้วางในคอลัมน์ชื่อ ไม่ไปเบียดคอลัมน์ "จัดการ" ที่มี 6 ปุ่มเดิมอยู่แล้ว
+             (ยัดเพิ่มตรงนั้นจะดันตารางกว้างเกินกรอบจนต้องเลื่อนแนวนอนถึงจะเห็นปุ่ม) */
+          '.gc-row-btns{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px}' +
+          '.gc-row-btn{padding:4px 8px;border-radius:7px;font-family:inherit;font-size:10.5px;font-weight:700;' +
+            'cursor:pointer;white-space:nowrap;border:1px solid rgba(143,216,255,.35);' +
+            'background:#0d131d;color:#8fd8ff}' +
+          '.gc-row-btn:hover{border-color:#2ef2d0;color:#2ef2d0}' +
+          '.gc-row-btn.heal{border-color:rgba(46,242,208,.5);color:#2ef2d0}' +
+          '.gc-room{display:inline-block;margin-left:6px;padding:0 6px;border-radius:99px;font-size:10px;' +
+            'font-weight:700;background:rgba(56,182,255,.14);color:#8fd8ff;border:1px solid rgba(56,182,255,.4)}' +
+          '.gc-badge{display:inline-block;min-width:16px;padding:0 5px;margin-left:5px;border-radius:99px;' +
+            'background:#ff5a6e;color:#fff;font-size:10px;font-weight:800;line-height:15px;text-align:center}' +
+          '#gcModal{position:fixed;inset:0;background:rgba(13,19,29,.94);display:none;align-items:center;' +
+            'justify-content:center;padding:12px;z-index:700}' +
+          '#gcModal.active{display:flex}' +
+          /* กล่องกรอกข้อความของ v4.0 (z-index 600) ถูกเปิดจากในแฟ้มฮันเตอร์ได้ ต้องยกให้ลอยเหนือกว่า */
+          '#gmModal{z-index:820}' +
+          '.gc-body .gm-btn:disabled{opacity:.4;cursor:not-allowed}' +
+          '.gc-box{box-sizing:border-box;width:100%;max-width:560px;max-height:88vh;display:flex;flex-direction:column;' +
+            'background:#16202c;border:2px solid #ffc845;border-radius:12px;overflow:hidden;' +
+            'box-shadow:0 0 32px rgba(255,200,69,.4)}' +
+          '.gc-head{display:flex;align-items:flex-start;gap:8px;padding:12px 14px 10px;' +
+            'border-bottom:1px solid rgba(255,200,69,.25)}' +
+          '.gc-h-t{flex:1;min-width:0;font-size:14px;font-weight:700;color:#ffc845;line-height:1.35;text-align:left}' +
+          '.gc-h-s{display:block;font-size:11px;color:#8a97b5;font-weight:400;margin-top:2px;word-break:break-word}' +
+          '.gc-tabs{display:flex;gap:5px;padding:9px 12px;flex-wrap:wrap}' +
+          '.gc-tabs:empty{display:none}' +
+          '.gc-tab{flex:1 1 auto;min-width:76px;padding:7px 6px;border-radius:8px;font-family:inherit;font-size:11px;' +
+            'font-weight:700;cursor:pointer;border:1px solid rgba(143,216,255,.3);background:#0d131d;color:#8fd8ff}' +
+          '.gc-tab.on{background:linear-gradient(180deg,#2ef2d0,#28c6b0);border-color:#2ef2d0;color:#04231f}' +
+          '.gc-body{box-sizing:border-box;padding:4px 14px 14px;overflow-y:auto;text-align:left}' +
+          '.gc-sec{font-size:11px;font-weight:800;letter-spacing:.4px;color:#2ef2d0;margin:13px 0 6px}' +
+          '.gc-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:7px}' +
+          '.gc-cell{background:rgba(255,255,255,.045);border-radius:8px;padding:7px 9px;min-width:0}' +
+          '.gc-k{font-size:10px;color:#8a97b5;line-height:1.5;word-break:break-word}' +
+          '.gc-v{font-size:13px;font-weight:700;color:#f2f6fa;margin-top:1px;word-break:break-word;line-height:1.4}' +
+          '.gc-log{max-height:236px;overflow-y:auto;padding-right:2px}' +
+          '.gc-le{display:flex;gap:8px;padding:6px 8px;border-radius:7px;background:rgba(255,255,255,.04);margin-bottom:5px}' +
+          '.gc-li{flex:0 0 auto;font-size:13px;min-width:16px;text-align:center;color:#8fd8ff;font-weight:700}' +
+          '.gc-lm{flex:1;min-width:0;font-size:11.5px;color:#dfe7f2;line-height:1.45;word-break:break-word}' +
+          '.gc-lt{display:block;font-size:10px;color:#7d8ba0;margin-top:2px}' +
+          '.gc-item{display:flex;align-items:center;gap:7px;padding:7px 9px;border-radius:8px;' +
+            'background:rgba(255,255,255,.04);margin-bottom:6px}' +
+          '.gc-item-n{flex:1;min-width:0;font-size:12px;color:#f2f6fa}' +
+          '.gc-item-n small{display:block;font-size:10px;color:#8a97b5;line-height:1.4;margin-top:1px}' +
+          '.gc-cnt{flex:0 0 auto;min-width:26px;text-align:center;font-size:14px;font-weight:800;color:#ffc845}' +
+          '.gc-btns{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}' +
+          '.gc-btns .gm-btn{flex:1 1 auto}' +
+          '.gc-note{font-size:10.5px;color:#8a97b5;line-height:1.6;margin-top:8px;word-break:break-word}' +
+          '.gc-empty{text-align:center;color:#8a97b5;font-size:12px;padding:16px 8px;line-height:1.6}' +
+          '.gc-err{background:rgba(255,107,122,.08);border-left:3px solid #ff6b7a;border-radius:7px;' +
+            'padding:7px 9px;margin-bottom:6px}' +
+          '.gc-err.warn{background:rgba(255,200,69,.08);border-left-color:#ffc845}' +
+          '.gc-err.snap{background:rgba(56,182,255,.08);border-left-color:#38b6ff}' +
+          '.gc-err-h{display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:10px;color:#8a97b5}' +
+          '.gc-err-m{font-size:11.5px;color:#ffd9de;margin-top:3px;word-break:break-word;line-height:1.45}' +
+          '.gc-err.warn .gc-err-m{color:#ffe9bd}' +
+          '.gc-err.snap .gc-err-m{color:#cfe9ff}' +
+          '.gc-tag{display:inline-block;padding:1px 6px;border-radius:99px;font-size:9.5px;font-weight:700;' +
+            'background:rgba(46,242,208,.15);color:#2ef2d0;border:1px solid rgba(46,242,208,.4)}' +
+          '.gc-pre{margin:5px 0 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:9.5px;' +
+            'color:#8a97b5;white-space:pre-wrap;word-break:break-all;max-height:76px;overflow:auto}' +
+          '@media(max-width:520px){.gc-grid{grid-template-columns:1fr}}' +
+          '</style>');
+      }
+
+      /* ปุ่มชุดใหม่บนหัวแผง — แทรกครั้งเดียว (กับดักข้อ 2) */
+      const headBtns = document.querySelector('#gmPanel .gm-head-btns');
+      if (headBtns && !document.getElementById('gcErrBtn')) {
+        headBtns.insertAdjacentHTML('afterbegin',
+          '<button class="gm-btn" id="gcErrBtn" onclick="gcOpenErr()" title="Console / JS Error Log ของเครื่องนี้">' +
+            '🐞 Error Log<span class="gc-badge" id="gcErrCount" style="display:none">0</span></button>' +
+          '<button class="gm-btn jade" onclick="gcExportAudit()" title="Export ประวัติ + คำที่ผิดบ่อย (ตามกลุ่มที่กรองอยู่)">' +
+            '📊 Export ประวัติ</button>' +
+          '<button class="gm-btn" onclick="gcUnlockNow()" title="ล้างหน้าต่างค้าง/นาฬิกาค้างของหน้าจอเกมบนเครื่องนี้">' +
+            '🚑 ปลดล็อกหน้าจอ</button>');
+      }
+
+      /* ตัวกรองกลุ่มห้องเรียน ต่อท้ายแถวค้นหาเดิม */
+      const tools = document.querySelector('#gmPanel .gm-tools');
+      if (tools && !document.getElementById('gcRoom')) {
+        tools.insertAdjacentHTML('beforeend',
+          '<select class="gm-input" id="gcRoom" style="flex:0 0 210px" onchange="gcSetRoom(this.value)"></select>' +
+          '<button class="gm-btn" onclick="gcBulkRoom()" ' +
+            'title="ย้ายฮันเตอร์ทุกคนที่แสดงอยู่ในตารางตอนนี้ไปกลุ่มเดียวกัน">🏫 จัดกลุ่มยกชุด</button>');
+      }
+
+      /* บรรทัดบอกขอบเขตของ KPI ใต้การ์ดสรุป */
+      const kpis = document.querySelector('#gmPanel .gm-kpis');
+      if (kpis && !document.getElementById('gcScope')) {
+        kpis.insertAdjacentHTML('afterend', '<div id="gcScope"></div>');
+      }
+
+      if (!document.getElementById('gcModal')) {
+        document.body.insertAdjacentHTML('beforeend',
+          '<div id="gcModal">' +
+            '<div class="gc-box">' +
+              '<div class="gc-head">' +
+                '<div class="gc-h-t" id="gcTitle"></div>' +
+                '<button class="gm-btn red sm" onclick="gcClose()">✕</button>' +
+              '</div>' +
+              '<div class="gc-tabs" id="gcTabs"></div>' +
+              '<div class="gc-body" id="gcBody"></div>' +
+            '</div>' +
+          '</div>');
+      }
+
+      gcErrBadge();
+    }
+
+    // ══════════════════════════════════════════════════
+    // ตกแต่งตารางของ v4.0 หลัง gmRender ทำงานเสร็จ
+    // ══════════════════════════════════════════════════
+
+    /* ผูกรหัสฮันเตอร์กลับเข้าแถว — v4.0 ไม่ได้ใส่ id ไว้ที่ <tr> จึงอ่านจาก onclick ของปุ่มแจกทอง
+       (esc() แปลง ' เป็น &#39; แล้ว การอ่านผ่าน getAttribute จึงได้ข้อความจริงคืนมา) */
+    function gcTagRows() {
+      const body = document.getElementById('gmBody');
+      if (!body) return;
+      Array.prototype.forEach.call(body.rows, function (tr) {
+        const b = tr.querySelector('button[onclick^="gmGift("]');
+        const m = b && /^gmGift\('(.*)'\)$/.exec((b.getAttribute('onclick') || '').trim());
+        if (m) tr.dataset.gcUser = m[1];
+      });
+    }
+
+    function gcDecorateRows() {
+      const store = loadStore();
+      const body = document.getElementById('gmBody');
+      if (!body) return;
+
+      Array.prototype.forEach.call(body.rows, function (tr) {
+        const u = tr.dataset.gcUser;
+        const a = u && store[u];
+        if (!a) return;
+
+        const sub = tr.querySelector('.gm-sub');
+        if (sub && !sub.querySelector('.gc-room')) {
+          sub.insertAdjacentHTML('beforeend', '<span class="gc-room">🏫 ' + esc(gcRoomOf(a)) + '</span>');
+        }
+
+        const cell = tr.cells[0];
+        if (cell && !cell.querySelector('.gc-row-btns')) {
+          /* ผูก onclick ด้วย JS ไม่ฝังชื่อผู้ใช้ลง attribute — ชื่อที่มีอัญประกาศจะไม่ทำ HTML พัง */
+          const file = document.createElement('button');
+          file.className = 'gc-row-btn';
+          file.textContent = '📋 แฟ้มฮันเตอร์';
+          file.title = 'ประวัติกิจกรรม · คลังไอเทม · ปรับสถานะ · กู้คืนฉุกเฉิน';
+          file.onclick = function () { gcOpen(u, 'log'); };
+
+          const heal = document.createElement('button');
+          heal.className = 'gc-row-btn heal';
+          heal.textContent = '💊 เติม HP/MP';
+          heal.title = 'เติม HP และ MP เต็มทันที';
+          heal.onclick = function () { gcHeal(u, 'all'); };
+
+          const wrap = document.createElement('div');
+          wrap.className = 'gc-row-btns';
+          wrap.appendChild(file);
+          wrap.appendChild(heal);
+          cell.appendChild(wrap);
+        }
+      });
+    }
+
+    /* กรองตามกลุ่ม + คำนวณ KPI ใหม่ให้ตรงกับกลุ่มที่กรองอยู่
+       (ของเดิมคิด KPI จากทั้งเกทเสมอ ถ้าปล่อยไว้ครูจะอ่านค่าเฉลี่ยผิดกลุ่ม) */
+    function gcFilterRows() {
+      const store = loadStore();
+      const body = document.getElementById('gmBody');
+      if (!body) return;
+
+      let shown = 0;
+      Array.prototype.forEach.call(body.rows, function (tr) {
+        const a = store[tr.dataset.gcUser];
+        const ok = !GC_ROOM || (a && gcRoomOf(a) === GC_ROOM);
+        tr.style.display = ok ? '' : 'none';
+        if (ok) shown++;
+      });
+
+      const empty = document.getElementById('gmEmpty');
+      if (empty) {
+        empty.style.display = shown ? 'none' : 'block';
+        empty.textContent = GC_ROOM
+          ? '[ระบบ] ไม่พบฮันเตอร์ในกลุ่ม ' + GC_ROOM + ' ที่ตรงกับคำค้น'
+          : '[ระบบ] ยังไม่มีฮันเตอร์ลงทะเบียนในเกท';
+      }
+
+      const rows = Object.keys(store).map(function (k) { return store[k]; })
+        .filter(function (a) { return !GC_ROOM || gcRoomOf(a) === GC_ROOM; });
+
+      const n = rows.length;
+      const totAns = rows.reduce(function (s, a) { return s + (a.correct || 0) + (a.wrong || 0); }, 0);
+      const avgLv  = n ? rows.reduce(function (s, a) { return s + (a.level || 1); }, 0) / n : 0;
+      const avgAcc = n ? Math.round(rows.reduce(function (s, a) { return s + accAccuracy(a); }, 0) / n) : 0;
+
+      const set = function (id, v) { const el = document.getElementById(id); if (el) el.textContent = v; };
+      set('kpiStudents', n);
+      set('kpiLevel', avgLv.toFixed(1));
+      set('kpiAcc', avgAcc + '%');
+      set('kpiAnswers', totAns);
+
+      const scope = document.getElementById('gcScope');
+      if (scope) {
+        const online = rows.filter(function (a) { return Date.now() - (a.lastActive || 0) < 900000; }).length;
+        scope.textContent = (GC_ROOM ? '🏫 ขอบเขตสถิติ: กลุ่ม ' + GC_ROOM : '🏫 ขอบเขตสถิติ: ทุกกลุ่มรวมกัน') +
+          ' · ' + n + ' คน · เพิ่งเล่นใน 15 นาที ' + online + ' คน · แสดงในตาราง ' + shown + ' แถว';
+      }
+    }
+
+    // ══════════════════════════════════════════════════
+    // ห่อฟังก์ชันของชั้นล่าง (ไม่แก้ของเดิม)
+    // ══════════════════════════════════════════════════
+
+    /* บัญชีเก่าที่เล่นมาก่อนมีชั้นนี้ต้องได้ฟิลด์ครบเหมือนบัญชีใหม่ */
+    const _gcMigrateAccount = migrateAccount;
+    migrateAccount = function (a) {
+      return gcEnsure(_gcMigrateAccount.apply(this, arguments));
+    };
+
+    const _gcStartGame = startGame;
+    startGame = function (username) {
+      const r = _gcStartGame.apply(this, arguments);
+      const s = loadStore(), a = s[username];
+      if (a) {
+        const now = Date.now();
+        a.lastLogin = now;
+        a.loginCount = (a.loginCount || 0) + 1;
+        if (!Array.isArray(a.sessions)) a.sessions = [];
+        a.sessions.push(now);
+        if (a.sessions.length > GC_SESS_MAX) a.sessions = a.sessions.slice(-GC_SESS_MAX);
+        gcPush(a, '🚪', 'เข้าเกท — ชั้น ' + (a.floor || 1) + ' · Lv.' + (a.level || 1) + ' · 🏫 ' + gcRoomOf(a));
+        saveStore(s);
+      }
+      GC_PREV = gcSnapshot();
+      GC_TICK = Date.now();
+      return r;
+    };
+
+    /* v4.0 saveProgress ไม่รู้จักฟิลด์ของชั้นนี้ — เขียนต่อท้ายเองเฉพาะตอนมีเหตุการณ์จริง
+       หรือครบคาบ 1 นาที (saveProgress ถูกเรียกถี่มาก ถ้าเขียนทุกครั้งจะกิน localStorage เปล่า ๆ) */
+    const _gcSaveProgress = saveProgress;
+    saveProgress = function () {
+      const r = _gcSaveProgress.apply(this, arguments);
+      if (!CURRENT_USER || !GC_PREV) return r;
+
+      const p = GC_PREV, ev = [];
+      if ((G.maxFloor || 1) > p.maxFloor)   ev.push(['🏯', 'ไต่ถึงชั้น ' + G.maxFloor + ' — สถิติใหม่']);
+      if ((G.bossClears || 0) > p.boss)     ev.push(['👑', 'ปราบบอสสำเร็จ (สะสม ' + G.bossClears + ' ตัว)']);
+      if ((G.towerClears || 0) > p.tower)   ev.push(['🏆', 'พิชิตหอคอยครบ ' + FLOOR_MAX + ' ชั้น (รอบที่ ' + G.towerClears + ')']);
+      if ((G.level || 1) > p.level)         ev.push(['⭐', 'เลื่อนเป็นเลเวล ' + G.level]);
+      if ((G.floor || 1) < p.floor)         ev.push(['💀', 'ร่วงจากชั้น ' + p.floor + ' → ชั้น ' + G.floor]);
+
+      const fresh = (G.titles || []).filter(function (t) { return p.titles.indexOf(t) === -1; });
+      if (fresh.length) {
+        ev.push(['🏅', 'ปลดล็อกฉายา ' + fresh.map(function (t) {
+          return titleOf(t).icon + ' ' + titleOf(t).name;
+        }).join(', ')]);
+      }
+
+      const now = Date.now();
+      if (ev.length || now - GC_TICK >= GC_FLUSH_MS) {
+        const s = loadStore(), a = s[CURRENT_USER];
+        if (a) {
+          ev.forEach(function (e) { gcPush(a, e[0], e[1]); });
+          /* เพดาน 5 นาทีต่อรอบ กันกรณีเปิดแท็บค้างทิ้งไว้แล้วกลับมากดต่อ เวลาเล่นจะพุ่งเกินจริง */
+          a.playMs = (a.playMs || 0) + Math.min(now - GC_TICK, GC_FLUSH_MS * 5);
+          saveStore(s);
+        }
+        GC_TICK = now;
+      }
+      GC_PREV = gcSnapshot();
+      return r;
+    };
+
+    const _gcExitGame = exitGame;
+    exitGame = function () {
+      const user = CURRENT_USER, tick = GC_TICK;
+      const r = _gcExitGame.apply(this, arguments);
+      if (user && tick) {
+        const s = loadStore(), a = s[user];
+        if (a) {
+          a.playMs = (a.playMs || 0) + Math.min(Date.now() - tick, GC_FLUSH_MS * 5);
+          gcPush(a, '🚪', 'ออกจากเกท — เล่นสะสมรวม ' + gcDur(a.playMs));
+          saveStore(s);
+        }
+      }
+      GC_PREV = null;
+      GC_TICK = 0;
+      return r;
+    };
+
+    const _gcOpenGm = openGm;
+    openGm = function () {
+      gcInstall();
+      return _gcOpenGm.apply(this, arguments);
+    };
+
+    const _gcCloseGm = closeGm;
+    closeGm = function () {
+      gcClose();
+      return _gcCloseGm.apply(this, arguments);
+    };
+
+    const _gcGmRender = gmRender;
+    gmRender = function () {
+      gcInstall();
+      const r = _gcGmRender.apply(this, arguments);
+      gcTagRows();
+      gcSyncRoomSelect();
+      gcDecorateRows();
+      gcFilterRows();     /* ต้องหลัง decorate — KPI และตัวนับแถวอ่านสถานะ display ล่าสุด */
+      return r;
+    };
+
+    /* Export เดิมของ v4.0 ให้เคารพตัวกรองกลุ่มด้วย — สลับ loadStore ชั่วคราวระหว่างเรียกเท่านั้น
+       ปลอดภัยเพราะ gmExportCsv อ่านอย่างเดียว ทำงานจบภายในทิกเดียว และไม่เรียก saveStore */
+    const _gcGmExportCsv = gmExportCsv;
+    gmExportCsv = function () {
+      if (!GC_ROOM) return _gcGmExportCsv.apply(this, arguments);
+      const real = loadStore;
+      loadStore = function () {
+        const all = real(), out = {};
+        Object.keys(all).forEach(function (k) { if (gcRoomOf(all[k]) === GC_ROOM) out[k] = all[k]; });
+        return out;
+      };
+      try { return _gcGmExportCsv.apply(this, arguments); }
+      finally { loadStore = real; }
+    };
+
+    /* ── บันทึกคำสั่งของ GM ลงไทม์ไลน์ ──────────────────
+       gmPrompt/gmConfirm ของ v4.0 ตั้ง onclick ให้ปุ่ม ✅ ยืนยันแบบซิงโครนัส
+       จึงต่อโค้ดท้ายปุ่มนั้นได้ และจะทำงานเฉพาะตอน "กดยืนยันจริง" (กดยกเลิกไม่ยิง) */
+    function gcAfterConfirm(fn) {
+      const ok = document.getElementById('gmModalOk');
+      if (!ok) return;
+      const inner = ok.onclick;
+      ok.onclick = function (e) {
+        const r = inner ? inner.call(this, e) : undefined;
+        try { fn(); } catch (err) {}
+        return r;
+      };
+    }
+
+    function gcLogGm(user, icon, msg) {
+      const s = loadStore(), a = s[user];
+      if (!a) return;
+      gcPush(a, icon, msg);
+      saveStore(s);
+    }
+
+    const _gcGmGift = gmGift;
+    gmGift = function (user) {
+      const before = (loadStore()[user] || {}).gold || 0;
+      const r = _gcGmGift.apply(this, arguments);
+      gcAfterConfirm(function () {
+        const after = (loadStore()[user] || {}).gold || 0;
+        if (after !== before) gcLogGm(user, '🎁', 'GM แจกทอง ' + (after - before > 0 ? '+' : '') + (after - before) + ' (รวม ' + after + ')');
+      });
+      return r;
+    };
+
+    const _gcGmEditLevel = gmEditLevel;
+    gmEditLevel = function (user) {
+      const before = (loadStore()[user] || {}).level || 1;
+      const r = _gcGmEditLevel.apply(this, arguments);
+      gcAfterConfirm(function () {
+        const after = (loadStore()[user] || {}).level || 1;
+        if (after !== before) gcLogGm(user, '✏️', 'GM แก้เลเวล ' + before + ' → ' + after);
+      });
+      return r;
+    };
+
+    const _gcGmResetPw = gmResetPw;
+    gmResetPw = function (user) {
+      const r = _gcGmResetPw.apply(this, arguments);
+      gcAfterConfirm(function () { gcLogGm(user, '🔑', 'GM รีเซ็ตรหัสผ่านลับ'); });
+      return r;
+    };
+
+    const _gcGmFreeze = gmFreeze;
+    gmFreeze = function (user) {
+      const r = _gcGmFreeze.apply(this, arguments);
+      gcAfterConfirm(function () {
+        const a = loadStore()[user];
+        if (a) gcLogGm(user, '❄️', a.frozen ? 'GM ระงับสิทธิ์เข้าเกท' : 'GM ปลดระงับสิทธิ์เข้าเกท');
+      });
+      return r;
+    };
+
+    /* gmResetProgress สร้างบัญชีใหม่จาก blankAccount แล้วคง user/name/pw/frozen/createdAt ไว้
+       → กลุ่มห้องเรียนและไทม์ไลน์กิจกรรมจะหายไปด้วย ซึ่งไม่ใช่เจตนาของ "ล้างความคืบหน้า"
+       จึงเก็บไว้ก่อนแล้วคืนกลับหลังกดยืนยัน */
+    const _gcGmResetProgress = gmResetProgress;
+    gmResetProgress = function (user) {
+      const old = loadStore()[user];
+      const keep = old ? {
+        classroom: gcRoomOf(old),
+        gcLog: (old.gcLog || []).slice(),
+        sessions: (old.sessions || []).slice(),
+        loginCount: old.loginCount || 0,
+        lastLogin: old.lastLogin || 0,
+        playMs: old.playMs || 0
+      } : null;
+
+      const r = _gcGmResetProgress.apply(this, arguments);
+
+      if (keep) gcAfterConfirm(function () {
+        const s = loadStore(), a = s[user];
+        if (!a) return;
+        Object.assign(a, keep);
+        gcPush(a, '🔄', 'GM ล้างความคืบหน้า (คงกลุ่ม 🏫 ' + keep.classroom + ' และประวัติไว้)');
+        saveStore(s);
+        gcLive(user);
+        gmRender();
+      });
+      return r;
+    };
+
+    // ── ติดตั้งทันทีที่สคริปต์ถูกโหลด ────────────────────
+    gcInstall();
   </script>
 </body>
 </html>

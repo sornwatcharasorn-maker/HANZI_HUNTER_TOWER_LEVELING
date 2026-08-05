@@ -21,7 +21,7 @@ from PIL import Image, ImageDraw
 HERE = os.path.dirname(os.path.abspath(__file__))
 GAME = os.path.join(os.path.dirname(HERE), 'hanzi_hunter_tower_v3_1_intro.html')
 
-TARGET_W = 440      # กว้างพอสำหรับจอ 2x โดยไม่ทำให้ไฟล์บวม
+TARGET_W = 560      # เพดานความกว้าง — ไม่ขยายภาพเกินขนาดต้นฉบับ (ขยายแล้วได้แต่ความเบลอกับไฟล์ที่ใหญ่ขึ้น)
 QUALITY = 82        # เท่ากับ SN_WARP_ART ที่ใช้อยู่
 BUDGET_KB = 2048    # เพดานไฟล์รวมตาม CLAUDE.md
 
@@ -29,17 +29,19 @@ BUDGET_KB = 2048    # เพดานไฟล์รวมตาม CLAUDE.md
 def main(path):
     im = Image.open(path).convert('RGB')
     w0, h0 = im.size
-    h = round(h0 * TARGET_W / w0)
-    im = im.resize((TARGET_W, h), Image.LANCZOS)
+    w = min(TARGET_W, w0)
+    h = round(h0 * w / w0)
+    if (w, h) != (w0, h0):
+        im = im.resize((w, h), Image.LANCZOS)
 
     buf = io.BytesIO()
     im.save(buf, 'WEBP', quality=QUALITY, method=6)
     raw = buf.getvalue()
     b64 = base64.b64encode(raw).decode()
-    ar = round(h / TARGET_W, 4)
+    ar = round(h / w, 4)
 
     print('ภาพต้นฉบับ  %dx%d' % (w0, h0))
-    print('ย่อเหลือ    %dx%d  (สัดส่วน สูง/กว้าง = %.4f)' % (TARGET_W, h, ar))
+    print('ใช้ขนาด    %dx%d  (สัดส่วน สูง/กว้าง = %.4f)' % (w, h, ar))
     print('WebP q%d    %.1f KB  →  base64 %.1f KB' % (QUALITY, len(raw) / 1024, len(b64) / 1024))
 
     # ภาพตัวช่วยวัดสัดส่วน
@@ -48,9 +50,9 @@ def main(path):
     for pct in range(0, 101, 5):
         y = h * pct / 100
         strong = pct % 25 == 0
-        d.line([(0, y), (TARGET_W, y)], fill=(255, 60, 60) if strong else (255, 220, 0), width=2 if strong else 1)
+        d.line([(0, y), (w, y)], fill=(255, 60, 60) if strong else (255, 220, 0), width=2 if strong else 1)
         d.text((4, max(0, y - 12)), '%d%%' % pct, fill=(255, 255, 255))
-    d.line([(TARGET_W / 2, 0), (TARGET_W / 2, h)], fill=(0, 255, 255), width=1)
+    d.line([(w / 2, 0), (w / 2, h)], fill=(0, 255, 255), width=1)
     ruler_path = os.path.join(HERE, 'tower_art_ruler.png')
     ruler.save(ruler_path)
     print('ไม้บรรทัดวัดสัดส่วน → %s' % ruler_path)

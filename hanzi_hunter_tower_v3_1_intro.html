@@ -8619,6 +8619,782 @@
 
       cxInstallButton();
     })();
+
+    // ══════════════════════════════════════════════════════════════
+    // v4.5 · TOWER RADAR — เรดาร์ดันเจี้ยนสามมิติ (isometric wireframe)
+    // ══════════════════════════════════════════════════════════════
+    /* ชั้นนี้ไม่แก้โค้ด v4.0 / v4.1 / v4.2 / v4.3 / v4.4 เลย — ห่อฟังก์ชันแบบเดียวกับสี่ชั้นก่อนหน้า
+       ลบตั้งแต่บรรทัดนี้ถึงท้ายไฟล์ทิ้งได้ทั้งก้อน แล้วแถบชั้นแบนของ v4.0 (#gFloorBar) จะกลับมาทำงานเอง */
+
+    const TR_VER = 1;
+
+    /* ── ยุคสมัยของหอคอย 5 ช่วง (ชั้นละ 4 ชั้น) ──
+       เปลี่ยนบรรยากาศตามความสูง: line = เส้นโครงร่าง · glow = เส้นเรืองแสง ·
+       accent = สีเกราะอวตาร/ออร่า · sky0-sky1 = ไล่โทนฉากหลัง (บนสว่าง ล่างมืด) */
+    const TR_ERAS = [
+      { r: 'I',   from: 1,  to: 4,
+        name: 'เขตฐานป้อมปราการ',              en: 'Earthy Brick & Sandstone',
+        line: '#d79a5c', glow: '#ffd39b', accent: '#e8a765', sky0: '#1d140d', sky1: '#4a3018' },
+      { r: 'II',  from: 5,  to: 8,
+        name: 'เขตคุกใต้ดินและทางเดินหิน',      en: 'Dark Slate & Mystic Moss',
+        line: '#7fae92', glow: '#9dffc8', accent: '#8ddcae', sky0: '#0c1513', sky1: '#1e332b' },
+      { r: 'III', from: 9,  to: 12,
+        name: 'หอคอยชั้นกลาง · ห้องโถงอัศวิน',   en: 'Silver Granite & Torch Flame',
+        line: '#c3cede', glow: '#ff9c4a', accent: '#dfe7f2', sky0: '#14161c', sky1: '#30313b' },
+      { r: 'IV',  from: 13, to: 16,
+        name: 'หอคอยเวทมนตร์ · ห้องทดลองอาร์เคน', en: 'Deep Indigo & Arcane Glow',
+        line: '#8f7dff', glow: '#c9a6ff', accent: '#a68cff', sky0: '#0d0b1f', sky1: '#251e52' },
+      { r: 'V',   from: 17, to: 20,
+        name: 'ยอดคริสตัล · บัลลังก์แห่งความจริง', en: 'Prismatic Crystal & Aurora Neon',
+        line: '#8fe9ff', glow: '#ffb3f0', accent: '#a8f0ff', sky0: '#071220', sky1: '#134055' }
+    ];
+
+    function trEraOf(f) {
+      const n = Math.max(1, Math.min(FLOOR_MAX, f || 1));
+      return TR_ERAS.find(function (e) { return n >= e.from && n <= e.to; }) || TR_ERAS[0];
+    }
+
+    /* ── เรขาคณิตไอโซเมตริก ──
+       ชั้นแต่ละชั้นคือรูปสี่เหลี่ยมขนมเปียกปูน (มุมมอง 2:1) ซ้อนกันขึ้นไป และเรียวลงเรื่อย ๆ
+       พิกัดทั้งหมดเป็นหน่วยของ viewBox ไม่ใช่พิกเซลจริง — กล้องเป็นคนย่อ/ขยายอีกที */
+    const TR_CX    = 150;    /* แกนกลางหอคอย */
+    const TR_BASE  = 700;    /* y ของพื้นชั้น 1 */
+    const TR_FH    = 34;     /* ความสูงต่อชั้น */
+    const TR_W0    = 96;     /* ครึ่งความกว้างชั้น 1 */
+    const TR_TAPER = 2.0;    /* เรียวลงชั้นละเท่าไร (ชั้น 20 เหลือ 58) */
+    const TR_RATIO = 0.34;   /* ความแบนของขนมเปียกปูน — ครึ่งความสูงต้องไม่เกินระยะห่างชั้น (TR_FH)
+                                มากนัก ไม่งั้นพื้นทั้ง 20 ชั้นจะซ้อนกันจนออกมาเป็นรูปกรวยแทนตึก */
+    const TR_ROOF  = 50;     /* ความสูงยอดพีระมิดเหนือชั้น 20 */
+
+    function trY(f) { return TR_BASE - (f - 1) * TR_FH; }
+    function trW(f) { return TR_W0 - (f - 1) * TR_TAPER; }
+    function trH(f) { return trW(f) * TR_RATIO; }
+
+    /* จุด 4 มุมของพื้นชั้น f: [ซ้าย, หลัง, ขวา, หน้า] */
+    function trCorners(f) {
+      const y = trY(f), w = trW(f), h = trH(f);
+      return [[TR_CX - w, y], [TR_CX, y - h], [TR_CX + w, y], [TR_CX, y + h]];
+    }
+    function trPts(pts) {
+      return pts.map(function (p) { return p[0].toFixed(1) + ',' + p[1].toFixed(1); }).join(' ');
+    }
+
+    /* ── กล้อง ──
+       compact = หน้าต่างแคบที่เลื่อนตามตัวละคร · open = ย่อจนเห็นครบทั้ง 20 ชั้น
+       ใช้ transform บน <g> (ทรานซิชันได้ด้วย CSS) ไม่ใช่ viewBox (ทรานซิชันไม่ได้) */
+    const TR_VH_C = 190, TR_VH_O = 430;
+    const TR_K_C  = 0.78;
+    let   TR_OPEN = false;
+
+    function trTop() { return trY(FLOOR_MAX) - TR_ROOF - 8; }   /* ยอดสุดของภาพ */
+    function trBot() { return TR_BASE + 36; }                   /* ล่างสุดของภาพ (รวมเงาฐาน) */
+
+    function trCam(floor) {
+      /* ย่อรอบจุด (0,0) จึงต้องเลื่อน x กลับมาให้แกนหอคอยอยู่กลางเฟรมเสมอ */
+      if (TR_OPEN) {
+        const k = Math.min(TR_K_C, (TR_VH_O - 14) / (trBot() - trTop()));
+        return { k: k, tx: TR_CX - TR_CX * k, ty: 7 - trTop() * k };
+      }
+      const k = TR_K_C;
+      const lo = TR_VH_C - 10 - trBot() * k;   /* ไม่เลื่อนต่ำกว่าฐานหอคอย */
+      const hi = 7 - trTop() * k;              /* ไม่เลื่อนสูงกว่ายอดหอคอย */
+      let ty = TR_VH_C * 0.58 - trY(floor) * k;
+      if (ty < lo) ty = lo;
+      if (ty > hi) ty = hi;
+      return { k: k, tx: TR_CX - TR_CX * k, ty: ty };
+    }
+
+    /* ── อวตารพิกเซลอาร์ต 9×12 ──
+       h ผ้าคลุม · f ใบหน้า · e ตา · c ไหล่/ผ้าคลุมหลัง · a เกราะ (สีตามยุค) ·
+       t เข็มขัด · l ขา · b รองเท้า · s ดาบเรืองแสง */
+    const TR_HERO_PX = [
+      '...hhh...',
+      '..hhhhh..',
+      '..hfffh.s',
+      '..feefh.s',
+      '...fff..s',
+      '.caaaac.s',
+      '.caaaaacs',
+      '..aaaaa..',
+      '..attta..',
+      '..ll.ll..',
+      '..ll.ll..',
+      '..bb.bb..'
+    ];
+    const TR_HERO_CLS = {
+      h: 'tr-p-h', f: 'tr-p-f', e: 'tr-p-e', c: 'tr-p-c',
+      a: 'tr-p-a', t: 'tr-p-t', l: 'tr-p-l', b: 'tr-p-b', s: 'tr-p-s'
+    };
+    const TR_PX = 2.2;   /* ขนาดพิกเซล 1 ช่อง → อวตารสูง 26.4 หน่วย ≈ 16px บนจอมือถือ */
+
+    function trHeroSvg() {
+      const w = TR_HERO_PX[0].length * TR_PX, h = TR_HERO_PX.length * TR_PX;
+      let out = '';
+      TR_HERO_PX.forEach(function (row, ry) {
+        for (let rx = 0; rx < row.length; rx++) {
+          const c = TR_HERO_CLS[row[rx]];
+          if (!c) continue;
+          out += '<rect class="' + c + '" x="' + (rx * TR_PX - w / 2).toFixed(2) +
+                 '" y="' + (ry * TR_PX - h).toFixed(2) +
+                 '" width="' + (TR_PX + 0.05).toFixed(2) + '" height="' + (TR_PX + 0.05).toFixed(2) + '"/>';
+        }
+      });
+      return out;
+    }
+
+    // ── สถานะรายชั้นของผู้เล่น ─────────────────────────────────────
+    /* v4.0 ไม่ได้เก็บว่า "ชั้นไหนเจอคำอะไรบ้าง" — ชั้นนี้จดเพิ่มเองที่ account.trFloors
+       โครงสร้าง { '7': { n: ตอบไปกี่ข้อ, ok: ถูกกี่ข้อ, ids: [id คำล่าสุด สูงสุด 10 ตัว] } }
+       ไม่มีทาง backfill ย้อนหลังได้ (ข้อมูลเดิมไม่เคยถูกเก็บ) จึงตีตรารุ่นไว้ที่ a.trv
+       ตามกฎกับดักข้อ 8 แล้วเริ่มจดตั้งแต่ชั้นนี้ถูกติดตั้งเป็นต้นไป */
+    const TR_IDS_MAX = 10;
+
+    function trG() { return (typeof G !== 'undefined' && G) ? G : null; }
+
+    function trEnsure(a) {
+      if (!a || typeof a !== 'object') return a;
+      if (!a.trFloors || typeof a.trFloors !== 'object' || Array.isArray(a.trFloors)) a.trFloors = {};
+      Object.keys(a.trFloors).forEach(function (k) {
+        const f = Number(k), r = a.trFloors[k];
+        if (!isFinite(f) || f < 1 || f > FLOOR_MAX || !r || typeof r !== 'object') { delete a.trFloors[k]; return; }
+        if (typeof r.n  !== 'number' || !isFinite(r.n)  || r.n  < 0) r.n  = 0;
+        if (typeof r.ok !== 'number' || !isFinite(r.ok) || r.ok < 0) r.ok = 0;
+        if (r.ok > r.n) r.ok = r.n;
+        if (!Array.isArray(r.ids)) r.ids = [];
+        r.ids = r.ids.filter(function (v) { return isFinite(v) && vocabById(Number(v)); }).slice(0, TR_IDS_MAX);
+      });
+      if (a.trv !== TR_VER) a.trv = TR_VER;   /* ตรารุ่น — ไม่มีอะไรให้ backfill ตั้งใจให้ว่าง */
+      return a;
+    }
+
+    function trFloorsOf(src) {
+      const s = src || trG();
+      return (s && s.trFloors && typeof s.trFloors === 'object') ? s.trFloors : {};
+    }
+
+    function trRecord(floor, id, ok) {
+      const g = trG();
+      if (!g) return;
+      if (!g.trFloors || typeof g.trFloors !== 'object') g.trFloors = {};
+      const k = String(Math.max(1, Math.min(FLOOR_MAX, floor || 1)));
+      const r = g.trFloors[k] || (g.trFloors[k] = { n: 0, ok: 0, ids: [] });
+      r.n++;
+      if (ok) r.ok++;
+      if (!Array.isArray(r.ids)) r.ids = [];
+      const i = r.ids.indexOf(id);
+      if (i !== -1) r.ids.splice(i, 1);
+      r.ids.unshift(id);
+      if (r.ids.length > TR_IDS_MAX) r.ids.length = TR_IDS_MAX;
+    }
+
+    /* v4.0 saveProgress ไม่รู้จักฟิลด์ trFloors — เขียนต่อท้ายให้เอง */
+    function trSaveFloors() {
+      if (!CURRENT_USER) return;
+      const g = trG();
+      if (!g || !g.trFloors) return;
+      const s = loadStore(), a = s[CURRENT_USER];
+      if (!a) return;
+      trEnsure(a);
+      Object.keys(g.trFloors).forEach(function (k) {
+        const src = g.trFloors[k];
+        a.trFloors[k] = { n: src.n, ok: src.ok, ids: src.ids.slice() };
+      });
+      saveStore(s);
+    }
+
+    // ── ประกอบภาพหอคอย (สร้างครั้งเดียว) ────────────────────────────
+    /* โครงหอคอยเป็นของนิ่ง — เปลี่ยนเฉพาะกล้อง/อวตาร/คลาสสถานะรายชั้นตอน paint
+       จึงไม่ต้องประกอบ HTML ใหม่ทุกครั้งที่ตอบข้อหนึ่ง */
+    function trTowerSvg() {
+      let defs = '', bg = '', deco = '', body = '', hits = '';
+
+      /* ฉากหลังไล่โทนตามยุค + เส้นคั่นยุค + เลขโรมันประจำยุค */
+      TR_ERAS.forEach(function (e, i) {
+        defs += '<linearGradient id="trSky' + i + '" x1="0" y1="0" x2="0" y2="1">' +
+                  '<stop offset="0" stop-color="' + e.sky1 + '"/>' +
+                  '<stop offset="1" stop-color="' + e.sky0 + '"/></linearGradient>';
+        const yTop = (i === TR_ERAS.length - 1) ? -220 : trY(e.to) - TR_FH / 2;
+        const yBot = (i === 0) ? 820 : trY(e.from) + TR_FH / 2;
+        bg += '<rect x="-260" y="' + yTop.toFixed(1) + '" width="820" height="' +
+              (yBot - yTop).toFixed(1) + '" fill="url(#trSky' + i + ')"/>';
+        if (i > 0) {
+          deco += '<line class="tr-era-div" x1="-260" y1="' + yBot.toFixed(1) +
+                  '" x2="560" y2="' + yBot.toFixed(1) + '" stroke="' + e.line + '"/>';
+        }
+        deco += '<text class="tr-era-r" x="284" y="' + (trY(e.from) - TR_FH * 1.4).toFixed(1) +
+                '" fill="' + e.line + '">' + e.r + '</text>';
+      });
+
+      /* ลำแสงสปอตไลท์จากยอดหอคอย + ฝุ่นแสงลอย */
+      defs += '<linearGradient id="trBeam" x1="0" y1="0" x2="0" y2="1">' +
+                '<stop offset="0" stop-color="#ffffff" stop-opacity=".30"/>' +
+                '<stop offset=".55" stop-color="#8fd8ff" stop-opacity=".07"/>' +
+                '<stop offset="1" stop-color="#8fd8ff" stop-opacity="0"/></linearGradient>' +
+              '<radialGradient id="trAura" cx=".5" cy=".5" r=".5">' +
+                '<stop offset="0" stop-color="#ffffff" stop-opacity=".85"/>' +
+                '<stop offset="1" stop-color="#ffffff" stop-opacity="0"/></radialGradient>';
+      deco = '<polygon class="tr-beam" points="' + (TR_CX - 16) + ',14 ' + (TR_CX + 16) + ',14 ' +
+             (TR_CX + 210) + ',780 ' + (TR_CX - 210) + ',780" fill="url(#trBeam)"/>' + deco;
+
+      const MOTES = [[62, 128], [246, 96], [96, 232], [214, 190], [44, 318], [262, 300],
+                     [120, 60], [196, 40], [70, 402], [238, 430], [104, 502], [208, 560],
+                     [56, 604], [252, 640]];
+      MOTES.forEach(function (p, i) {
+        deco += '<circle class="tr-mote" cx="' + p[0] + '" cy="' + p[1] + '" r="1.5" ' +
+                'style="animation-delay:' + (i * 0.37).toFixed(2) + 's"/>';
+      });
+
+      /* เงาฐานหอคอย */
+      body += '<ellipse class="tr-shadow" cx="' + TR_CX + '" cy="' + (TR_BASE + 24) +
+              '" rx="' + (TR_W0 + 20) + '" ry="' + (TR_W0 * TR_RATIO + 9) + '"/>';
+
+      /* ── ตัวหอคอย ──
+         ลำดับการวาดคือหัวใจของภาพ: ไล่จากชั้นล่างขึ้นบน และในแต่ละรอบวาด "พื้นชั้น" ก่อน
+         แล้วค่อยวาด "ผนังที่อยู่เหนือพื้นชั้นนั้น" ผนังจึงบังครึ่งหลังของพื้นชั้นล่าง
+         และพื้นชั้นถัดไปก็มาวางทับหัวผนังพอดี ได้ภาพตึกตัน ๆ ที่มีเส้นขอบเรืองแสง
+         (ถ้าวาดกลับด้านหรือวาดพื้นครบทุกชั้นรวดเดียว ขนมเปียกปูนจะซ้อนกันจนออกมาเป็นรูปกรวย) */
+      function trVars(f) {
+        const e = trEraOf(f);
+        return 'style="--l:' + e.line + ';--gl:' + e.glow + ';--ac:' + e.accent + '"';
+      }
+
+      for (let f = 1; f <= FLOOR_MAX; f++) {
+        const c = trCorners(f);
+        body += '<g class="tr-lv tr-plate" data-f="' + f + '" ' + trVars(f) + '>' +
+                  '<polygon class="tr-slab" points="' + trPts(c) + '"/>' +
+                  '<line class="tr-brace" x1="' + c[0][0].toFixed(1) + '" y1="' + c[0][1].toFixed(1) +
+                    '" x2="' + c[2][0].toFixed(1) + '" y2="' + c[2][1].toFixed(1) + '"/>' +
+                  '<line class="tr-brace" x1="' + c[1][0].toFixed(1) + '" y1="' + c[1][1].toFixed(1) +
+                    '" x2="' + c[3][0].toFixed(1) + '" y2="' + c[3][1].toFixed(1) + '"/>' +
+                  '<polyline class="tr-edge back"  points="' + trPts([c[0], c[1], c[2]]) + '"/>' +
+                  '<polyline class="tr-edge front" points="' + trPts([c[0], c[3], c[2]]) + '"/>' +
+                  '<text class="tr-fnum" x="' + (TR_CX - trW(f) - 8).toFixed(1) +
+                    '" y="' + (trY(f) + 3).toFixed(1) + '">' + f + '</text>' +
+                '</g>';
+
+        if (f < FLOOR_MAX) {
+          const u = trCorners(f + 1);
+          /* tr-solid = ตัวตึกทึบกันมองทะลุ · lit/dim = ผนังสองด้านที่หันเข้าหาผู้ชม */
+          body += '<g class="tr-lv tr-frus" data-f="' + f + '" ' + trVars(f) + '>' +
+                    '<polygon class="tr-solid" points="' +
+                      trPts([c[0], c[3], c[2], u[2], u[1], u[0]]) + '"/>' +
+                    '<polygon class="tr-face lit" points="' + trPts([c[3], c[2], u[2], u[3]]) + '"/>' +
+                    '<polygon class="tr-face dim" points="' + trPts([c[0], c[3], u[3], u[0]]) + '"/>' +
+                    [0, 2, 3].map(function (i) {
+                      return '<line class="tr-pillar" x1="' + c[i][0].toFixed(1) +
+                             '" y1="' + c[i][1].toFixed(1) + '" x2="' + u[i][0].toFixed(1) +
+                             '" y2="' + u[i][1].toFixed(1) + '"/>';
+                    }).join('') +
+                  '</g>';
+        }
+      }
+
+      /* ยอดหอคอย — พีระมิดต่อจากชั้น 20 ขึ้นไป (วาดหลังสุดของตัวตึกจึงทับหัวชั้น 20 พอดี) */
+      const topC = trCorners(FLOOR_MAX), apex = [TR_CX, trY(FLOOR_MAX) - TR_ROOF];
+      const eTop = TR_ERAS[TR_ERAS.length - 1];
+      body += '<g class="tr-roof" stroke="' + eTop.line + '">' +
+                '<polygon points="' + trPts([topC[0], apex, topC[2], topC[3]]) + '"/>' +
+                [0, 1, 2, 3].map(function (i) {
+                  return '<line x1="' + topC[i][0].toFixed(1) + '" y1="' + topC[i][1].toFixed(1) +
+                         '" x2="' + apex[0] + '" y2="' + apex[1].toFixed(1) + '"/>';
+                }).join('') +
+                '<circle class="tr-apex" cx="' + apex[0] + '" cy="' + apex[1].toFixed(1) +
+                  '" r="3.6" fill="' + eTop.glow + '"/>' +
+              '</g>';
+
+      /* ── เครื่องหมายบนหอคอย ──
+         วาดเป็นชั้นทับหลังตัวตึกทั้งหมด ไม่งั้นซุ้มประตูของชั้นล่างจะโดนผนังชั้นถัดไปบังหายไป */
+      for (let f = 1; f <= FLOOR_MAX; f++) {
+        const c = trCorners(f), y = trY(f), w = trW(f), h = trH(f), boss = isBossFloor(f);
+        let g = '<g class="tr-lv tr-mark' + (boss ? ' boss' : '') + '" data-f="' + f + '" ' + trVars(f) + '>';
+        /* ทุก 5 ชั้นคือจุดเซฟ/ประตูบอส — วงแหวนกับซุ้มประตูกะพริบเตือน */
+        if (boss) {
+          g += '<polygon class="tr-gate-ring" points="' +
+               trPts([[TR_CX - w * 1.14, y], [TR_CX, y - h * 1.14],
+                      [TR_CX + w * 1.14, y], [TR_CX, y + h * 1.14]]) + '"/>';
+          g += '<path class="tr-gate-arch" d="M' + (TR_CX - 8) + ',' + (y - 1).toFixed(1) +
+               ' v-12 a8,10 0 0 1 16,0 v12 z"/>';
+        }
+        /* เครื่องหมายบอกความคืบหน้าในชั้นปัจจุบัน — 4 จุดตามจำนวนอสูรที่ปราบแล้ว */
+        const mid = function (a, b) { return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]; };
+        const pip = [c[0], mid(c[0], c[3]), mid(c[3], c[2]), c[2]];
+        g += pip.map(function (q, i) {
+          return '<circle class="tr-pip" data-i="' + i + '" cx="' + q[0].toFixed(1) +
+                 '" cy="' + q[1].toFixed(1) + '" r="2.4"/>';
+        }).join('');
+        body += g + '</g>';
+      }
+
+      /* อวตาร + ออร่าใต้เท้า (อยู่เหนือโครงหอคอยเสมอ) */
+      body += '<g class="tr-hero" id="trHero">' +
+                '<ellipse class="tr-hero-aura" cx="0" cy="0" rx="26" ry="12" fill="url(#trAura)"/>' +
+                '<g class="tr-hero-bob">' + trHeroSvg() + '</g>' +
+              '</g>' +
+              '<g id="trFx"></g>';
+
+      /* พื้นที่รับการชี้/แตะรายชั้น — วางเป็นชั้นบนสุดเพื่อให้รับอีเวนต์ได้ทุกชั้น */
+      for (let f = 1; f <= FLOOR_MAX; f++) {
+        hits += '<rect class="tr-hit" data-f="' + f + '" x="-260" y="' +
+                (trY(f) - TR_FH / 2).toFixed(1) + '" width="820" height="' + TR_FH + '"/>';
+      }
+
+      return '<defs>' + defs + '</defs>' +
+             '<g class="tr-cam" id="trCam">' + bg + deco + body + hits + '</g>';
+    }
+
+    // ── วาดสถานะ ───────────────────────────────────────────────────
+    let TR_LAST_FLOOR = 0;
+    let TR_TIP_F      = 0;
+    let TR_TIP_T      = 0;   /* กันมือถือ: การแตะยิง mouseover ตามด้วย click ในทิกเดียวกัน
+                                ถ้าไม่กันเวลาไว้ กล่องจะเปิดแล้วปิดทันทีจนดูเหมือนกดไม่ติด */
+
+    function trPanel() { return document.getElementById('trPanel'); }
+
+    function trPaint(animate) {
+      const p = trPanel(), g = trG();
+      if (!p || !g) return;
+
+      const floor = Math.max(1, Math.min(FLOOR_MAX, g.floor || 1));
+      const maxF  = Math.max(1, Math.min(FLOOR_MAX, g.maxFloor || 1));
+      const era   = trEraOf(floor);
+      const zone  = zoneOf(floor);
+      const boss  = isBossFloor(floor);
+
+      /* สีประจำยุคส่งผ่าน custom property จุดเดียว — เกราะอวตาร ออร่า หัวแถบ ใช้ตัวเดียวกันหมด */
+      p.style.setProperty('--tr-line',   era.line);
+      p.style.setProperty('--tr-glow',   era.glow);
+      p.style.setProperty('--tr-accent', era.accent);
+      p.classList.toggle('boss', boss);
+
+      /* หัวแถบ — ข้อมูลชุดเดียวกับ #gFloorBar ของ v4.0 ที่ถูกซ่อนไป */
+      document.getElementById('trFloorNum').textContent = 'ชั้น ' + floor + ' / ' + FLOOR_MAX;
+      document.getElementById('trProg').textContent = boss
+        ? '👑 ชั้นบอส'
+        : 'ปราบแล้ว ' + Math.max(0, Math.min(MONSTERS_PER_FLOOR, g.floorProgress || 0)) + '/' + MONSTERS_PER_FLOOR;
+      document.getElementById('trEra').textContent  = era.r + ' · ' + era.name;
+      document.getElementById('trZone').textContent = 'โซน ' + zone.id + ' · ' + zone.name;
+
+      /* สถานะรายชั้น: พิชิตแล้ว / กำลังอยู่ / ยังไปไม่ถึง */
+      p.querySelectorAll('.tr-lv').forEach(function (el) {
+        const f = Number(el.dataset.f);
+        el.setAttribute('data-st', f < maxF ? 'done' : f === maxF ? 'edge' : 'lock');
+        el.classList.toggle('here', f === floor);
+      });
+
+      /* จุดคืบหน้า 4 จุดโชว์เฉพาะชั้นที่ยืนอยู่ */
+      p.querySelectorAll('.tr-pip').forEach(function (el) {
+        const f = Number(el.parentNode.dataset.f);
+        el.classList.toggle('on', f === floor && !boss && Number(el.dataset.i) < (g.floorProgress || 0));
+      });
+
+      /* กล้อง + อวตาร */
+      const cam  = trCam(floor);
+      const camG = document.getElementById('trCam');
+      const hero = document.getElementById('trHero');
+      const svg  = document.getElementById('trSvg');
+      const vh   = TR_OPEN ? TR_VH_O : TR_VH_C;
+      svg.setAttribute('viewBox', '0 0 300 ' + vh);
+      camG.setAttribute('transform', 'translate(' + cam.tx.toFixed(2) + ',' + cam.ty.toFixed(2) +
+                                     ') scale(' + cam.k.toFixed(4) + ')');
+      hero.setAttribute('transform', 'translate(' + TR_CX + ',' + (trY(floor) + trH(floor) * 0.18).toFixed(1) + ')');
+
+      /* แสงวาปขึ้นสู่ชั้นใหม่ — ยิงเฉพาะตอนชั้นเพิ่มจริง ไม่ยิงตอนวาดรอบแรก */
+      if (animate !== false && TR_LAST_FLOOR && floor > TR_LAST_FLOOR) trBreakthrough(floor);
+      TR_LAST_FLOOR = floor;
+
+      if (TR_TIP_F) trTipRender(TR_TIP_F);
+    }
+
+    /* อนิเมชันทะลุชั้น — วงแหวนขยายออก + ลำแสงวูบ แล้วเก็บโหนดทิ้งเมื่อจบ */
+    function trBreakthrough(floor) {
+      const fx = document.getElementById('trFx');
+      if (!fx) return;
+      /* ชั้นอาจกระโดดรัว ๆ ได้ (กู้คืนจากแผง GM · วาปหลังบอส) — เก็บของเก่าก่อนเสมอ
+         ไม่งั้นวงแหวนจะกองสะสมกันหลายสิบชุดกว่าตัวจับเวลาจะทยอยลบทัน */
+      while (fx.firstChild) fx.removeChild(fx.firstChild);
+      const c = trCorners(floor);
+      const ring = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      ring.setAttribute('class', 'tr-burst');
+      ring.setAttribute('transform', 'translate(' + TR_CX + ',' + trY(floor).toFixed(1) + ')');
+      ring.innerHTML =
+        '<polygon class="tr-burst-r r1" points="' + trPts(c.map(function (p) {
+          return [p[0] - TR_CX, p[1] - trY(floor)];
+        })) + '"/>' +
+        '<polygon class="tr-burst-r r2" points="' + trPts(c.map(function (p) {
+          return [p[0] - TR_CX, p[1] - trY(floor)];
+        })) + '"/>' +
+        '<rect class="tr-burst-beam" x="-3" y="-260" width="6" height="260"/>';
+      fx.appendChild(ring);
+      const p = trPanel();
+      if (p) { p.classList.add('flash'); setTimeout(function () { p.classList.remove('flash'); }, 700); }
+      setTimeout(function () { if (ring.parentNode) ring.parentNode.removeChild(ring); }, 1400);
+    }
+
+    // ── แผงข้อมูลย่อยรายชั้น ────────────────────────────────────────
+    /* เดสก์ท็อปชี้เมาส์ · มือถือแตะ — แตะชั้นเดิมซ้ำคือปิด */
+    function trTipRender(f) {
+      const box = document.getElementById('trTip'), g = trG();
+      if (!box || !g) return;
+      const era = trEraOf(f), zone = zoneOf(f), boss = isBossFloor(f);
+      const maxF = Math.max(1, Math.min(FLOOR_MAX, g.maxFloor || 1));
+      const cur  = Math.max(1, Math.min(FLOOR_MAX, g.floor || 1));
+      const rec  = trFloorsOf(g)[String(f)] || null;
+
+      const st = f === cur ? '<span class="tr-st here">📍 กำลังอยู่ชั้นนี้</span>'
+               : f <  maxF ? '<span class="tr-st done">✅ พิชิตแล้ว</span>'
+               : f === maxF ? '<span class="tr-st edge">🚩 ชั้นสูงสุดที่ไปถึง</span>'
+               : '<span class="tr-st lock">🔒 ยังไปไม่ถึง</span>';
+
+      const mix = zone.mix.filter(function (m) { return m[1] > 0; }).map(function (m) {
+        return '<span class="tr-mix">' + TIER_NAME[m[0]] + ' ' + m[1] + '%</span>';
+      }).join('');
+
+      let hist;
+      if (rec && rec.n > 0) {
+        const pct = Math.round(rec.ok / rec.n * 100);
+        hist = '<div class="tr-tip-row"><b>📊 บันทึกการตอบ</b> ' + rec.n + ' ข้อ · ถูก ' +
+               rec.ok + ' (' + pct + '%)</div>';
+      } else {
+        hist = '<div class="tr-tip-row tr-dim">' +
+               (f <= maxF ? '📊 ยังไม่มีบันทึกการตอบของชั้นนี้' : '📊 ปลดล็อกแล้วจะเริ่มบันทึก') + '</div>';
+      }
+
+      let words = '';
+      if (rec && rec.ids.length) {
+        words = '<div class="tr-tip-row"><b>🈶 อักขระที่พบบนชั้นนี้</b></div><div class="tr-wl">' +
+          rec.ids.slice(0, 8).map(function (id) {
+            const e = vocabById(Number(id));
+            if (!e) return '';
+            const ws = (g.wordStats && g.wordStats[String(id)]) || null;
+            const marks = (ws && Array.isArray(ws.recent) && ws.recent.length)
+              ? ws.recent.slice(-5).map(function (ok) {
+                  return '<i class="' + (ok ? 'ok' : 'no') + '">' + (ok ? '✓' : '✗') + '</i>';
+                }).join('')
+              : '<i class="tr-dim">—</i>';
+            return '<span class="tr-w"><b>' + esc(e[1]) + '</b><em>' + esc(e[2]) + '</em>' +
+                   '<span class="tr-mk">' + marks + '</span></span>';
+          }).join('') + '</div>';
+      }
+
+      box.innerHTML =
+        '<button class="tr-tip-x" onclick="trTipClose()" aria-label="ปิด">✕</button>' +
+        '<div class="tr-tip-h"><b>🏯 ชั้น ' + f + '</b>' +
+          (boss ? '<span class="tr-badge boss">👑 ประตูบอส · จุดเซฟ</span>' : '') + st + '</div>' +
+        '<div class="tr-tip-row tr-era-l"><b>' + era.r + ' · ' + esc(era.name) + '</b> ' +
+          '<span class="tr-en">' + esc(era.en) + '</span></div>' +
+        '<div class="tr-tip-row">🚪 โซน ' + zone.id + ' · ' + esc(zone.name) + ' ' + mix + '</div>' +
+        hist + words;
+
+      /* ชั้นที่ชี้อยู่ตอนนี้อยู่ครึ่งบนหรือครึ่งล่างของกล้อง → วางกล่องอีกฝั่งจะได้ไม่บังตัวเอง */
+      const cam = trCam(Math.max(1, Math.min(FLOOR_MAX, g.floor || 1)));
+      const sy  = trY(f) * cam.k + cam.ty;
+      box.classList.toggle('low', sy < (TR_OPEN ? TR_VH_O : TR_VH_C) / 2);
+      box.classList.add('on');
+    }
+
+    function trTipOpen(f) {
+      if (!f || f < 1 || f > FLOOR_MAX) return;
+      TR_TIP_F = f;
+      TR_TIP_T = Date.now();
+      trTipRender(f);
+      const p = trPanel();
+      p.querySelectorAll('.tr-lv').forEach(function (el) {
+        el.classList.toggle('peek', Number(el.dataset.f) === f);
+      });
+    }
+
+    function trTipClose() {
+      TR_TIP_F = 0;
+      const box = document.getElementById('trTip'), p = trPanel();
+      if (box) box.classList.remove('on');
+      if (p) p.querySelectorAll('.tr-lv.peek').forEach(function (el) { el.classList.remove('peek'); });
+    }
+
+    function trToggleOpen() {
+      TR_OPEN = !TR_OPEN;
+      const p = trPanel();
+      if (p) p.classList.toggle('open', TR_OPEN);
+      const b = document.getElementById('trZoom');
+      if (b) {
+        b.textContent = TR_OPEN ? '🔭 ย่อ' : '🔭 ทั้งหอคอย';
+        b.title = TR_OPEN ? 'กลับมุมกล้องติดตามตัวละคร' : 'ดูหอคอยครบทั้ง 20 ชั้น';
+      }
+      trTipClose();
+      trPaint(false);
+    }
+
+    // ── ห่อฟังก์ชันของชั้นล่าง ─────────────────────────────────────
+    /* เติม trFloors ให้บัญชีทุกใบที่อ่านผ่าน store — ต้อง idempotent */
+    const _trMigrateAccount = migrateAccount;
+    migrateAccount = function (a) {
+      const r = _trMigrateAccount.apply(this, arguments);
+      if (r && typeof r === 'object') trEnsure(r);
+      return r;
+    };
+
+    const _trStartGame = startGame;
+    startGame = function (user) {
+      const r = _trStartGame.apply(this, arguments);
+      const a = CURRENT_USER ? loadStore()[CURRENT_USER] : null;
+      const g = trG();
+      if (g) {
+        g.trFloors = {};
+        if (a && a.trFloors) {
+          Object.keys(a.trFloors).forEach(function (k) {
+            const s = a.trFloors[k];
+            g.trFloors[k] = { n: s.n, ok: s.ok, ids: (s.ids || []).slice() };
+          });
+        }
+      }
+      TR_LAST_FLOOR = 0;      /* เข้าเกมใหม่ไม่ควรเล่นอนิเมชันทะลุชั้น */
+      TR_OPEN = false;
+      trTipClose();
+      const p = trPanel();
+      if (p) p.classList.remove('open');
+      const b = document.getElementById('trZoom');
+      if (b) b.textContent = '🔭 ทั้งหอคอย';
+      trPaint(false);
+      return r;
+    };
+
+    const _trSaveProgress = saveProgress;
+    saveProgress = function () {
+      const r = _trSaveProgress.apply(this, arguments);
+      trSaveFloors();
+      return r;
+    };
+
+    /* จดว่าชั้นนี้เจอคำอะไรและตอบถูกไหม — โหมดฝึกจุดอ่อนไม่นับ เพราะไม่ผูกกับชั้น */
+    const _trResolveAnswer = resolveAnswer;
+    resolveAnswer = function (choice, btn, timedOut) {
+      const g = trG();
+      const m = g ? g.currentMonster : null;
+      const f = g ? g.floor : 0;
+      const ok = !timedOut && !!m && choice === m.answer;
+      const r = _trResolveAnswer.apply(this, arguments);
+      if (m && g && !g.practiceMode) trRecord(f, m.id, ok);
+      return r;
+    };
+
+    /* renderFloor ของ v4.0 เป็นจุดเดียวที่ทุกเส้นทาง (ตอบจบ · เคลียร์ชั้น · วาป · กู้คืนจากแผง GM)
+       วิ่งผ่านเมื่อชั้นขยับ จึงห่อที่นี่จุดเดียวพอ ไม่ต้องไล่ห่อ clearFloor/warpGo แยก */
+    const _trRenderFloor = renderFloor;
+    renderFloor = function () {
+      const r = _trRenderFloor.apply(this, arguments);
+      try {
+        const p = trPanel(), g = trG();
+        if (p) {
+          const hide = !!(g && g.practiceMode);
+          p.style.display = hide ? 'none' : 'block';
+          const bar = document.getElementById('gFloorBar');
+          if (bar) bar.style.display = 'none';   /* แถบแบนของ v4.0 ถูกแทนที่ด้วยเรดาร์นี้ */
+          if (!hide) trPaint(true);
+        }
+      } catch (e) {
+        /* เรดาร์พังต้องไม่ลากเกมลงไปด้วย — คืนแถบแบนของ v4.0 กลับมาแทน */
+        const bar = document.getElementById('gFloorBar');
+        const p = trPanel();
+        if (p) p.style.display = 'none';
+        if (bar && !(trG() && trG().practiceMode)) bar.style.display = 'flex';
+        if (typeof gcErrPush === 'function') { try { gcErrPush('err', 'TOWER RADAR: ' + e.message, 'trPaint', ''); } catch (e2) {} }
+      }
+      return r;
+    };
+
+    // ── ติดตั้งชั้นนี้ลง DOM ───────────────────────────────────────
+    (function trInstall() {
+      if (!document.getElementById('trStyle')) {
+        document.head.insertAdjacentHTML('beforeend',
+          '<style id="trStyle">' +
+          /* กรอบแผง */
+          '.tr-panel{position:relative;margin-top:10px;border-radius:12px;overflow:hidden;' +
+            'border:1px solid rgba(46,242,208,.28);background:#05080e;' +
+            '--tr-line:#2ef2d0;--tr-glow:#8fd8ff;--tr-accent:#2ef2d0;' +
+            'box-shadow:0 0 0 1px rgba(0,0,0,.4) inset,0 6px 18px rgba(0,0,0,.45);' +
+            'transition:border-color .4s ease,box-shadow .4s ease}' +
+          '.tr-panel.boss{border-color:rgba(255,200,69,.5);box-shadow:0 0 18px rgba(255,200,69,.18)}' +
+          '.tr-panel.flash{box-shadow:0 0 26px 3px var(--tr-glow)}' +
+          /* หัวแถบ */
+          '.tr-head{display:flex;align-items:center;justify-content:space-between;gap:6px;' +
+            'padding:6px 9px 5px;background:linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,0));' +
+            'border-bottom:1px solid rgba(255,255,255,.07)}' +
+          '.tr-h-num{font-size:12px;font-weight:700;color:var(--tr-accent);white-space:nowrap;' +
+            'transition:color .5s ease}' +
+          '.tr-h-prog{font-size:11px;font-weight:700;color:#cfe0f2;white-space:nowrap}' +
+          '.tr-panel.boss .tr-h-prog{color:#ffc845}' +
+          '.tr-sub{display:flex;align-items:center;justify-content:space-between;gap:8px;' +
+            'padding:3px 9px 5px;font-size:9.5px;font-weight:600;line-height:1.35}' +
+          '.tr-sub-era{color:var(--tr-glow);transition:color .5s ease;overflow:hidden;' +
+            'text-overflow:ellipsis;white-space:nowrap}' +
+          '.tr-sub-zone{color:#7d8aa6;white-space:nowrap}' +
+          /* ช่องมองภาพ */
+          '.tr-view{position:relative;height:' + TR_VH_C + 'px;transition:height .45s ease;' +
+            'background:#05080e}' +
+          '.tr-panel.open .tr-view{height:' + TR_VH_O + 'px}' +
+          '.tr-svg{display:block;width:100%;height:100%;touch-action:manipulation}' +
+          '.tr-cam{transition:transform .85s cubic-bezier(.22,.85,.3,1)}' +
+          /* ปุ่มซูม */
+          '.tr-zoom{position:absolute;right:6px;top:6px;z-index:3;padding:4px 8px;border-radius:99px;' +
+            'border:1px solid rgba(143,216,255,.35);background:rgba(8,14,24,.82);color:#8fd8ff;' +
+            "font-family:'Noto Sans Thai',sans-serif;font-size:9.5px;font-weight:700;cursor:pointer;" +
+            'white-space:nowrap}' +
+          '.tr-zoom:hover{border-color:rgba(143,216,255,.7);color:#d6f2ff}' +
+          /* โครงหอคอย */
+          '.tr-shadow{fill:#000;opacity:.34}' +
+          '.tr-era-div{stroke-width:1;stroke-dasharray:5 7;opacity:.35}' +
+          '.tr-era-r{font-family:Georgia,serif;font-size:15px;font-weight:700;opacity:.45}' +
+          '.tr-mote{fill:#cfe9ff;opacity:.18;animation:trTwinkle 5.5s ease-in-out infinite}' +
+          '@keyframes trTwinkle{0%,100%{opacity:.08}50%{opacity:.42}}' +
+          '.tr-beam{animation:trBeamPulse 4.6s ease-in-out infinite}' +
+          '@keyframes trBeamPulse{0%,100%{opacity:.55}50%{opacity:1}}' +
+          '.tr-roof{fill:none;stroke-width:1.2;opacity:.8}' +
+          '.tr-roof polygon{fill:rgba(143,216,255,.07)}' +
+          '.tr-apex{stroke:none;animation:trApex 2.8s ease-in-out infinite}' +
+          '@keyframes trApex{0%,100%{opacity:.45}50%{opacity:1}}' +
+          /* --o คือความชัดของชั้นตามสถานะ (พิชิตแล้ว / ชั้นสูงสุด / ยังไปไม่ถึง) */
+          '.tr-lv{--o:1;transition:opacity .5s ease}' +
+          '.tr-lv[data-st="lock"]{--o:.44}' +
+          '.tr-lv[data-st="edge"]{--o:.9}' +
+          '.tr-slab{fill:var(--l);fill-opacity:.10;stroke:none;opacity:var(--o)}' +
+          '.tr-lv[data-st="done"] .tr-slab{fill-opacity:.20}' +
+          '.tr-edge{fill:none;stroke:var(--l);stroke-width:1.2;stroke-linejoin:round;opacity:var(--o)}' +
+          '.tr-edge.back{stroke-width:.8;opacity:calc(var(--o) * .32)}' +
+          '.tr-brace{stroke:var(--l);stroke-width:.5;opacity:calc(var(--o) * .22)}' +
+          /* ตัวตึกทึบ — ถ้าไม่มีตัวนี้ ชั้นทั้ง 20 จะทะลุถึงกันหมดจนดูไม่ออกว่าเป็นตึก */
+          '.tr-solid{fill:#080e19;fill-opacity:.64;stroke:none}' +
+          '.tr-face{stroke:none;opacity:var(--o)}' +
+          '.tr-face.lit{fill:var(--l);fill-opacity:.26}' +
+          '.tr-face.dim{fill:#000;fill-opacity:.3}' +
+          '.tr-pillar{stroke:var(--l);stroke-width:.9;opacity:calc(var(--o) * .65)}' +
+          '.tr-fnum{font-family:Georgia,serif;font-size:9px;fill:var(--l);opacity:calc(var(--o) * .8);' +
+            'text-anchor:end}' +
+          '.tr-lv.here .tr-edge.front{stroke:var(--gl);stroke-width:2.2;' +
+            'filter:drop-shadow(0 0 6px var(--gl))}' +
+          '.tr-lv.here .tr-edge.back{stroke:var(--gl);opacity:.65}' +
+          '.tr-lv.here .tr-slab{fill:var(--gl);fill-opacity:.22}' +
+          '.tr-lv.here .tr-fnum{fill:var(--gl);opacity:1;font-weight:700}' +
+          '.tr-lv.peek .tr-edge.front{stroke:#ffffff;stroke-width:2}' +
+          '.tr-lv.peek .tr-slab{fill:#ffffff;fill-opacity:.16}' +
+          /* ประตูบอส / จุดเซฟ ทุก 5 ชั้น */
+          '.tr-gate-ring{fill:none;stroke:#ffc845;stroke-width:1;stroke-dasharray:4 5;' +
+            'opacity:calc(var(--o) * .9);animation:trGate 2.4s ease-in-out infinite}' +
+          '@keyframes trGate{0%,100%{opacity:.25}50%{opacity:.95}}' +
+          '.tr-gate-arch{fill:rgba(255,200,69,.14);stroke:#ffc845;stroke-width:1;' +
+            'opacity:calc(var(--o) * .95);animation:trGate 2.4s ease-in-out infinite}' +
+          /* จุดคืบหน้า 4 จุดของชั้นปัจจุบัน */
+          '.tr-pip{fill:#0b1220;stroke:var(--gl);stroke-width:.9;opacity:0;transition:opacity .3s ease}' +
+          '.tr-lv.here .tr-pip{opacity:.34}' +
+          '.tr-lv.here .tr-pip.on{opacity:1;fill:var(--gl);filter:drop-shadow(0 0 4px var(--gl))}' +
+          /* อวตารพิกเซลอาร์ต */
+          '.tr-hero{transition:transform .85s cubic-bezier(.3,1.5,.5,1)}' +
+          '.tr-hero-aura{opacity:.30;transform-box:fill-box;transform-origin:center;' +
+            'animation:trAuraP 2.6s ease-in-out infinite}' +
+          '@keyframes trAuraP{0%,100%{opacity:.16;transform:scale(.86)}50%{opacity:.4;transform:scale(1.06)}}' +
+          '.tr-hero-bob{animation:trBob 1.5s steps(2,end) infinite;' +
+            'filter:drop-shadow(0 0 4px var(--tr-glow))}' +
+          '@keyframes trBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-1.6px)}}' +
+          '.tr-p-h{fill:#1b2438}.tr-p-f{fill:#f2dcc0}.tr-p-e{fill:#0a0f1a}' +
+          '.tr-p-c{fill:var(--tr-glow)}.tr-p-a{fill:var(--tr-accent)}.tr-p-t{fill:#ffc845}' +
+          '.tr-p-l{fill:#2a3550}.tr-p-b{fill:#0d1421}' +
+          '.tr-p-s{fill:#bff2ff}' +
+          /* แสงวาปขึ้นชั้นใหม่ */
+          '.tr-burst-r{fill:none;stroke:var(--tr-glow);stroke-width:2;' +
+            'transform-box:fill-box;transform-origin:center}' +
+          '.tr-burst-r.r1{animation:trBurst 1.1s ease-out forwards}' +
+          '.tr-burst-r.r2{animation:trBurst 1.1s .18s ease-out forwards}' +
+          '@keyframes trBurst{0%{transform:scale(.5);opacity:0}25%{opacity:1}' +
+            '100%{transform:scale(2.3);opacity:0}}' +
+          '.tr-burst-beam{fill:var(--tr-glow);transform-box:fill-box;transform-origin:50% 100%;' +
+            'animation:trBeamUp .8s ease-out forwards}' +
+          '@keyframes trBeamUp{0%{opacity:0;transform:scaleY(0)}30%{opacity:.9}' +
+            '100%{opacity:0;transform:scaleY(1.6)}}' +
+          /* พื้นที่รับการชี้ */
+          '.tr-hit{fill:transparent;cursor:pointer}' +
+          /* แผงข้อมูลย่อย */
+          '.tr-tip{position:absolute;left:6px;right:6px;top:6px;z-index:4;display:none;' +
+            'padding:7px 9px 8px;border-radius:9px;text-align:left;' +
+            'background:rgba(6,11,20,.95);border:1px solid rgba(143,216,255,.35);' +
+            'box-shadow:0 8px 20px rgba(0,0,0,.6);backdrop-filter:blur(3px);' +
+            'max-height:calc(100% - 12px);overflow-y:auto}' +
+          '.tr-tip.on{display:block;animation:trTipIn .18s ease-out}' +
+          '.tr-tip.low{top:auto;bottom:6px}' +
+          '@keyframes trTipIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}' +
+          '.tr-tip-x{position:absolute;right:5px;top:4px;border:none;background:none;cursor:pointer;' +
+            'color:#7d8aa6;font-size:12px;line-height:1;padding:2px 4px}' +
+          '.tr-tip-x:hover{color:#ff6b7a}' +
+          '.tr-tip-h{display:flex;align-items:center;flex-wrap:wrap;gap:5px;font-size:11.5px;' +
+            'color:#d6f2ff;padding-right:16px;margin-bottom:3px}' +
+          '.tr-tip-row{font-size:10px;color:#9dc3e0;line-height:1.55;margin-top:2px}' +
+          '.tr-tip-row b{color:#cfe0f2}' +
+          '.tr-era-l b{color:var(--tr-glow)}' +
+          '.tr-dim{color:#5d6b86}' +
+          '.tr-en{font-size:8.5px;color:#5d6b86;letter-spacing:.2px}' +
+          '.tr-badge{font-size:9px;font-weight:700;padding:1px 6px;border-radius:99px;white-space:nowrap}' +
+          '.tr-badge.boss{background:rgba(255,200,69,.14);border:1px solid rgba(255,200,69,.45);color:#ffc845}' +
+          '.tr-st{font-size:9px;font-weight:700;padding:1px 6px;border-radius:99px;white-space:nowrap;' +
+            'border:1px solid currentColor}' +
+          '.tr-st.done{color:#2ef2d0}.tr-st.here{color:#ffc845}' +
+          '.tr-st.edge{color:#8fd8ff}.tr-st.lock{color:#5d6b86}' +
+          '.tr-mix{display:inline-block;font-size:9px;margin-left:4px;padding:0 5px;border-radius:99px;' +
+            'background:rgba(255,255,255,.06);color:#8fd8ff;white-space:nowrap}' +
+          '.tr-wl{display:flex;flex-wrap:wrap;gap:4px;margin-top:3px}' +
+          '.tr-w{display:inline-flex;align-items:center;gap:3px;padding:2px 6px;border-radius:6px;' +
+            'background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.07);white-space:nowrap}' +
+          '.tr-w b{font-size:11px;color:#ffc845;font-weight:700}' +
+          '.tr-w em{font-size:8.5px;color:#7fe3ff;font-style:normal}' +
+          '.tr-mk i{font-style:normal;font-size:8px;margin-left:1px}' +
+          '.tr-mk i.ok{color:#2ef2d0}.tr-mk i.no{color:#ff6b7a}' +
+          /* จอแคบ — ลดความสูงลงหน่อยเพื่อไม่ให้ดันเนื้อหาหลักตกจอ */
+          '@media (max-width:390px){.tr-h-num{font-size:11.5px}.tr-sub{font-size:9px}' +
+            '.tr-w b{font-size:10.5px}}' +
+          /* เคารพการตั้งค่าลดการเคลื่อนไหวของระบบ */
+          '@media (prefers-reduced-motion:reduce){' +
+            '.tr-cam,.tr-hero{transition:none}' +
+            '.tr-mote,.tr-beam,.tr-apex,.tr-gate-ring,.tr-gate-arch,.tr-hero-aura,.tr-hero-bob,' +
+            '.tr-burst-r,.tr-burst-beam{animation:none}}' +
+          '</style>');
+      }
+
+      /* กติกาข้อ 2 ของ CLAUDE.md: ตัวติดตั้งที่ยัด DOM ต้องกันแทรกซ้ำเสมอ */
+      const bar = document.getElementById('gFloorBar');
+      if (bar && !document.getElementById('trPanel')) {
+        bar.insertAdjacentHTML('afterend',
+          '<div class="tr-panel" id="trPanel">' +
+            '<div class="tr-head">' +
+              '<span class="tr-h-num" id="trFloorNum">ชั้น 1 / ' + FLOOR_MAX + '</span>' +
+              '<span class="tr-h-prog" id="trProg">ปราบแล้ว 0/' + MONSTERS_PER_FLOOR + '</span>' +
+            '</div>' +
+            '<div class="tr-sub">' +
+              '<span class="tr-sub-era" id="trEra">I · เขตฐานป้อมปราการ</span>' +
+              '<span class="tr-sub-zone" id="trZone">โซน 1</span>' +
+            '</div>' +
+            '<div class="tr-view">' +
+              '<button class="tr-zoom" id="trZoom" onclick="trToggleOpen()" ' +
+                'title="ดูหอคอยครบทั้ง 20 ชั้น">🔭 ทั้งหอคอย</button>' +
+              '<svg class="tr-svg" id="trSvg" viewBox="0 0 300 ' + TR_VH_C + '" ' +
+                'preserveAspectRatio="xMidYMid meet" aria-label="แผนผังหอคอย 20 ชั้น">' +
+                trTowerSvg() +
+              '</svg>' +
+              '<div class="tr-tip" id="trTip"></div>' +
+            '</div>' +
+          '</div>');
+
+        const svg = document.getElementById('trSvg');
+        svg.addEventListener('mouseover', function (e) {
+          const f = e.target && e.target.classList.contains('tr-hit') ? Number(e.target.dataset.f) : 0;
+          if (f && f !== TR_TIP_F) trTipOpen(f);
+        });
+        svg.addEventListener('click', function (e) {
+          const f = e.target && e.target.classList.contains('tr-hit') ? Number(e.target.dataset.f) : 0;
+          if (!f) { trTipClose(); return; }
+          if (f === TR_TIP_F && Date.now() - TR_TIP_T > 400) trTipClose();
+          else trTipOpen(f);
+        });
+        document.getElementById('trPanel').addEventListener('mouseleave', trTipClose);
+      }
+
+      trPaint(false);
+    })();
   </script>
 </body>
 </html>

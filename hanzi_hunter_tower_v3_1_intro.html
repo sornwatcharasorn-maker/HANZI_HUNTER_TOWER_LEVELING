@@ -10616,9 +10616,12 @@
     /* ชั้นนี้ไม่แก้โค้ด v4.0-v4.6 เลยแม้แต่บรรทัดเดียว — ห่อฟังก์ชันแบบเดียวกับหกชั้นก่อนหน้า
        ทุกอย่างขึ้นต้นด้วย cd / CD_ · ลบทั้งก้อนทิ้งแล้วเกมยังเล่นได้ปกติ
 
-       กติกา: ก่อนเริ่มประลองชั้นใหม่ทุกครั้ง ผู้เล่นต้องเลือกการ์ด 1 ใบจาก 3 ใบ
-       ช่องซ้ายเป็นสายประคองเกม · ช่องกลางเป็นสายแลกเปลี่ยน · ช่องขวาเป็นสายวัดใจ
-       การ์ดมีผล "เฉพาะชั้นนั้น" แล้วสลายทิ้งตอนเคลียร์ชั้น (ไม่มีการ์ดสะสมข้ามชั้น) */
+       กติกา (patch v4.7 · ZONE MILESTONE): จั่วการ์ดเฉพาะตอนก้าวเข้า "ช่วงชั้นใหม่" เท่านั้น
+       ไม่ใช่ทุกชั้นแบบรุ่นแรก — ช่วงชั้นละ 5 ชั้น จบลงที่ด่านบอสประจำช่วงพอดี
+       (1-5 · 6-10 · 11-15 · 16-20) รอยต่อจึงเป็นชั้น 1 / 6 / 11 / 16
+       ผู้เล่นเลือกการ์ด 1 ใบจาก 3 ใบ — ช่องซ้ายสายประคองเกม · ช่องกลางสายแลกเปลี่ยน · ช่องขวาสายวัดใจ
+       การ์ดมีผล "ตลอดช่วงชั้นนั้น" แล้วสลายตอนเคลียร์ด่านบอสประจำช่วง หรือตอนถูกพาข้ามไปช่วงอื่น
+       (ไม่มีการ์ดสะสมข้ามช่วง และไม่มีการเปิดหน้าต่างจั่วกลางช่วงเด็ดขาด) */
 
     const CD_VER = 1;
 
@@ -10669,60 +10672,60 @@
       { id:'ward', slot:1, icon:'🛡️', tone:'good',
         name:'โล่พิพากษา', en:'Judgment Shield',
         tag:'กันพลาดครั้งแรก 1 ครั้ง',
-        good:['ตอบผิด "ครั้งแรกครั้งเดียว" ของชั้นนี้ ไม่เสีย HP และสตรีคไม่ขาด'],
+        good:['ตอบผิด "ครั้งแรกครั้งเดียว" ของช่วงชั้นนี้ ไม่เสีย HP และสตรีคไม่ขาด'],
         bad:['กันได้ครั้งเดียวแล้วโล่แตกทันที — ครั้งต่อไปรับเต็ม'] },
 
       { id:'focus', slot:1, icon:'🧘', tone:'good',
         name:'สมาธิแน่วแน่', en:'Absolute Focus',
         tag:'แช่แข็งเวลา ' + (CD_FOCUS_MS / 1000) + ' วิแรกของทุกข้อ',
-        good:['ทุกข้อในชั้นนี้ หยุดเวลา ' + (CD_FOCUS_MS / 1000) + ' วินาทีแรกให้อ่านตัวเลือกก่อน',
+        good:['ทุกข้อตลอดช่วงชั้นนี้ หยุดเวลา ' + (CD_FOCUS_MS / 1000) + ' วินาทีแรกให้อ่านตัวเลือกก่อน',
               'เวลาที่ใช้คิดเริ่มนับหลังน้ำแข็งละลาย จึงไม่เสียสถิติความไว'],
         bad:['ไม่ได้ต่อเวลา — พอน้ำแข็งละลายก็นับถอยหลังตามปกติ'] },
 
       { id:'mana', slot:1, icon:'🌀', tone:'good',
         name:'การไหลเวียนเวทมนตร์', en:'Mana Circulation',
         tag:'ตอบถูก คืน MP ' + CD_MANA_PCT + '%',
-        good:['ตอบถูกทุกครั้งในชั้นนี้ ฟื้น MP อีก ' + CD_MANA_PCT + '% ของหลอดมานา',
+        good:['ตอบถูกทุกครั้งตลอดช่วงชั้นนี้ ฟื้น MP อีก ' + CD_MANA_PCT + '% ของหลอดมานา',
               'ได้พร้อมกับ MP ปกติของ v4.0 — ร่ายสกิลได้ถี่ขึ้นชัดเจน'],
         bad:['ไม่ช่วยอะไรถ้ามานาเต็มหลอดอยู่แล้ว'] },
 
       { id:'dew', slot:1, icon:'🌿', tone:'good',
         name:'หยาดน้ำทิพย์สตรีค', en:'Streak Dew',
         tag:'สตรีคครบทุก ' + CD_DEW_EVERY + ' ข้อ ฟื้น HP ' + CD_DEW_PCT + '%',
-        good:['ตอบถูกติดกันครบทุก ' + CD_DEW_EVERY + ' ข้อในชั้นนี้ ฟื้น HP ' + CD_DEW_PCT + '% ของหลอด'],
+        good:['ตอบถูกติดกันครบทุก ' + CD_DEW_EVERY + ' ข้อตลอดช่วงชั้นนี้ ฟื้น HP ' + CD_DEW_PCT + '% ของหลอด'],
         bad:['ตอบผิดครั้งเดียวสตรีคขาด ต้องเริ่มนับ ' + CD_DEW_EVERY + ' ข้อใหม่'] },
 
       { id:'merchant', slot:1, icon:'🪙', tone:'good',
         name:'พรแห่งโชคลาภ', en:"Merchant's Blessing",
         tag:'ทองจากการตอบถูก +' + Math.round(CD_MERCHANT * 100) + '%',
-        good:['ทองที่ได้จากการตอบถูกทุกข้อในชั้นนี้ เพิ่มขึ้น ' + Math.round(CD_MERCHANT * 100) + '%'],
+        good:['ทองที่ได้จากการตอบถูกทุกข้อตลอดช่วงชั้นนี้ เพิ่มขึ้น ' + Math.round(CD_MERCHANT * 100) + '%'],
         bad:['ไม่มีผลกับทองรางวัลตอนเคลียร์ชั้น และไม่ช่วยเรื่องรอด'] },
 
       // ─── สายที่ 2 · แลกเปลี่ยน (ช่องกลาง) ─────────────────────────
       { id:'shackle', slot:2, icon:'⛓️', tone:'warn',
         name:'โซ่ตรวนแห่งความมืด', en:'Dark Shackle',
-        tag:'เวลา −' + Math.round(CD_SHACKLE_CUT * 100) + '% · ผ่านชั้นได้ทอง ×2',
-        good:['ผ่านชั้นนี้สำเร็จ ได้ทองรางวัลเคลียร์ชั้น ×2'],
-        bad:['เวลาคิดต่อข้อหายไป ' + Math.round(CD_SHACKLE_CUT * 100) + '% ตลอดทั้งชั้น'] },
+        tag:'เวลา −' + Math.round(CD_SHACKLE_CUT * 100) + '% · ทองเคลียร์ชั้น ×2',
+        good:['ทุกชั้นที่เคลียร์ได้ในช่วงชั้นนี้ ได้ทองรางวัลเคลียร์ชั้น ×2'],
+        bad:['เวลาคิดต่อข้อหายไป ' + Math.round(CD_SHACKLE_CUT * 100) + '% ตลอดทั้งช่วงชั้น'] },
 
       { id:'blood', slot:2, icon:'🩸', tone:'warn',
         name:'พันธะโลหิต', en:'Blood Pact',
         tag:'จ่าย ' + CD_BLOOD_HP + ' HP · พลังโจมตีสะสมขึ้นเรื่อย ๆ',
         good:['ตอบถูกทุกข้อสะสมพลังโจมตี +' + Math.round(CD_BLOOD_STEP * 100) +
-              '% (เพดาน +' + Math.round(CD_BLOOD_CAP * 100) + '%) ตลอดชั้น'],
-        bad:['เสีย HP ทันที ' + CD_BLOOD_HP + ' หน่วยตอนก้าวเข้าชั้น (ไม่ทำให้ HP ต่ำกว่า 1)'] },
+              '% (เพดาน +' + Math.round(CD_BLOOD_CAP * 100) + '%) ตลอดช่วงชั้น'],
+        bad:['เสีย HP ทันที ' + CD_BLOOD_HP + ' หน่วยตอนก้าวเข้าช่วงชั้น (ไม่ทำให้ HP ต่ำกว่า 1)'] },
 
       { id:'chrono', slot:2, icon:'👁️‍🗨️', tone:'warn',
         name:'นาฬิกาตาบอด', en:'Hidden Chrono',
-        tag:'ซ่อนนาฬิกา · ผ่านชั้นได้ EXP ×2',
-        good:['ผ่านชั้นนี้สำเร็จ ได้ EXP รางวัลเคลียร์ชั้น ×2'],
+        tag:'ซ่อนนาฬิกา · EXP เคลียร์ชั้น ×2',
+        good:['ทุกชั้นที่เคลียร์ได้ในช่วงชั้นนี้ ได้ EXP รางวัลเคลียร์ชั้น ×2'],
         bad:['มองไม่เห็นแถบเวลาและตัวเลขนับถอยหลัง — แต่เวลายังเดินอยู่ทุกวินาที'] },
 
       { id:'seal', slot:2, icon:'🚫', tone:'warn',
         name:'ผนึกพ็อกเก็ต', en:'Pocket Item Seal',
-        tag:'ห้ามใช้ไอเทม · ผ่านชั้นได้ไอเทมฟรี 1 ชิ้น',
-        good:['ผ่านชั้นนี้สำเร็จ ได้ไอเทมสุ่มฟรี 1 ชิ้น'],
-        bad:['กดใช้ไอเทมจากกระเป๋าไม่ได้เลยตลอดทั้งชั้น (🛡️ ประกันภัยยังทำงานเอง)'] },
+        tag:'ห้ามใช้ไอเทม · เคลียร์ชั้นได้ไอเทมฟรี',
+        good:['ทุกชั้นที่เคลียร์ได้ในช่วงชั้นนี้ ได้ไอเทมสุ่มฟรี 1 ชิ้น'],
+        bad:['กดใช้ไอเทมจากกระเป๋าไม่ได้เลยตลอดทั้งช่วงชั้น (🛡️ ประกันภัยยังทำงานเอง)'] },
 
       { id:'edge', slot:2, icon:'🗡️', tone:'warn',
         name:'ดาบสองคม', en:'Double-Edged Blade',
@@ -10734,7 +10737,7 @@
       { id:'curse', slot:3, icon:'⚡', tone:'danger',
         name:'คำสาปย้อนกลับ', en:'Retaliation Curse',
         tag:'ตอบผิดรับดาเมจ ×3 · ไร้ที่ติได้ไอเทมพิเศษ',
-        good:['ตอบถูกทุกข้อของชั้นนี้โดยไม่พลาดเลย ได้ไอเทมสุ่มพิเศษทันทีตอนเคลียร์ชั้น'],
+        good:['ไม่พลาดเลยสักข้อตลอดช่วงชั้นนี้ ได้ไอเทมสุ่มพิเศษทุกครั้งที่เคลียร์ชั้น'],
         bad:['ตอบผิด รับความเสียหายย้อนกลับ ×' + (1 + CD_CURSE_TAKE) + ' ของปกติ'] },
 
       { id:'exec', slot:3, icon:'🗡️', tone:'danger',
@@ -10747,13 +10750,14 @@
         name:'ตาชั่งแห่งความตาย', en:"Death's Scales",
         tag:'ตอบถูกฟื้นเต็ม · ตอบผิดร่วงต้นโซน',
         good:['ตอบถูก ฟื้น HP เต็มหลอดทันที และได้ 💎 ' + CD_SCALES_SHARD + ' เศษคริสตัล'],
-        bad:['ตอบผิดแม้แต่ข้อเดียว ร่วงลงไปเริ่มใหม่ที่ชั้นแรกของโซนนั้นทันที'] },
+        bad:['ตอบผิดแม้แต่ข้อเดียว ร่วงลงไปเริ่มใหม่ที่ชั้นแรกของโซนนั้น และการ์ดสลายทันที'] },
 
       { id:'vow', slot:3, icon:'💀', tone:'danger',
         name:'พันธสัญญาโลหิตทมิฬ', en:'Dark Blood Pact',
-        tag:'เริ่มชั้นด้วย HP 1 · ไร้ที่ติได้ ×' + (CD_VOW_MUL + 1),
-        good:['ตอบถูกหมดทั้งชั้น ได้ทองและ EXP รางวัลเคลียร์ชั้น ×' + (CD_VOW_MUL + 1) + ' พร้อมฉายาลับ'],
-        bad:['เริ่มชั้นด้วย HP เหลือ 1 หน่วย และห้ามฟื้นพลังทุกทางตลอดชั้น'] },
+        tag:'เริ่มช่วงชั้นด้วย HP 1 · ไร้ที่ติได้ ×' + (CD_VOW_MUL + 1),
+        good:['ไม่พลาดเลยสักข้อตลอดช่วงชั้นนี้ ได้ทองและ EXP รางวัลเคลียร์ชั้น ×' +
+              (CD_VOW_MUL + 1) + ' ทุกชั้น พร้อมฉายาลับ'],
+        bad:['เริ่มช่วงชั้นด้วย HP เหลือ 1 หน่วย และห้ามฟื้นพลังทุกทางตลอดช่วง (รวมการฟื้นตอนเคลียร์ชั้น)'] },
 
       { id:'sand', slot:3, icon:'⏳', tone:'danger',
         name:'ทรายมรณะแห่งโครโนส', en:"Chronos's Death Sand",
@@ -10785,46 +10789,51 @@
     const CD_NOTIF = {
       CD_PICK_1: {
         tag: 'CARD 01/08', tone: 'good',
-        title: d => `${d.icon} ${d.name} — การ์ดประจำชั้น ${d.floor}`,
-        body:  d => `<b>สายประคองเกม</b> · ${d.tag}\n${d.good}`
+        title: d => `${d.icon} ${d.name} — การ์ดประจำช่วงชั้น ${d.band}`,
+        body:  d => `<b>สายประคองเกม</b> · ${d.tag}\n${d.good}\n` +
+                    `<i>อยู่กับเจ้าตลอดช่วงชั้น ${d.band} จนกว่าจะเคลียร์ด่านบอสชั้น ${d.boss}</i>`
       },
       CD_PICK_2: {
         tag: 'CARD 02/08', tone: 'warn',
-        title: d => `${d.icon} ${d.name} — การ์ดประจำชั้น ${d.floor}`,
-        body:  d => `<b>สายแลกเปลี่ยน</b> · ${d.tag}\n✦ ${d.good}\n✧ <i>${d.bad}</i>`
+        title: d => `${d.icon} ${d.name} — การ์ดประจำช่วงชั้น ${d.band}`,
+        body:  d => `<b>สายแลกเปลี่ยน</b> · ${d.tag}\n✦ ${d.good}\n✧ <i>${d.bad}</i>\n` +
+                    `<i>อยู่กับเจ้าตลอดช่วงชั้น ${d.band} จนกว่าจะเคลียร์ด่านบอสชั้น ${d.boss}</i>`
       },
       CD_PICK_3: {
         tag: 'CARD 03/08', tone: 'danger',
-        title: d => `${d.icon} ${d.name} — การ์ดประจำชั้น ${d.floor}`,
-        body:  d => `<b>สายวัดใจ</b> · ${d.tag}\n✦ ${d.good}\n✧ <i>${d.bad}</i>`
+        title: d => `${d.icon} ${d.name} — การ์ดประจำช่วงชั้น ${d.band}`,
+        body:  d => `<b>สายวัดใจ</b> · ${d.tag}\n✦ ${d.good}\n✧ <i>${d.bad}</i>\n` +
+                    `<i>อยู่กับเจ้าตลอดช่วงชั้น ${d.band} จนกว่าจะเคลียร์ด่านบอสชั้น ${d.boss}</i>`
       },
       CD_WARD: {
         tag: 'CARD 04/08', tone: 'good',
         title: () => '🛡️ โล่พิพากษาสลาย',
         body:  d => `กันความเสียหายไว้ทั้งหมดและรักษาสตรีค <b>${d.streak}</b> ข้อไว้ให้\n` +
-                    `<i>โล่ใบนี้ใช้ได้ครั้งเดียว — พลาดครั้งหน้ารับเต็มตามปกติ</i>`
+                    `<i>โล่ใบนี้ใช้ได้ครั้งเดียวตลอดช่วงชั้น — พลาดครั้งหน้ารับเต็มตามปกติ</i>`
       },
       CD_DROP: {
         tag: 'CARD 05/08', tone: 'danger',
         title: () => '⚖️ ตาชั่งพิพากษา',
         body:  d => `ตอบพลาดขณะถือ ⚖️ ตาชั่งแห่งความตาย — ร่วงกลับชั้น <b>${d.floor}</b> ต้นโซน ${d.zone}\n` +
-                    `เลเวล ทอง และของในกระเป๋ายังอยู่ครบ · ชั้นสูงสุดที่เคยไต่ถึงไม่หาย`
+                    `เลเวล ทอง และของในกระเป๋ายังอยู่ครบ · ชั้นสูงสุดที่เคยไต่ถึงไม่หาย\n` +
+                    `<i>การ์ดสลายไปกับการร่วง — จั่วใบใหม่ได้ที่รอยต่อช่วงชั้น (ชั้น ${d.next})</i>`
       },
       CD_JUMP: {
         tag: 'CARD 06/08', tone: 'good',
         title: () => '🎲 รูเล็ตเปิดประตูมิติ',
         body:  d => `ทะลุขึ้นชั้น <b>${d.floor}</b> ทันทีโดยไม่ต้องปราบให้ครบ\n` +
-                    `<i>ชั้นที่ข้ามไม่ได้ทองและ EXP รางวัลเคลียร์ชั้น — ตัวการข้ามคือรางวัลของมันเอง</i>`
+                    `<i>ชั้นที่ข้ามไม่ได้ทองและ EXP รางวัลเคลียร์ชั้น — ตัวการข้ามคือรางวัลของมันเอง</i>\n` +
+                    `<i>การ์ดสลายไปกับประตูมิติ — จั่วใบใหม่ได้ที่รอยต่อช่วงชั้น (ชั้น ${d.next})</i>`
       },
       CD_VOW: {
         tag: 'CARD 07/08', tone: 'good',
         title: () => '💀 พันธสัญญาโลหิตทมิฬสำเร็จ',
-        body:  d => `ผ่านทั้งชั้นด้วย HP 1 โดยไม่พลาดแม้แต่ข้อเดียว\n` +
+        body:  d => `ผ่านชั้นนี้ด้วย HP 1 โดยไม่พลาดแม้แต่ข้อเดียวตลอดช่วงชั้น\n` +
                     `ได้ทองและ EXP รางวัลเคลียร์ชั้น <b>×${CD_VOW_MUL + 1}</b> (+${d.gold} ทอง +${d.exp} EXP)`
       },
       CD_INFO: {
         tag: 'CARD 08/08', tone: '',
-        title: d => `${d.icon} ${d.name} — ชั้น ${d.floor}`,
+        title: d => `${d.icon} ${d.name} — ช่วงชั้น ${d.band} (ยืนอยู่ชั้น ${d.floor})`,
         body:  d => `<b>${d.slot}</b> · ${d.tag}\n✦ ${d.good}` + (d.bad ? `\n✧ <i>${d.bad}</i>` : '') +
                     (d.state ? `\n${d.state}` : '')
       }
@@ -10847,7 +10856,7 @@
 
     // ── สถานะระหว่างเล่น (ไม่เซฟ — การ์ดมีอายุแค่ชั้นเดียว) ────────────
     let CD_CARD  = null;    /* การ์ดที่กำลังมีผล */
-    let CD_FLOOR = 0;       /* ชั้นที่การ์ดใบนี้ผูกอยู่ — 0 = ยังไม่ได้จั่ว */
+    let CD_BAND  = -1;      /* ช่วงชั้นที่จั่วไปแล้ว — -1 = ยังไม่ได้จั่วช่วงไหนเลย */
     let CD_ST    = null;    /* สถานะรายชั้น { ward, noItem, noHeal, atk, perfect, hit, miss } */
     let CD_OFFER = null;    /* การ์ด 3 ใบที่โชว์อยู่ */
     let CD_OPEN  = false;   /* หน้าต่างจั่วเปิดค้างอยู่ */
@@ -10858,13 +10867,39 @@
 
     function cdG() { return (typeof G !== 'undefined' && G) ? G : null; }
 
-    /* การ์ดจะ "มีผล" ก็ต่อเมื่อผูกอยู่กับชั้นปัจจุบันจริง ๆ เท่านั้น
-       เช็กชั้นทุกครั้งแทนการไล่ล้างตามจุด → GM ย้ายชั้น · ร่วงจาก HP หมด · รูเล็ตข้ามชั้น
-       ทุกเส้นทางจึงทำให้การ์ดหมดอายุเองอัตโนมัติโดยไม่ต้องเพิ่มโค้ดที่จุดนั้น */
+    // ── ช่วงชั้น (Zone Band) — หน่วยอายุของการ์ดตั้งแต่ patch นี้เป็นต้นไป ──────
+    /* ช่วงละ CD_BAND_SIZE ชั้น จบลงที่ด่านบอสประจำช่วงพอดี (isBossFloor ของ v4.0 = ทุก 5 ชั้น)
+       ชั้น 1-5 → ช่วง 0 · 6-10 → ช่วง 1 · 11-15 → ช่วง 2 · 16-20 → ช่วง 3
+       รอยต่อ (Zone Milestone) จึงเป็นชั้น 1 / 6 / 11 / 16 และหอคอยวนกลับชั้น 1 หลังจบชั้น 20
+       ตัวเลขผูกกับ FLOOR_MAX ของ v4.0 ทั้งหมด ไม่ได้ฮาร์ดโค้ดรายชั้นไว้ที่ไหน */
+    const CD_BAND_SIZE = 5;
+
+    function cdBandOf(floor) {
+      const f = Math.min(FLOOR_MAX, Math.max(1, Math.floor(floor || 1)));
+      return Math.floor((f - 1) / CD_BAND_SIZE);
+    }
+    function cdBandFrom(band) { return band * CD_BAND_SIZE + 1; }
+    function cdBandTo(band)   { return Math.min(FLOOR_MAX, cdBandFrom(band) + CD_BAND_SIZE - 1); }
+    function cdBandText(floor) { const b = cdBandOf(floor); return cdBandFrom(b) + '-' + cdBandTo(b); }
+
+    /* ชั้นแรกของช่วง = รอยต่อที่เปิดหน้าต่างจั่ว · ชั้นสุดท้ายของช่วง = ด่านบอสที่ปิดฉากการ์ด */
+    function cdIsMilestone(floor) { return cdBandFrom(cdBandOf(floor)) === Math.floor(floor || 0); }
+    function cdIsBandBoss(floor)  { return cdBandTo(cdBandOf(floor))   === Math.floor(floor || 0); }
+
+    /* ชั้นที่จะได้จั่วใบใหม่ = ชั้นแรกของช่วงถัดไป (เลยชั้น 20 แล้วหอคอยวนกลับชั้น 1) */
+    function cdNextDraftFloor(floor) {
+      const nx = cdBandFrom(cdBandOf(floor) + 1);
+      return nx > FLOOR_MAX ? 1 : nx;
+    }
+
+    /* การ์ดจะ "มีผล" ก็ต่อเมื่อผูกอยู่กับช่วงชั้นปัจจุบันจริง ๆ เท่านั้น
+       เช็กช่วงชั้นสดทุกครั้งแทนการไล่ล้างตามจุด → GM ย้ายชั้น · ร่วงข้ามช่วง · รูเล็ตข้ามชั้น
+       ทุกเส้นทางที่พาข้ามรอยต่อจึงทำให้การ์ดหมดอายุเองอัตโนมัติโดยไม่ต้องเพิ่มโค้ดที่จุดนั้น
+       ส่วนการเดินขึ้นชั้นถัดไป "ในช่วงเดียวกัน" การ์ดยังอยู่ครบตามกติกาใหม่ */
     function cdActive() {
       const g = cdG();
       if (!g || g.practiceMode) return null;
-      return (CD_CARD && CD_FLOOR === g.floor) ? CD_CARD : null;
+      return (CD_CARD && CD_BAND === cdBandOf(g.floor)) ? CD_CARD : null;
     }
     function cdSt()      { return cdActive() ? CD_ST : null; }
     function cdOn(id)    { const c = cdActive(); return !!(c && c.id === id); }
@@ -11060,8 +11095,10 @@
       cdClear();
       g.floor = z.from;
       g.floorProgress = 0;
-      CD_FLOOR = 0;             /* บังคับจั่วใหม่แม้ชั้นปลายทางจะเป็นชั้นเดิม */
-      cdNotify('CD_DROP', { floor: z.from, zone: z.id });
+      /* การ์ดสลายไปกับการร่วงแล้ว (cdClear ข้างบน) — จะได้ใบใหม่ก็ต่อเมื่อชั้นปลายทาง
+         อยู่คนละช่วงกับที่จั่วไว้ หรือเป็นรอยต่อของช่วง (ชั้น 1/6/11/16) เท่านั้น
+         ตกลงมากลางช่วงเดิม = ไต่ต่อด้วยมือเปล่าจนถึงรอยต่อถัดไป ห้ามจั่วซ้ำกลางช่วง */
+      cdNotify('CD_DROP', { floor: z.from, zone: z.id, next: cdNextDraftFloor(z.from) });
       renderStats();
       scheduleTurn(nextMonster, 1700);
     }
@@ -11076,8 +11113,9 @@
       g.floor++;
       if (g.floor > FLOOR_MAX) { g.floor = 1; g.towerClears = (g.towerClears || 0) + 1; }
       g.maxFloor = Math.max(g.maxFloor || 1, Math.min(g.floor, FLOOR_MAX));
-      CD_FLOOR = 0;
-      cdNotify('CD_JUMP', { floor: g.floor });
+      /* ทะลุขึ้นชั้นถัดไปแล้วการ์ดสลาย (cdClear ข้างบน) — ถ้าชั้นใหม่ยังอยู่ช่วงเดิม
+         จะไม่มีหน้าต่างจั่วเด้งกลางทาง ต้องไปรอรอยต่อช่วงถัดไป */
+      cdNotify('CD_JUMP', { floor: g.floor, next: cdNextDraftFloor(g.floor) });
       try { announceTitles(checkTitles(g), document.getElementById('gFeedback')); } catch (e) {}
       renderStats();
       scheduleTurn(nextMonster, 1700);
@@ -11088,16 +11126,32 @@
        ตัวจับเวลาของ v4.0 (QUESTION_TIMER / QUESTION_TICK) ยังเดินครบทุกวินาที
        ข้อกำหนดข้อ 8 — คลาสทั้งหมดถูกถอดคืนทุกครั้งที่การ์ดหมดอายุ */
     function cdPaintUi() {
-      const scr = document.getElementById('gameScreen');
+      const g    = cdG();
+      const scr  = document.getElementById('gameScreen');
       const card = cdActive();
+      /* "มือเปล่ากลางช่วง" — จั่วของช่วงนี้ไปแล้วแต่การ์ดสลายก่อนเวลา (ร่วง · ⚖️ · 🎲 · 🚑 กู้คืน)
+         ต้องบอกให้ชัดว่าไม่ใช่ระบบพัง แค่ต้องรอรอยต่อช่วงถัดไป */
+      const spent = !card && !!g && !g.practiceMode && CD_BAND === cdBandOf(g.floor);
       if (scr) {
-        scr.classList.toggle('cd-on',     !!card);
+        scr.classList.toggle('cd-on',     !!card || spent);
         scr.classList.toggle('cd-blind',  !!card && card.id === 'chrono');
         scr.classList.toggle('cd-noitem', !!(cdSt() && cdSt().noItem));
       }
       const badge = document.getElementById('cdBadge');
       if (!badge) return;
-      if (!card) { badge.className = 'cd-badge'; return; }
+      if (!card) {
+        badge.disabled = true;
+        if (!spent) { badge.className = 'cd-badge'; return; }
+        badge.className = 'cd-badge spent';
+        const i0 = document.getElementById('cdBadgeIcon');
+        const n0 = document.getElementById('cdBadgeName');
+        const s0 = document.getElementById('cdBadgeSub');
+        if (i0) i0.textContent = '🃏';
+        if (n0) n0.textContent = 'การ์ดของช่วงชั้นนี้สลายแล้ว';
+        if (s0) s0.textContent = 'จั่วใบใหม่ที่ชั้น ' + cdNextDraftFloor(g.floor);
+        return;
+      }
+      badge.disabled = false;
       badge.className = 'cd-badge t' + card.slot;
       const ico = document.getElementById('cdBadgeIcon');
       const nm  = document.getElementById('cdBadgeName');
@@ -11116,7 +11170,8 @@
       if (card.id === 'vow')   return st.perfect ? 'ยังไร้ที่ติ · HP 1' : 'พันธสัญญาขาดแล้ว';
       if (card.id === 'curse') return st.perfect ? 'ยังไร้ที่ติ' : 'พลาดแล้ว — ไม่ได้ไอเทมพิเศษ';
       if (card.id === 'seal')  return 'ห้ามใช้ไอเทม · ตอบไปแล้ว ' + (st.hit + st.miss) + ' ข้อ';
-      return '';
+      const g = cdG();
+      return g ? ('ช่วงชั้น ' + cdBandText(g.floor) + ' · ถึงบอสชั้น ' + cdBandTo(cdBandOf(g.floor))) : '';
     }
 
     /* แตะแบดจ์ = ดูรายละเอียดการ์ด — ใช้ toast ไม่ใช่หน้าต่างบังคับกด
@@ -11126,6 +11181,7 @@
       if (!g || !card) return;
       cdNotify('CD_INFO', {
         icon: card.icon, name: card.name, floor: g.floor,
+        band: cdBandText(g.floor), boss: cdBandTo(cdBandOf(g.floor)),
         slot: CD_SLOT_NAME[card.slot], tag: card.tag,
         good: card.good.join(' · '), bad: card.bad.join(' · '),
         state: cdBadgeState(card)
@@ -11133,11 +11189,29 @@
     }
 
     // ══ หน้าต่างจั่วการ์ด ═══════════════════════════════════════════
+    /* เงื่อนไขการจั่ว (patch v4.7 · ZONE MILESTONE) — เดิมคือ "ชั้นไหนยังไม่ได้จั่วก็จั่ว"
+       ตอนนี้เหลือสองทางเข้าเท่านั้น และทั้งคู่คือรอยต่อของช่วงชั้นทั้งสิ้น:
+
+         1) ยืนอยู่คนละช่วงกับช่วงที่จั่วไว้ (CD_BAND) → ก้าวข้ามรอยต่อมาจริง ๆ
+            ครอบทั้งการเคลียร์บอสขึ้นช่วงใหม่ · ถูกดึงข้ามช่วง · และการล็อกอินกลับเข้ามา
+         2) ยืนอยู่ชั้นแรกของช่วง (1/6/11/16) โดยมือเปล่า → ร่วงกลับต้นช่วงแล้วเริ่มช่วงนั้นใหม่
+
+       ระหว่างกลางช่วงชั้นจะไม่มีหน้าต่างจั่วเด้งเด็ดขาด ต่อให้การ์ดสลายไปก่อนก็ตาม */
     function cdNeedDraft() {
       const g = cdG();
       if (!g || g.practiceMode || CD_BOOT || CD_OPEN) return false;
       if (CD_SKIP === g.floor) return false;
-      return CD_FLOOR !== g.floor;
+      if (CD_BAND !== cdBandOf(g.floor)) return true;
+      return !CD_CARD && cdIsMilestone(g.floor);
+    }
+
+    /* Zone Milestone Event — จุดลงทะเบียนเหตุการณ์เพียงจุดเดียวของระบบจั่ว
+       wrapper ของ nextMonster เรียกตัวนี้ตัวเดียว (เดิมเช็กเงื่อนไขเองทุกครั้งที่เปลี่ยนชั้น)
+       คืน true = ยึดคิวไว้ก่อน เพราะหน้าต่างจั่วเปิดขึ้นแล้ว ห้ามให้ v4.0 ขึ้นมอนสเตอร์ต่อ */
+    function cdCheckZoneMilestone() {
+      if (!cdNeedDraft()) return false;
+      cdBeginDraft();
+      return true;
     }
 
     /* สุ่มช่องละ 1 ใบจากสายของช่องนั้น — คละประเภทครบสามสายเสมอตามกติกา */
@@ -11169,12 +11243,18 @@
       const boss = isBossFloor(g.floor);
       const z = zoneOf(g.floor);
 
+      const band = cdBandOf(g.floor);
+      const from = cdBandFrom(band), to = cdBandTo(band);
+
       const sub = document.getElementById('cdSub');
       if (sub) {
+        /* สองบรรทัดพอดีจอ 360-430 — ความสูงหน้าต่างนี้ตึงมาก เพิ่มบรรทัดแล้วการ์ดใบที่ 3 จะตกขอบ
+           (วัดจริงทุกครั้งที่แก้ข้อความ ดูหัวข้อชั้น v4.7 เรื่องจอ 320px) */
         sub.innerHTML =
-          '<b>ชั้น ' + g.floor + ' / ' + FLOOR_MAX + '</b> · โซน ' + z.id + ' · ' + esc(z.name) +
+          '<b>ช่วงชั้น ' + from + '-' + to + '</b> · ชั้น ' + g.floor + '/' + FLOOR_MAX +
+          ' · โซน ' + z.id + ' · ' + esc(z.name) +
           (boss ? ' · <span class="cd-boss">👑 ชั้นบอส</span>' : '') +
-          '<br>เลือก <b>1 ใบ</b> — ผลมีถึงสิ้นสุดชั้นนี้เท่านั้น แล้วสลายไปพร้อมกับการเคลียร์ชั้น';
+          '<br>เลือก <b>1 ใบ</b> — อยู่กับเจ้าตลอดช่วง จนกว่าจะเคลียร์บอสชั้น ' + to;
       }
       const box = document.getElementById('cdSlots');
       if (box) box.innerHTML = CD_OFFER.map(cdCardHtml).join('');
@@ -11227,8 +11307,8 @@
       if (!g || !card) return;
       CD_OPEN = false;
 
-      CD_CARD  = card;
-      CD_FLOOR = g.floor;
+      CD_CARD = card;
+      CD_BAND = cdBandOf(g.floor);   /* ผูกกับช่วงชั้น — เดินขึ้นชั้นถัดไปในช่วงเดิมการ์ดยังอยู่ */
       CD_ST = {
         ward:    card.id === 'ward',      /* ข้อกำหนดกันบั๊คข้อ 7 — Mutex ของโล่ใบเดียว */
         noItem:  card.id === 'seal',
@@ -11256,6 +11336,7 @@
       cdPaintUi();
       cdNotify('CD_PICK_' + card.slot, {
         icon: card.icon, name: card.name, floor: g.floor,
+        band: cdBandText(g.floor), boss: cdBandTo(cdBandOf(g.floor)),
         tag: card.tag, good: card.good.join(' · '), bad: card.bad.join(' · ')
       });
 
@@ -11277,16 +11358,28 @@
       }, CD_OUT_MS);
     }
 
-    /* การ์ดหมดอายุ — ข้อกำหนดกันบั๊คข้อ 8: ล้างการ์ด ตัวคูณ และ UI กลับค่าเริ่มต้นทุกครั้ง */
+    /* การ์ดสลายกลางช่วง — ข้อกำหนดกันบั๊คข้อ 8: ล้างการ์ด ตัวคูณ และ UI กลับค่าเริ่มต้นทุกครั้ง
+       **ไม่แตะ CD_BAND โดยตั้งใจ** ตราช่วงชั้นยังอยู่ หน้าต่างจั่วจึงไม่เด้งซ้ำกลางช่วง
+       (ใช้กับการร่วงเพราะ HP หมด · ⚖️ ตาชั่งดึงลง · 🎲 รูเล็ตข้ามชั้น · 🚑 กู้คืนของ GM) */
     function cdClear() {
       CD_CARD = null;
       CD_ST   = null;
-      CD_FLOOR = 0;
+      cdPaintUi();
+    }
+
+    /* Zone Cleanup Routine — จบช่วงชั้นแล้ว (เคลียร์ด่านบอสประจำช่วงสำเร็จ)
+       ปลดทั้งการ์ด · ตัวคูณ · Flag ห้ามใช้ไอเทม/ห้ามฟื้น · คลาส UI และ "ตราช่วงชั้น" คืนค่าเริ่มต้น
+       เพื่อให้รอยต่อของช่วงถัดไปเปิดหน้าต่างจั่วใหม่แน่นอน */
+    function cdZoneCleanup() {
+      CD_CARD = null;
+      CD_ST   = null;
+      CD_BAND = -1;
+      CD_FOCUS++;            /* ตัดโทเคนของ 🧘 ที่อาจค้างอยู่ ไม่ให้ไปแก้ questionStart ของช่วงถัดไป */
       cdPaintUi();
     }
 
     function cdReset() {
-      CD_CARD = null; CD_ST = null; CD_FLOOR = 0;
+      CD_CARD = null; CD_ST = null; CD_BAND = -1;
       CD_OFFER = null; CD_OPEN = false; CD_SKIP = 0; CD_FOCUS = 0;
       const el = document.getElementById('cdDraft');
       if (el) el.classList.remove('active', 'cd-out');
@@ -11355,7 +11448,11 @@
 
     /* CD_BOOT ปิดการจั่วไว้ตลอดช่วงที่ v4.0 ยังตั้งค่า G ใหม่อยู่ (มันเรียก nextMonster เองข้างใน)
        แล้วค่อยจั่วให้หลังอ่านค่าจาก store เข้ามาครบ — มอนสเตอร์ตัวที่ v4.0 สร้างไว้จะถูก
-       nextMonster() รอบใหม่หลังเลือกการ์ดทับให้เอง จึงไม่มีข้อไหนเริ่มโดยไม่มีการ์ด */
+       nextMonster() รอบใหม่หลังเลือกการ์ดทับให้เอง
+
+       การ์ดไม่ถูกเซฟลง store (มีอายุแค่ช่วงชั้นเดียว) ล็อกอินกลับเข้ามาจึงเข้าเงื่อนไขข้อ 1 ของ
+       cdNeedDraft() เสมอ (CD_BAND = -1) นักเรียนที่ค้างอยู่กลางช่วงจึงได้การ์ดคุ้มชั้นที่เหลือ
+       ไม่ถูกทิ้งให้ไต่มือเปล่าเพราะแค่ปิดเกมไปกินข้าว */
     const _cdStartGame = startGame;
     startGame = function (user) {
       CD_READY = false;
@@ -11400,11 +11497,12 @@
 
     /* จุดเข้าเดียวของระบบ — ทุกทางที่พาไปยืนบนชั้นใหม่ (เคลียร์ชั้น · ประตูวาปหลังบอส ·
        ร่วงเพราะ HP หมด · รูเล็ตข้ามชั้น · ตาชั่งดึงลง · GM ย้ายชั้น) ไหลมาลงที่ nextMonster ทั้งหมด
-       จึงดักที่นี่ที่เดียวพอ ไม่ต้องไปแทรกตามเส้นทางเปลี่ยนชั้นทีละเส้น */
+       จึงยังดักที่นี่ที่เดียวพอ — แต่ตัวตัดสินย้ายไปอยู่ที่ cdCheckZoneMilestone() แล้ว
+       เดินขึ้นชั้นถัดไปในช่วงเดิมจะไหลผ่านตรงนี้ไปเฉย ๆ ไม่มีหน้าต่างจั่วมาคั่นอีกต่อไป */
     const _cdNextMonster = nextMonster;
     nextMonster = function () {
       try {
-        if (cdNeedDraft()) { cdBeginDraft(); return; }
+        if (cdCheckZoneMilestone()) return;
       } catch (e) { cdErr(e, 'cdNextMonster'); }
       return _cdNextMonster.apply(this, arguments);
     };
@@ -11514,22 +11612,36 @@
       return r;
     };
 
-    /* เคลียร์ชั้น = จ่ายรางวัลของการ์ด แล้วล้างการ์ดทิ้งทั้งชุด (ข้อกำหนดกันบั๊คข้อ 8)
-       ต้องอ่าน cdActive() ก่อนเรียกของเดิม เพราะ clearFloor ของ v4.0 บวก G.floor ไปแล้ว
-       การ์ดจะกลายเป็น "ของชั้นก่อน" ทันทีที่ของเดิมทำงานจบ */
+    /* เคลียร์ชั้น = จ่ายรางวัลของการ์ดของชั้นนั้น แล้ว "ล้างทั้งชุดเฉพาะตอนจบช่วงชั้น"
+       ต้องอ่าน cdActive() กับ G.floor ก่อนเรียกของเดิม เพราะ clearFloor ของ v4.0 บวก G.floor ไปแล้ว
+       การ์ดจะกลายเป็น "ของช่วงก่อน" ทันทีที่ก้าวข้ามรอยต่อ
+
+       รางวัลของการ์ดยังจ่าย "ทุกชั้นที่เคลียร์ได้" เหมือนเดิม — ค่าครองชีพจึงเท่ารุ่นก่อนเป๊ะ
+       (รุ่นก่อนจั่วชั้นละใบ จ่ายชั้นละครั้ง · ตอนนี้จั่วช่วงละใบ จ่ายทุกชั้นในช่วง = ผลรวมเท่ากัน)
+       ต่างกันแค่ผู้เล่นเลือกน้อยลงแต่ต้องรับผลของใบเดียวให้ครบทั้งช่วง */
     const _cdClearFloor = clearFloor;
     clearFloor = function (boss) {
-      const g    = cdG();
-      const card = cdActive();
-      const st   = CD_ST;
+      const g       = cdG();
+      const card    = cdActive();
+      const st      = CD_ST;
+      const cleared = g ? g.floor : 0;
+      const hpWas   = g ? g.hp : 0;
+      const zoneEnd = cdIsBandBoss(cleared);   /* จบช่วงชั้น = เคลียร์ด่านบอสประจำช่วงสำเร็จ */
       const r = _cdClearFloor.apply(this, arguments);
       try {
         if (g && card && st && !g.practiceMode) {
           cdFloorReward(g, card, st, !!boss);
+          /* 💀 ห้ามฟื้นพลังทุกทาง — ต้องหนีบ "หลัง" จ่ายรางวัลเสมอ เพราะฟื้นได้สองทางในจังหวะนี้:
+             HP ที่ INT ฟื้นให้ตอนผ่านชั้น และหลอดเต็มตอนเลเวลอัป (levelUpCheck ของ v4.0 เซ็ต hp = maxHp
+             ซึ่งรางวัล EXP ของการ์ดก็เรียกซ้ำอีกรอบ) รุ่นก่อนการ์ดหมดอายุพร้อมชั้นพอดี
+             ช่องนี้จึงไม่เคยเปิด พอการ์ดอยู่ยาวทั้งช่วงชั้นต้องปิดเอง */
+          if (st.noHeal && g.hp > hpWas) g.hp = hpWas;
           renderStats();
         }
       } catch (e) { cdErr(e, 'cdClearFloor'); }
-      try { cdClear(); cdSave(); } catch (e) { cdErr(e, 'cdClearFloorReset'); }
+      /* กลางช่วง: การ์ดอยู่ต่อ แค่วาด UI ใหม่ · จบช่วง: Zone Cleanup Routine ล้างคืนค่าเริ่มต้น */
+      try { if (zoneEnd) cdZoneCleanup(); else cdPaintUi(); cdSave(); }
+      catch (e) { cdErr(e, 'cdClearFloorReset'); }
       return r;
     };
 
@@ -11716,8 +11828,9 @@
         const body = document.getElementById('gStatusBody');
         const g = cdG(), b = cdOf(g);
         if (body && g && b && !body.querySelector('.cd-strow')) {
-          const card = cdActive();
-          const top  = CD_CARDS.slice()
+          const card  = cdActive();
+          const spent = !card && CD_BAND === cdBandOf(g.floor);
+          const top   = CD_CARDS.slice()
             .sort(function (x, y) { return ((b.picks[y.id] || 0) - (b.picks[x.id] || 0)); })
             .filter(function (c) { return (b.picks[c.id] || 0) > 0; })
             .slice(0, 3)
@@ -11726,10 +11839,14 @@
                      ' ×' + b.picks[c.id] + '</span>';
             }).join(' · ');
           body.insertAdjacentHTML('afterbegin',
-            '<div class="g-mrow cd-strow"><div class="g-mlabel">🃏 การ์ดเวทมนตร์ประจำชั้น</div>' +
+            '<div class="g-mrow cd-strow"><div class="g-mlabel">🃏 การ์ดเวทมนตร์ประจำช่วงชั้น</div>' +
             '<div class="g-mtext">' +
-              (card ? 'ชั้นนี้ถือ ' + card.icon + ' <b>' + esc(card.name) + '</b> — ' + esc(card.tag)
-                    : 'ยังไม่ได้จั่วการ์ดของชั้นนี้') +
+              (card  ? 'ช่วงชั้น ' + cdBandText(g.floor) + ' ถือ ' + card.icon + ' <b>' +
+                       esc(card.name) + '</b> — ' + esc(card.tag) +
+                       '<br>อยู่จนกว่าจะเคลียร์ด่านบอสชั้น ' + cdBandTo(cdBandOf(g.floor))
+               : spent ? 'การ์ดของช่วงชั้น ' + cdBandText(g.floor) +
+                         ' สลายไปแล้ว — จั่วใบใหม่ที่ชั้น ' + cdNextDraftFloor(g.floor)
+                       : 'ยังไม่ได้จั่วการ์ดของช่วงชั้นนี้') +
               '<br>จั่วไปแล้ว ' + b.drafts + ' ครั้ง · 💀 พันธสัญญาสำเร็จ ' + b.vow + ' ครั้ง' +
               (top ? '<br>ใบที่เลือกบ่อยสุด: ' + top : '') +
             '</div></div>');
@@ -11740,7 +11857,9 @@
 
     /* ทางออกฉุกเฉินของครู — ปุ่ม 🚑 กู้คืนของชั้น v4.3 ต้องปลดหน้าต่างจั่วการ์ดที่ค้างได้ด้วย
        ตั้ง CD_SKIP ไว้ที่ชั้นปัจจุบัน เพื่อไม่ให้ nextMonster() ที่ gcUnlockScreen เรียกต่อ
-       เปิดหน้าต่างเดิมกลับมาซ้ำเป็นวงจรปิด — พอเปลี่ยนชั้นแล้วระบบจั่วก็กลับมาทำงานเอง */
+       เปิดหน้าต่างเดิมกลับมาซ้ำเป็นวงจรปิด และปั๊มตราช่วงชั้นปัจจุบันไว้ด้วย (CD_BAND)
+       ไม่งั้นชั้นถัดไปในช่วงเดียวกันจะเด้งหน้าต่างเดิมกลับมาอีก — พอถึงรอยต่อช่วงถัดไป
+       ระบบจั่วก็กลับมาทำงานเอง */
     const _cdGcUnlockScreen = gcUnlockScreen;
     gcUnlockScreen = function () {
       const closed = [];
@@ -11750,7 +11869,7 @@
         if (CD_OPEN || (el && el.classList.contains('active'))) closed.push('หน้าต่างจั่วการ์ด');
         CD_OPEN = false;
         if (el) el.classList.remove('active', 'cd-out');
-        if (g) CD_SKIP = g.floor;
+        if (g) { CD_SKIP = g.floor; CD_BAND = cdBandOf(g.floor); }
         cdClear();
       } catch (e) { cdErr(e, 'cdGcUnlock'); }
       const r = _cdGcUnlockScreen.apply(this, arguments);
@@ -11892,6 +12011,11 @@
           '.cd-badge.t1 .cd-badge-txt b{color:#2ef2d0}' +
           '.cd-badge.t2 .cd-badge-txt b{color:#ffc845}' +
           '.cd-badge.t3 .cd-badge-txt b{color:#ff9aa6}' +
+          /* มือเปล่ากลางช่วงชั้น — แบดจ์เทาและกดไม่ได้ บอกแค่ว่าจั่วใบใหม่ได้ชั้นไหน */
+          '.cd-badge.spent{border-color:rgba(255,255,255,.16);box-shadow:none;cursor:default;' +
+            'opacity:.72}' +
+          '.cd-badge.spent .cd-badge-ico{filter:grayscale(1);opacity:.7}' +
+          '.cd-badge.spent .cd-badge-txt b{color:#9aa8c4;font-weight:600}' +
 
           /* ── 👁️‍🗨️ นาฬิกาตาบอด — ซ่อนด้วย CSS ล้วน ตัวจับเวลาเบื้องหลังยังเดินครบทุกวินาที ── */
           '#gameScreen.cd-blind #gTimerText{visibility:hidden}' +
@@ -11927,12 +12051,13 @@
         document.body.insertAdjacentHTML('beforeend',
           '<div class="g-modal" id="cdDraft">' +
             '<div class="g-modal-inner">' +
-              '<div class="cd-kicker">CARD DRAFTING PROTOCOL</div>' +
-              '<div class="g-modal-title">🃏 เลือกการ์ดเวทมนตร์ประจำชั้น</div>' +
+              '<div class="cd-kicker">ZONE CARD DRAFTING PROTOCOL</div>' +
+              '<div class="g-modal-title">🃏 เลือกการ์ดเวทมนตร์ประจำช่วงชั้น</div>' +
               '<div class="cd-sub" id="cdSub"></div>' +
               '<div class="cd-slots" id="cdSlots"></div>' +
               '<div class="cd-more" id="cdMore">▼ เลื่อนลงดูการ์ดให้ครบ 3 ใบ</div>' +
-              '<div class="cd-foot">การ์ดสลายเมื่อเคลียร์ชั้น · ร่วงชั้นหรือถูกดึงลงก็ได้จั่วใหม่</div>' +
+              '<div class="cd-foot">การ์ดอยู่ตลอดช่วงชั้น (5 ชั้น) · ' +
+                'สลายเมื่อเคลียร์ด่านบอสประจำช่วง แล้วจั่วใหม่ที่รอยต่อช่วงถัดไป</div>' +
             '</div>' +
           '</div>');
       }

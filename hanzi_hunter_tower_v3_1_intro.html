@@ -10609,6 +10609,1348 @@
       abSyncButtons();
       abSealBar();
     })();
+
+    // ══════════════════════════════════════════════════════════════════
+    // v4.7 · CARD DRAFTING MODULE — การ์ดเวทมนตร์ประจำชั้น (Rogue-lite)
+    // ══════════════════════════════════════════════════════════════════
+    /* ชั้นนี้ไม่แก้โค้ด v4.0-v4.6 เลยแม้แต่บรรทัดเดียว — ห่อฟังก์ชันแบบเดียวกับหกชั้นก่อนหน้า
+       ทุกอย่างขึ้นต้นด้วย cd / CD_ · ลบทั้งก้อนทิ้งแล้วเกมยังเล่นได้ปกติ
+
+       กติกา: ก่อนเริ่มประลองชั้นใหม่ทุกครั้ง ผู้เล่นต้องเลือกการ์ด 1 ใบจาก 3 ใบ
+       ช่องซ้ายเป็นสายประคองเกม · ช่องกลางเป็นสายแลกเปลี่ยน · ช่องขวาเป็นสายวัดใจ
+       การ์ดมีผล "เฉพาะชั้นนั้น" แล้วสลายทิ้งตอนเคลียร์ชั้น (ไม่มีการ์ดสะสมข้ามชั้น) */
+
+    const CD_VER = 1;
+
+    /* ── จุดที่ปลอดภัยสำหรับหน้าต่างบังคับเลือก ─────────────────────
+       กับดักข้อ 18 ห้ามเปิดหน้าต่างบังคับกดขณะนาฬิกาต่อข้อเดินอยู่ — หน้าต่างจั่วการ์ดของชั้นนี้
+       จึงถูกยิงที่ "ก่อน nextMonster ทำงาน" เท่านั้น ซึ่งเป็นช่วงที่ v4.0 เคลียร์นาฬิกาไปแล้ว
+       และ cdBeginDraft() ยังสั่ง clearQuestionTimer() ซ้ำอีกชั้นเพื่อความแน่นอน */
+
+    // ── ค่าบาลานซ์ทั้งหมด (แก้ตัวเลขที่นี่ที่เดียว) ──────────────────
+    const CD_FOCUS_MS     = 5000;   /* 🧘 หยุดเวลาต้นข้อ */
+    const CD_MANA_PCT     = 5;      /* 🌀 คืน MP ต่อการตอบถูก (% ของ MP สูงสุด) */
+    const CD_DEW_PCT      = 10;     /* 🌿 ฟื้น HP (% ของหลอด) */
+    const CD_DEW_EVERY    = 3;      /* 🌿 ทุกสตรีคครบกี่ข้อ */
+    const CD_MERCHANT     = 0.25;   /* 🪙 อัตราทอง +25% */
+
+    const CD_SHACKLE_CUT  = 0.30;   /* ⛓️ เวลาต่อข้อหายไป 30% */
+    const CD_MS_MIN       = 2500;   /* พื้นเวลาขั้นต่ำ กันเวลาสั้นจนอ่านตัวเลือกไม่ทัน */
+    const CD_BLOOD_HP     = 15;     /* 🩸 จ่าย HP ตอนเข้าชั้น */
+    const CD_BLOOD_STEP   = 0.12;   /* 🩸 พลังโจมตีสะสมต่อการตอบถูก 1 ข้อ */
+    const CD_BLOOD_CAP    = 1.20;   /* 🩸 เพดานพลังสะสม (+120%) */
+    const CD_EDGE_TAKE    = 0.50;   /* 🗡️ รับดาเมจเพิ่ม 50% */
+    const CD_EDGE_DEAL    = 1.00;   /* 🗡️ ลงดาเมจเพิ่ม 100% */
+
+    const CD_CURSE_TAKE   = 2.00;   /* ⚡ รับดาเมจเพิ่ม 200% (รวมเป็น ×3) */
+    const CD_EXEC_MS      = 3000;   /* 🗡️ ตอบถูกในกี่มิลลิวินาทีถึงสังหารทันที */
+    const CD_EXEC_LOSS    = 0.50;   /* 🗡️ ตอบผิดเสีย HP (% ของหลอด) */
+    const CD_SCALES_SHARD = 3;      /* ⚖️ 💎 ต่อการตอบถูก */
+    const CD_VOW_MUL      = 4;      /* 💀 บวกทอง/EXP เพิ่มอีก 4 เท่า รวมเป็น ×5 */
+    const CD_SAND_MS      = 3000;   /* ⏳ เวลาต่อข้อคงที่ */
+    const CD_SAND_SHARD   = 2;      /* ⏳ 💎 ต่อการตอบถูก */
+    const CD_SAND_LOSS    = 0.80;   /* ⏳ ตอบผิด/หมดเวลาเสีย HP (% ของหลอด) */
+    const CD_ROU_SHARD    = 4;      /* 🎲 💎 หน้าคริสตัล */
+    const CD_ROU_LOSS     = 0.50;   /* 🎲 หน้าหายนะ (% ของหลอด) */
+    const CD_INF_TAKE     = 2.00;   /* 🔥 รับดาเมจเพิ่ม 200% (รวมเป็น ×3) */
+    const CD_INF_DEAL     = 2.00;   /* 🔥 ลงดาเมจเพิ่ม 200% (รวมเป็น ×3) */
+
+    const CD_OUT_MS       = 620;    /* อนิเมชันสลายเวทมนตร์ก่อนเริ่มประลอง */
+
+    const CD_SLOT_NAME = { 1: 'สายประคองเกม', 2: 'สายแลกเปลี่ยน', 3: 'สายวัดใจ' };
+    const CD_SLOT_SUB  = { 1: 'Support / Balance', 2: 'Risk & Reward', 3: 'Extreme Conditional' };
+
+    /* ── คลังการ์ด ───────────────────────────────────────────────────
+       slot 1/2/3 ตรงกับช่องซ้าย/กลาง/ขวา — การจั่วสุ่มช่องละ 1 ใบจากสายของช่องนั้นเสมอ
+       tone ใช้ทั้งกับสีกรอบการ์ดและกับ toast (ค่าเดียวกับที่ชั้น v4.1 ใช้)
+       good/bad คือบรรทัดที่โชว์บนหน้าการ์ด — เขียนให้อ่านจบใน 1 บรรทัดบนจอ 390px */
+    const CD_CARDS = [
+      // ─── สายที่ 1 · ประคองเกม (ช่องซ้าย) ───────────────────────────
+      { id:'ward', slot:1, icon:'🛡️', tone:'good',
+        name:'โล่พิพากษา', en:'Judgment Shield',
+        tag:'กันพลาดครั้งแรก 1 ครั้ง',
+        good:['ตอบผิด "ครั้งแรกครั้งเดียว" ของชั้นนี้ ไม่เสีย HP และสตรีคไม่ขาด'],
+        bad:['กันได้ครั้งเดียวแล้วโล่แตกทันที — ครั้งต่อไปรับเต็ม'] },
+
+      { id:'focus', slot:1, icon:'🧘', tone:'good',
+        name:'สมาธิแน่วแน่', en:'Absolute Focus',
+        tag:'แช่แข็งเวลา ' + (CD_FOCUS_MS / 1000) + ' วิแรกของทุกข้อ',
+        good:['ทุกข้อในชั้นนี้ หยุดเวลา ' + (CD_FOCUS_MS / 1000) + ' วินาทีแรกให้อ่านตัวเลือกก่อน',
+              'เวลาที่ใช้คิดเริ่มนับหลังน้ำแข็งละลาย จึงไม่เสียสถิติความไว'],
+        bad:['ไม่ได้ต่อเวลา — พอน้ำแข็งละลายก็นับถอยหลังตามปกติ'] },
+
+      { id:'mana', slot:1, icon:'🌀', tone:'good',
+        name:'การไหลเวียนเวทมนตร์', en:'Mana Circulation',
+        tag:'ตอบถูก คืน MP ' + CD_MANA_PCT + '%',
+        good:['ตอบถูกทุกครั้งในชั้นนี้ ฟื้น MP อีก ' + CD_MANA_PCT + '% ของหลอดมานา',
+              'ได้พร้อมกับ MP ปกติของ v4.0 — ร่ายสกิลได้ถี่ขึ้นชัดเจน'],
+        bad:['ไม่ช่วยอะไรถ้ามานาเต็มหลอดอยู่แล้ว'] },
+
+      { id:'dew', slot:1, icon:'🌿', tone:'good',
+        name:'หยาดน้ำทิพย์สตรีค', en:'Streak Dew',
+        tag:'สตรีคครบทุก ' + CD_DEW_EVERY + ' ข้อ ฟื้น HP ' + CD_DEW_PCT + '%',
+        good:['ตอบถูกติดกันครบทุก ' + CD_DEW_EVERY + ' ข้อในชั้นนี้ ฟื้น HP ' + CD_DEW_PCT + '% ของหลอด'],
+        bad:['ตอบผิดครั้งเดียวสตรีคขาด ต้องเริ่มนับ ' + CD_DEW_EVERY + ' ข้อใหม่'] },
+
+      { id:'merchant', slot:1, icon:'🪙', tone:'good',
+        name:'พรแห่งโชคลาภ', en:"Merchant's Blessing",
+        tag:'ทองจากการตอบถูก +' + Math.round(CD_MERCHANT * 100) + '%',
+        good:['ทองที่ได้จากการตอบถูกทุกข้อในชั้นนี้ เพิ่มขึ้น ' + Math.round(CD_MERCHANT * 100) + '%'],
+        bad:['ไม่มีผลกับทองรางวัลตอนเคลียร์ชั้น และไม่ช่วยเรื่องรอด'] },
+
+      // ─── สายที่ 2 · แลกเปลี่ยน (ช่องกลาง) ─────────────────────────
+      { id:'shackle', slot:2, icon:'⛓️', tone:'warn',
+        name:'โซ่ตรวนแห่งความมืด', en:'Dark Shackle',
+        tag:'เวลา −' + Math.round(CD_SHACKLE_CUT * 100) + '% · ผ่านชั้นได้ทอง ×2',
+        good:['ผ่านชั้นนี้สำเร็จ ได้ทองรางวัลเคลียร์ชั้น ×2'],
+        bad:['เวลาคิดต่อข้อหายไป ' + Math.round(CD_SHACKLE_CUT * 100) + '% ตลอดทั้งชั้น'] },
+
+      { id:'blood', slot:2, icon:'🩸', tone:'warn',
+        name:'พันธะโลหิต', en:'Blood Pact',
+        tag:'จ่าย ' + CD_BLOOD_HP + ' HP · พลังโจมตีสะสมขึ้นเรื่อย ๆ',
+        good:['ตอบถูกทุกข้อสะสมพลังโจมตี +' + Math.round(CD_BLOOD_STEP * 100) +
+              '% (เพดาน +' + Math.round(CD_BLOOD_CAP * 100) + '%) ตลอดชั้น'],
+        bad:['เสีย HP ทันที ' + CD_BLOOD_HP + ' หน่วยตอนก้าวเข้าชั้น (ไม่ทำให้ HP ต่ำกว่า 1)'] },
+
+      { id:'chrono', slot:2, icon:'👁️‍🗨️', tone:'warn',
+        name:'นาฬิกาตาบอด', en:'Hidden Chrono',
+        tag:'ซ่อนนาฬิกา · ผ่านชั้นได้ EXP ×2',
+        good:['ผ่านชั้นนี้สำเร็จ ได้ EXP รางวัลเคลียร์ชั้น ×2'],
+        bad:['มองไม่เห็นแถบเวลาและตัวเลขนับถอยหลัง — แต่เวลายังเดินอยู่ทุกวินาที'] },
+
+      { id:'seal', slot:2, icon:'🚫', tone:'warn',
+        name:'ผนึกพ็อกเก็ต', en:'Pocket Item Seal',
+        tag:'ห้ามใช้ไอเทม · ผ่านชั้นได้ไอเทมฟรี 1 ชิ้น',
+        good:['ผ่านชั้นนี้สำเร็จ ได้ไอเทมสุ่มฟรี 1 ชิ้น'],
+        bad:['กดใช้ไอเทมจากกระเป๋าไม่ได้เลยตลอดทั้งชั้น (🛡️ ประกันภัยยังทำงานเอง)'] },
+
+      { id:'edge', slot:2, icon:'🗡️', tone:'warn',
+        name:'ดาบสองคม', en:'Double-Edged Blade',
+        tag:'ลงดาเมจ +' + Math.round(CD_EDGE_DEAL * 100) + '% · รับดาเมจ +' + Math.round(CD_EDGE_TAKE * 100) + '%',
+        good:['ตอบถูก สร้างความเสียหายใส่อสูร/บอสแรงขึ้น ' + Math.round(CD_EDGE_DEAL * 100) + '%'],
+        bad:['ตอบผิด รับความเสียหายรุนแรงขึ้น ' + Math.round(CD_EDGE_TAKE * 100) + '%'] },
+
+      // ─── สายที่ 3 · วัดใจ (ช่องขวา) ───────────────────────────────
+      { id:'curse', slot:3, icon:'⚡', tone:'danger',
+        name:'คำสาปย้อนกลับ', en:'Retaliation Curse',
+        tag:'ตอบผิดรับดาเมจ ×3 · ไร้ที่ติได้ไอเทมพิเศษ',
+        good:['ตอบถูกทุกข้อของชั้นนี้โดยไม่พลาดเลย ได้ไอเทมสุ่มพิเศษทันทีตอนเคลียร์ชั้น'],
+        bad:['ตอบผิด รับความเสียหายย้อนกลับ ×' + (1 + CD_CURSE_TAKE) + ' ของปกติ'] },
+
+      { id:'exec', slot:3, icon:'🗡️', tone:'danger',
+        name:'ตัดสินเทพเจ้า', en:'Divine Execution',
+        tag:'ตอบถูกใน ' + (CD_EXEC_MS / 1000) + ' วิ = สังหารทันที',
+        good:['ตอบถูกภายใน ' + (CD_EXEC_MS / 1000) + ' วินาทีแรกของข้อ สังหารอสูร/บอสตัวนั้นทันที'],
+        bad:['ตอบผิด เสีย HP ' + Math.round(CD_EXEC_LOSS * 100) + '% ของหลอดทันที'] },
+
+      { id:'scales', slot:3, icon:'⚖️', tone:'danger',
+        name:'ตาชั่งแห่งความตาย', en:"Death's Scales",
+        tag:'ตอบถูกฟื้นเต็ม · ตอบผิดร่วงต้นโซน',
+        good:['ตอบถูก ฟื้น HP เต็มหลอดทันที และได้ 💎 ' + CD_SCALES_SHARD + ' เศษคริสตัล'],
+        bad:['ตอบผิดแม้แต่ข้อเดียว ร่วงลงไปเริ่มใหม่ที่ชั้นแรกของโซนนั้นทันที'] },
+
+      { id:'vow', slot:3, icon:'💀', tone:'danger',
+        name:'พันธสัญญาโลหิตทมิฬ', en:'Dark Blood Pact',
+        tag:'เริ่มชั้นด้วย HP 1 · ไร้ที่ติได้ ×' + (CD_VOW_MUL + 1),
+        good:['ตอบถูกหมดทั้งชั้น ได้ทองและ EXP รางวัลเคลียร์ชั้น ×' + (CD_VOW_MUL + 1) + ' พร้อมฉายาลับ'],
+        bad:['เริ่มชั้นด้วย HP เหลือ 1 หน่วย และห้ามฟื้นพลังทุกทางตลอดชั้น'] },
+
+      { id:'sand', slot:3, icon:'⏳', tone:'danger',
+        name:'ทรายมรณะแห่งโครโนส', en:"Chronos's Death Sand",
+        tag:'เวลา ' + (CD_SAND_MS / 1000) + ' วิ/ข้อ · ตอบถูกได้ ×2',
+        good:['ตอบถูก ได้ 💎 ' + CD_SAND_SHARD + ' เศษคริสตัล และทองจากข้อนั้น ×2'],
+        bad:['เวลาคิดต่อข้อถูกบีบเหลือ ' + (CD_SAND_MS / 1000) + ' วินาที · ตอบผิดหรือหมดเวลา เสีย HP ' +
+             Math.round(CD_SAND_LOSS * 100) + '%'] },
+
+      { id:'roulette', slot:3, icon:'🎲', tone:'danger',
+        name:'รูเล็ตแห่งความพินาศ', en:'Ruins Roulette',
+        tag:'ทุกข้อสุ่ม 1 ใน 3 ผลลัพธ์',
+        good:['ทุกข้อสุ่ม: 💎 ' + CD_ROU_SHARD + ' เศษคริสตัล / ทะลุขึ้นชั้นถัดไปทันที'],
+        bad:['หรือออกหน้าหายนะ เสีย HP ' + Math.round(CD_ROU_LOSS * 100) + '% ของหลอด (โอกาสเท่ากันทั้งสามหน้า)'] },
+
+      { id:'inferno', slot:3, icon:'🔥', tone:'danger',
+        name:'เปลวเพลิงล้างบาง', en:'Purging Inferno',
+        tag:'ลงดาเมจ ×3 · รับดาเมจ ×3',
+        good:['ตอบถูก ลงดาเมจ ×' + (1 + CD_INF_DEAL) + ' (ชั้นบอส: เผาเกราะผนึกพังทลายทันที)'],
+        bad:['ตอบผิด เสีย HP ×' + (1 + CD_INF_TAKE) + ' ของปกติ'] }
+    ];
+
+    const CD_BY_ID = {};
+    CD_CARDS.forEach(function (c) { CD_BY_ID[c.id] = c; });
+
+    // ── แจ้งเตือนของชั้นนี้ — สารบัญของตัวเอง แยกจาก SYS_NOTIF (25) / Q_NOTIF (6)
+    //    / CX_NOTIF (4) / AB_NOTIF (9) · ยืมแค่กลไกโชว์มาใช้ ──────────────
+    /* ทั้งชุดเป็น toast ล้วน ไม่มี gate สักอัน (กับดักข้อ 18) — ตัวหน้าต่างบังคับเลือกการ์ด
+       เป็นของชั้นนี้เองและถูกเปิดตอนนาฬิกาหยุดสนิทแล้วเท่านั้น */
+    const CD_NOTIF = {
+      CD_PICK_1: {
+        tag: 'CARD 01/08', tone: 'good',
+        title: d => `${d.icon} ${d.name} — การ์ดประจำชั้น ${d.floor}`,
+        body:  d => `<b>สายประคองเกม</b> · ${d.tag}\n${d.good}`
+      },
+      CD_PICK_2: {
+        tag: 'CARD 02/08', tone: 'warn',
+        title: d => `${d.icon} ${d.name} — การ์ดประจำชั้น ${d.floor}`,
+        body:  d => `<b>สายแลกเปลี่ยน</b> · ${d.tag}\n✦ ${d.good}\n✧ <i>${d.bad}</i>`
+      },
+      CD_PICK_3: {
+        tag: 'CARD 03/08', tone: 'danger',
+        title: d => `${d.icon} ${d.name} — การ์ดประจำชั้น ${d.floor}`,
+        body:  d => `<b>สายวัดใจ</b> · ${d.tag}\n✦ ${d.good}\n✧ <i>${d.bad}</i>`
+      },
+      CD_WARD: {
+        tag: 'CARD 04/08', tone: 'good',
+        title: () => '🛡️ โล่พิพากษาสลาย',
+        body:  d => `กันความเสียหายไว้ทั้งหมดและรักษาสตรีค <b>${d.streak}</b> ข้อไว้ให้\n` +
+                    `<i>โล่ใบนี้ใช้ได้ครั้งเดียว — พลาดครั้งหน้ารับเต็มตามปกติ</i>`
+      },
+      CD_DROP: {
+        tag: 'CARD 05/08', tone: 'danger',
+        title: () => '⚖️ ตาชั่งพิพากษา',
+        body:  d => `ตอบพลาดขณะถือ ⚖️ ตาชั่งแห่งความตาย — ร่วงกลับชั้น <b>${d.floor}</b> ต้นโซน ${d.zone}\n` +
+                    `เลเวล ทอง และของในกระเป๋ายังอยู่ครบ · ชั้นสูงสุดที่เคยไต่ถึงไม่หาย`
+      },
+      CD_JUMP: {
+        tag: 'CARD 06/08', tone: 'good',
+        title: () => '🎲 รูเล็ตเปิดประตูมิติ',
+        body:  d => `ทะลุขึ้นชั้น <b>${d.floor}</b> ทันทีโดยไม่ต้องปราบให้ครบ\n` +
+                    `<i>ชั้นที่ข้ามไม่ได้ทองและ EXP รางวัลเคลียร์ชั้น — ตัวการข้ามคือรางวัลของมันเอง</i>`
+      },
+      CD_VOW: {
+        tag: 'CARD 07/08', tone: 'good',
+        title: () => '💀 พันธสัญญาโลหิตทมิฬสำเร็จ',
+        body:  d => `ผ่านทั้งชั้นด้วย HP 1 โดยไม่พลาดแม้แต่ข้อเดียว\n` +
+                    `ได้ทองและ EXP รางวัลเคลียร์ชั้น <b>×${CD_VOW_MUL + 1}</b> (+${d.gold} ทอง +${d.exp} EXP)`
+      },
+      CD_INFO: {
+        tag: 'CARD 08/08', tone: '',
+        title: d => `${d.icon} ${d.name} — ชั้น ${d.floor}`,
+        body:  d => `<b>${d.slot}</b> · ${d.tag}\n✦ ${d.good}` + (d.bad ? `\n✧ <i>${d.bad}</i>` : '') +
+                    (d.state ? `\n${d.state}` : '')
+      }
+    };
+
+    function cdNotify(key, data) {
+      const def = CD_NOTIF[key];
+      if (!def) return;
+      const d = data || {};
+      let title, body;
+      try { title = def.title(d); body = def.body(d); } catch (e) { return; }
+      snShowToast(def, title, body);
+    }
+
+    /* การ์ดพังต้องไม่ลากเกมลงไปด้วย — ทุก wrapper ห่อ try/catch แล้วเขียนลง Error Log ของ v4.3 */
+    function cdErr(e, where) {
+      if (typeof gcErrPush !== 'function') return;
+      try { gcErrPush('err', 'CARD: ' + ((e && e.message) || e), where || '', (e && e.stack) || ''); } catch (e2) {}
+    }
+
+    // ── สถานะระหว่างเล่น (ไม่เซฟ — การ์ดมีอายุแค่ชั้นเดียว) ────────────
+    let CD_CARD  = null;    /* การ์ดที่กำลังมีผล */
+    let CD_FLOOR = 0;       /* ชั้นที่การ์ดใบนี้ผูกอยู่ — 0 = ยังไม่ได้จั่ว */
+    let CD_ST    = null;    /* สถานะรายชั้น { ward, noItem, noHeal, atk, perfect, hit, miss } */
+    let CD_OFFER = null;    /* การ์ด 3 ใบที่โชว์อยู่ */
+    let CD_OPEN  = false;   /* หน้าต่างจั่วเปิดค้างอยู่ */
+    let CD_BOOT  = false;   /* อยู่ระหว่าง startGame ของ v4.0 — ยังไม่จั่ว */
+    let CD_READY = false;   /* อ่านค่าจาก store เข้า G.cd ครบแล้ว (กฎเดียวกับ AB_READY — กับดักข้อ 16) */
+    let CD_SKIP  = 0;       /* ชั้นที่ถูกสั่งข้ามการจั่ว (ทางออกฉุกเฉินของ GM) */
+    let CD_FOCUS = 0;       /* โทเคนของ 🧘 สมาธิแน่วแน่ — กัน setTimeout ของข้อเก่ายิงข้ามข้อ */
+
+    function cdG() { return (typeof G !== 'undefined' && G) ? G : null; }
+
+    /* การ์ดจะ "มีผล" ก็ต่อเมื่อผูกอยู่กับชั้นปัจจุบันจริง ๆ เท่านั้น
+       เช็กชั้นทุกครั้งแทนการไล่ล้างตามจุด → GM ย้ายชั้น · ร่วงจาก HP หมด · รูเล็ตข้ามชั้น
+       ทุกเส้นทางจึงทำให้การ์ดหมดอายุเองอัตโนมัติโดยไม่ต้องเพิ่มโค้ดที่จุดนั้น */
+    function cdActive() {
+      const g = cdG();
+      if (!g || g.practiceMode) return null;
+      return (CD_CARD && CD_FLOOR === g.floor) ? CD_CARD : null;
+    }
+    function cdSt()      { return cdActive() ? CD_ST : null; }
+    function cdOn(id)    { const c = cdActive(); return !!(c && c.id === id); }
+
+    // ── ข้อมูลถาวร: account.cd ─────────────────────────────────────
+    /* ต้อง idempotent เพราะถูกเรียกทุกครั้งที่อ่าน store ผ่าน migrateAccount
+       a.cdv คือตรารุ่น (กฎเดียวกับ gcv / cxv / trv / abv — กับดักข้อ 8) และเคสนี้ไม่มีอะไรให้
+       backfill: v4.0-v4.6 ไม่เคยมีระบบการ์ด บัญชีเก่าจึงเริ่มนับจากศูนย์ทุกคน */
+    function cdEnsure(a) {
+      if (!a || typeof a !== 'object') return a;
+      const c = (a.cd && typeof a.cd === 'object') ? a.cd : {};
+
+      const num = function (v) {
+        return (typeof v === 'number' && isFinite(v) && v > 0) ? Math.floor(v) : 0;
+      };
+      const tally = function (o) {
+        const out = {};
+        if (o && typeof o === 'object') CD_CARDS.forEach(function (d) {
+          const v = num(o[d.id]);
+          if (v > 0) out[d.id] = v;
+        });
+        return out;
+      };
+
+      c.drafts  = num(c.drafts);
+      c.vow     = num(c.vow);
+      c.picks   = tally(c.picks);
+      c.cleared = tally(c.cleared);
+
+      a.cd = c;
+      if (a.cdv !== CD_VER) a.cdv = CD_VER;
+      return a;
+    }
+
+    /* อ่านอย่างเดียว — ห้ามสร้าง g.cd เปล่าให้เอง (กับดักข้อ 16)
+       ระหว่าง startGame ชั้นล่างเรียก renderStats() → saveProgress() หลายรอบก่อนที่ wrapper
+       ของชั้นนี้จะได้อ่านค่าจริงจาก store ถ้าเผลอสร้างก้อนศูนย์ไว้ตรงนั้น ค่าจริงจะถูกทับทันที */
+    function cdOf(src) {
+      const g = src || cdG();
+      return (g && g.cd && typeof g.cd === 'object') ? g.cd : null;
+    }
+
+    /* v4.0 saveProgress ไม่รู้จักฟิลด์ cd — เขียนเองต่อท้ายเหมือนที่ v4.5/v4.6 ทำ */
+    function cdSave() {
+      if (!CD_READY || !CURRENT_USER) return;
+      const g = cdG();
+      const b = cdOf(g);
+      if (!b) return;
+      const s = loadStore(), a = s[CURRENT_USER];
+      if (!a) return;
+      cdEnsure(a);
+      a.cd.drafts  = Math.max(a.cd.drafts, Math.max(0, Math.floor(b.drafts || 0)));
+      a.cd.vow     = Math.max(a.cd.vow,    Math.max(0, Math.floor(b.vow || 0)));
+      CD_CARDS.forEach(function (d) {
+        const p = Math.max(0, Math.floor((b.picks || {})[d.id] || 0));
+        const q = Math.max(0, Math.floor((b.cleared || {})[d.id] || 0));
+        if (p > 0) a.cd.picks[d.id]   = Math.max(a.cd.picks[d.id]   || 0, p);
+        if (q > 0) a.cd.cleared[d.id] = Math.max(a.cd.cleared[d.id] || 0, q);
+      });
+      saveStore(s);
+    }
+
+    function cdBump(id, field) {
+      const b = cdOf();
+      if (!b || !CD_BY_ID[id]) return;
+      if (!b[field] || typeof b[field] !== 'object') b[field] = {};
+      b[field][id] = (b[field][id] || 0) + 1;
+    }
+
+    // ══ ตัวช่วยกลาง — ทุกผลของการ์ดวิ่งผ่านสี่ตัวนี้เท่านั้น ═══════════
+    /* เหตุผลที่ต้องมีตัวกลาง: ผลของการ์ดถูกใส่ "หลังจาก" v4.0 ตัดสินผลของข้อนั้นไปแล้ว
+       ถ้าดาเมจของการ์ดทำให้มอนสเตอร์ตายหรือฮันเตอร์ตายทีหลัง v4.0 จะไม่รู้ตัว
+       ต้องสั่งคิวเทิร์นใหม่เองเสมอ ไม่งั้นจะเหลือมอนสเตอร์ HP 0 ยืนรอข้อถัดไป
+       หรือฮันเตอร์ HP ติดลบเดินต่อได้ */
+
+    function cdSealLeft() {
+      try { return (typeof abSealLeft === 'function') ? abSealLeft() : 0; } catch (e) { return 0; }
+    }
+
+    function cdQueueDefeat() {
+      const g = cdG();
+      if (!g) return;
+      scheduleTurn(g.practiceMode ? nextMonster : onMonsterDefeated, 1100);
+    }
+
+    /* ดาเมจพิเศษที่ลงมอนสเตอร์ · mhpAfter = HP มอนสเตอร์ตอน v4.0-v4.6 ทำงานจบ
+       เกราะผนึกของ v4.6 ยังตั้งอยู่ → กินได้แค่ชั้นเกราะ ห้ามทะลุลงไปกิน HP จริงของบอส */
+    function cdHitMonster(extra, mhpAfter) {
+      const g = cdG();
+      if (!g || !(extra > 0)) return 0;
+      const sealed = cdSealLeft();
+      const room  = sealed > 0 ? sealed : Math.max(0, g.monsterHp);
+      const dealt = Math.min(room, Math.round(extra));
+      if (dealt <= 0) return 0;
+
+      g.monsterHp -= dealt;
+      if (sealed > 0 && cdSealLeft() <= 0) { try { abSealBroken(); } catch (e) { cdErr(e, 'cdHitSeal'); } }
+      renderMonsterHp();
+      if (mhpAfter > 0 && g.monsterHp <= 0) cdQueueDefeat();
+      return dealt;
+    }
+
+    /* สังหารทันที — เผาเกราะผนึกทิ้งก่อนแล้วค่อยล้างหลอด HP */
+    function cdExecute(mhpAfter) {
+      const g = cdG();
+      if (!g) return 0;
+      const sealed = cdSealLeft();
+      if (sealed > 0) {
+        g.monsterHp -= sealed;
+        try { abSealBroken(); } catch (e) { cdErr(e, 'cdExecSeal'); }
+      }
+      const gone = Math.max(0, g.monsterHp);
+      g.monsterHp = 0;
+      renderMonsterHp();
+      if (mhpAfter > 0) cdQueueDefeat();
+      return gone;
+    }
+
+    /* เสีย HP เพิ่มจากผลการ์ด · hpAfter = HP ฮันเตอร์ตอนชั้นล่างทำงานจบ */
+    function cdHurt(amount, hpAfter) {
+      const g = cdG();
+      if (!g || g.practiceMode || !(amount > 0)) return 0;
+      const cut = Math.round(amount);
+      if (cut <= 0) return 0;
+      g.hp -= cut;
+      g.bossNoDamage = false;
+      if (hpAfter > 0 && g.hp <= 0) scheduleTurn(onHunterDown, 900);
+      return cut;
+    }
+
+    /* บังคับให้ความเสียหายรวมของข้อนี้ไม่น้อยกว่า pct ของหลอด (ใช้กับ 🗡️ / ⏳) */
+    function cdEnsureLoss(pct, hpBefore, hpAfter) {
+      const g = cdG();
+      if (!g) return 0;
+      const want    = Math.round(g.maxHp * pct);
+      const already = Math.max(0, hpBefore - hpAfter);
+      return cdHurt(want - already, hpAfter);
+    }
+
+    /* ฟื้น HP — เคารพ Flag ห้ามฟื้นพลังของ 💀 พันธสัญญาโลหิตทมิฬ (ข้อกำหนดกันบั๊คข้อ 4) */
+    function cdHeal(amount) {
+      const g = cdG();
+      const st = cdSt();
+      if (!g || (st && st.noHeal) || !(amount > 0)) return 0;
+      const h = Math.min(Math.max(0, g.maxHp - g.hp), Math.round(amount));
+      if (h > 0) g.hp += h;
+      return h;
+    }
+
+    /* 💎 เศษคริสตัลใช้ก้อนเดียวกับชั้น v4.6 — ไม่สร้างสกุลเงินใหม่ให้ต้องบาลานซ์อีกอัน */
+    function cdShards(n) {
+      const g = cdG();
+      if (!g || !(n > 0)) return 0;
+      let b = null;
+      try { b = (typeof abOf === 'function') ? abOf(g) : null; } catch (e) { b = null; }
+      if (!b) return 0;
+      const cap = (typeof AB_SHARD_CAP === 'number') ? AB_SHARD_CAP : 99999;
+      const add = Math.round(n);
+      b.shards = Math.min(cap, b.shards + add);
+      try { if (typeof abSave === 'function') abSave(); } catch (e) {}
+      return add;
+    }
+
+    function cdRandomItem(special) {
+      const pool = (special ? ['potion', 'scroll', 'freeze', 'focus', 'glass', 'insurance']
+                            : ['potion', 'scroll', 'focus', 'glass']).filter(unlocked);
+      if (!pool.length) return '';
+      const key = pool[Math.floor(Math.random() * pool.length)];
+      const msg = grantOrCash(key, '🎁');
+      renderItems();
+      return msg;
+    }
+
+    /* ข้อกำหนดกันบั๊คข้อ 5 — ก่อนย้ายชั้นกลางคันต้องล้างสถานะข้อปัจจุบันให้หมดก่อนเสมอ
+       ไม่งั้นนาฬิกาและคิวเทิร์นของข้อเก่าจะไปยิงทับชั้นใหม่ (ดัชนีคำถามพัง) */
+    function cdAbortQuestion() {
+      try { clearTurnTimer(); } catch (e) {}
+      try { clearQuestionTimer(); } catch (e) {}
+      const g = cdG();
+      if (!g) return;
+      g.locked = true;
+      g.currentMonster = null;
+      g.monsterHp = 0;
+      document.querySelectorAll('.g-choice').forEach(function (b) { b.disabled = true; });
+    }
+
+    /* ⚖️ ร่วงกลับชั้นแรกของโซนปัจจุบัน (ไม่แตะทอง — ต่างจาก onHunterDown ที่หัก 20%) */
+    function cdDropZone() {
+      const g = cdG();
+      if (!g) return;
+      const z = zoneOf(g.floor);
+      cdAbortQuestion();
+      cdClear();
+      g.floor = z.from;
+      g.floorProgress = 0;
+      CD_FLOOR = 0;             /* บังคับจั่วใหม่แม้ชั้นปลายทางจะเป็นชั้นเดิม */
+      cdNotify('CD_DROP', { floor: z.from, zone: z.id });
+      renderStats();
+      scheduleTurn(nextMonster, 1700);
+    }
+
+    /* 🎲 ทะลุขึ้นชั้นถัดไปโดยไม่ได้รางวัลเคลียร์ชั้น — การข้ามคือรางวัลของมันเอง */
+    function cdSkipFloor() {
+      const g = cdG();
+      if (!g) return;
+      cdAbortQuestion();
+      cdClear();
+      g.floorProgress = 0;
+      g.floor++;
+      if (g.floor > FLOOR_MAX) { g.floor = 1; g.towerClears = (g.towerClears || 0) + 1; }
+      g.maxFloor = Math.max(g.maxFloor || 1, Math.min(g.floor, FLOOR_MAX));
+      CD_FLOOR = 0;
+      cdNotify('CD_JUMP', { floor: g.floor });
+      try { announceTitles(checkTitles(g), document.getElementById('gFeedback')); } catch (e) {}
+      renderStats();
+      scheduleTurn(nextMonster, 1700);
+    }
+
+    // ══ หน้าจอ: แบดจ์มุมจอ + คลาสสถานะ ══════════════════════════════
+    /* ข้อกำหนดกันบั๊คข้อ 1 — การซ่อนนาฬิกาของ 👁️‍🗨️ ทำผ่านคลาส CSS อย่างเดียว
+       ตัวจับเวลาของ v4.0 (QUESTION_TIMER / QUESTION_TICK) ยังเดินครบทุกวินาที
+       ข้อกำหนดข้อ 8 — คลาสทั้งหมดถูกถอดคืนทุกครั้งที่การ์ดหมดอายุ */
+    function cdPaintUi() {
+      const scr = document.getElementById('gameScreen');
+      const card = cdActive();
+      if (scr) {
+        scr.classList.toggle('cd-on',     !!card);
+        scr.classList.toggle('cd-blind',  !!card && card.id === 'chrono');
+        scr.classList.toggle('cd-noitem', !!(cdSt() && cdSt().noItem));
+      }
+      const badge = document.getElementById('cdBadge');
+      if (!badge) return;
+      if (!card) { badge.className = 'cd-badge'; return; }
+      badge.className = 'cd-badge t' + card.slot;
+      const ico = document.getElementById('cdBadgeIcon');
+      const nm  = document.getElementById('cdBadgeName');
+      const sub = document.getElementById('cdBadgeSub');
+      if (ico) ico.textContent = card.icon;
+      if (nm)  nm.textContent  = card.name;
+      if (sub) sub.textContent = cdBadgeState(card) || card.tag;
+    }
+
+    /* บรรทัดล่างของแบดจ์บอก "สถานะสด" ของการ์ดใบนั้น ไม่ใช่แค่ชื่อผล */
+    function cdBadgeState(card) {
+      const st = cdSt();
+      if (!st) return '';
+      if (card.id === 'ward')  return st.ward ? 'โล่ยังอยู่ · กันได้ 1 ครั้ง' : 'โล่แตกแล้ว';
+      if (card.id === 'blood') return 'พลังสะสม +' + Math.round(st.atk * 100) + '%';
+      if (card.id === 'vow')   return st.perfect ? 'ยังไร้ที่ติ · HP 1' : 'พันธสัญญาขาดแล้ว';
+      if (card.id === 'curse') return st.perfect ? 'ยังไร้ที่ติ' : 'พลาดแล้ว — ไม่ได้ไอเทมพิเศษ';
+      if (card.id === 'seal')  return 'ห้ามใช้ไอเทม · ตอบไปแล้ว ' + (st.hit + st.miss) + ' ข้อ';
+      return '';
+    }
+
+    /* แตะแบดจ์ = ดูรายละเอียดการ์ด — ใช้ toast ไม่ใช่หน้าต่างบังคับกด
+       เพราะแบดจ์กดได้ตอนนาฬิกากำลังเดิน (กับดักข้อ 18) */
+    function cdShowCard() {
+      const g = cdG(), card = cdActive();
+      if (!g || !card) return;
+      cdNotify('CD_INFO', {
+        icon: card.icon, name: card.name, floor: g.floor,
+        slot: CD_SLOT_NAME[card.slot], tag: card.tag,
+        good: card.good.join(' · '), bad: card.bad.join(' · '),
+        state: cdBadgeState(card)
+      });
+    }
+
+    // ══ หน้าต่างจั่วการ์ด ═══════════════════════════════════════════
+    function cdNeedDraft() {
+      const g = cdG();
+      if (!g || g.practiceMode || CD_BOOT || CD_OPEN) return false;
+      if (CD_SKIP === g.floor) return false;
+      return CD_FLOOR !== g.floor;
+    }
+
+    /* สุ่มช่องละ 1 ใบจากสายของช่องนั้น — คละประเภทครบสามสายเสมอตามกติกา */
+    function cdRoll() {
+      return [1, 2, 3].map(function (slot) {
+        const pool = CD_CARDS.filter(function (c) { return c.slot === slot; });
+        return pool[Math.floor(Math.random() * pool.length)];
+      });
+    }
+
+    function cdCardHtml(card, i) {
+      const good = card.good.map(function (t) { return '<div class="cd-l ok">✦ ' + esc(t) + '</div>'; }).join('');
+      const bad  = card.bad.map(function (t) { return '<div class="cd-l no">✧ ' + esc(t) + '</div>'; }).join('');
+      return '<button type="button" class="cd-card t' + card.slot + '" id="cdCard' + i + '" onclick="cdPick(' + i + ')">' +
+        '<span class="cd-rune"></span>' +
+        '<span class="cd-slot">ช่อง ' + (i + 1) + ' · ' + esc(CD_SLOT_NAME[card.slot]) +
+          '<i>' + esc(CD_SLOT_SUB[card.slot]) + '</i></span>' +
+        '<span class="cd-face"><span class="cd-ico">' + card.icon + '</span>' +
+          '<span class="cd-title"><b>' + esc(card.name) + '</b><i>' + esc(card.en) + '</i></span></span>' +
+        '<span class="cd-tag">' + esc(card.tag) + '</span>' +
+        '<span class="cd-lines">' + good + bad + '</span>' +
+        '<span class="cd-go">▶ เลือกใบนี้</span>' +
+      '</button>';
+    }
+
+    function cdRenderDraft() {
+      const g = cdG();
+      if (!g || !CD_OFFER) return;
+      const boss = isBossFloor(g.floor);
+      const z = zoneOf(g.floor);
+
+      const sub = document.getElementById('cdSub');
+      if (sub) {
+        sub.innerHTML =
+          '<b>ชั้น ' + g.floor + ' / ' + FLOOR_MAX + '</b> · โซน ' + z.id + ' · ' + esc(z.name) +
+          (boss ? ' · <span class="cd-boss">👑 ชั้นบอส</span>' : '') +
+          '<br>เลือก <b>1 ใบ</b> — ผลมีถึงสิ้นสุดชั้นนี้เท่านั้น แล้วสลายไปพร้อมกับการเคลียร์ชั้น';
+      }
+      const box = document.getElementById('cdSlots');
+      if (box) box.innerHTML = CD_OFFER.map(cdCardHtml).join('');
+      cdScrollHint();
+    }
+
+    /* จอเล็กใส่การ์ดสามใบไม่พอ ต้องบอกให้ชัดว่ายังมีอยู่ข้างล่าง
+       วัดจากของจริงทุกครั้ง ไม่ใช้ media query เดา เพราะความสูงของการ์ดขึ้นกับความยาวข้อความ */
+    function cdScrollHint() {
+      const wrap  = document.getElementById('cdDraft');
+      const inner = wrap && wrap.querySelector('.g-modal-inner');
+      if (!wrap || !inner) return;
+      const check = function () {
+        const over = inner.scrollHeight - inner.clientHeight;
+        wrap.classList.toggle('cd-scroll', over > 8 && inner.scrollTop < over - 8);
+      };
+      if (!inner.dataset.cdBound) {
+        inner.dataset.cdBound = '1';
+        inner.addEventListener('scroll', check);
+        window.addEventListener('resize', check);
+      }
+      setTimeout(check, 0);
+    }
+
+    function cdBeginDraft() {
+      const g = cdG();
+      if (!g || CD_OPEN) return;
+
+      /* จุดนี้คือช่วงที่ v4.0 หยุดเกมไว้แล้วจริง ๆ (ก่อนขึ้นมอนสเตอร์ตัวแรกของชั้น)
+         ยังสั่งล้างนาฬิกาซ้ำอีกชั้น เพื่อให้แน่ใจว่าไม่มีเวลาเดินอยู่เบื้องหลังหน้าต่างนี้ */
+      try { clearTurnTimer(); } catch (e) {}
+      try { clearQuestionTimer(); } catch (e) {}
+      try { closeWarp(); } catch (e) {}
+      g.locked = true;
+
+      CD_OPEN  = true;
+      CD_OFFER = cdRoll();
+      const b = cdOf(g);
+      if (b) b.drafts = (b.drafts || 0) + 1;
+
+      cdRenderDraft();
+      const el = document.getElementById('cdDraft');
+      if (el) { el.classList.remove('cd-out'); el.classList.add('active'); }
+    }
+
+    function cdPick(i) {
+      if (!CD_OPEN) return;
+      const g = cdG();
+      const card = CD_OFFER && CD_OFFER[i];
+      if (!g || !card) return;
+      CD_OPEN = false;
+
+      CD_CARD  = card;
+      CD_FLOOR = g.floor;
+      CD_ST = {
+        ward:    card.id === 'ward',      /* ข้อกำหนดกันบั๊คข้อ 7 — Mutex ของโล่ใบเดียว */
+        noItem:  card.id === 'seal',
+        noHeal:  card.id === 'vow',
+        atk:     0,
+        perfect: true,
+        hit:     0,
+        miss:    0,
+        paid:    0
+      };
+
+      /* ── ผลที่เกิดทันทีตอนก้าวเข้าชั้น ──
+         ข้อกำหนดกันบั๊คข้อ 3 — หัก HP ด้วย Math.max(1, …) เสมอ ห้ามให้ติดลบแล้ว
+         ขึ้น Game Over ตั้งแต่ยังไม่ได้ตอบข้อแรก */
+      if (card.id === 'blood') {
+        const before = g.hp;
+        g.hp = Math.max(1, g.hp - CD_BLOOD_HP);
+        CD_ST.paid = before - g.hp;
+      } else if (card.id === 'vow') {
+        CD_ST.paid = Math.max(0, g.hp - 1);
+        g.hp = Math.max(1, Math.min(g.hp, 1));
+      }
+
+      cdBump(card.id, 'picks');
+      cdPaintUi();
+      cdNotify('CD_PICK_' + card.slot, {
+        icon: card.icon, name: card.name, floor: g.floor,
+        tag: card.tag, good: card.good.join(' · '), bad: card.bad.join(' · ')
+      });
+
+      /* อนิเมชันสลายเวทมนตร์ — ใบที่เลือกวูบสว่างแล้วละลาย ใบที่เหลือจางหายไปก่อน */
+      const el = document.getElementById('cdDraft');
+      for (let k = 0; k < 3; k++) {
+        const c = document.getElementById('cdCard' + k);
+        if (c) c.classList.add(k === i ? 'cd-chosen' : 'cd-gone');
+      }
+      if (el) el.classList.add('cd-out');
+
+      setTimeout(function () {
+        if (el) el.classList.remove('active', 'cd-out');
+        try {
+          renderStats();
+          cdSave();
+          nextMonster();          /* คราวนี้ cdNeedDraft() เป็น false แล้ว จึงไหลลงชั้นล่างตามปกติ */
+        } catch (e) { cdErr(e, 'cdPickGo'); }
+      }, CD_OUT_MS);
+    }
+
+    /* การ์ดหมดอายุ — ข้อกำหนดกันบั๊คข้อ 8: ล้างการ์ด ตัวคูณ และ UI กลับค่าเริ่มต้นทุกครั้ง */
+    function cdClear() {
+      CD_CARD = null;
+      CD_ST   = null;
+      CD_FLOOR = 0;
+      cdPaintUi();
+    }
+
+    function cdReset() {
+      CD_CARD = null; CD_ST = null; CD_FLOOR = 0;
+      CD_OFFER = null; CD_OPEN = false; CD_SKIP = 0; CD_FOCUS = 0;
+      const el = document.getElementById('cdDraft');
+      if (el) el.classList.remove('active', 'cd-out');
+      cdPaintUi();
+    }
+
+    // ══ รางวัลตอนเคลียร์ชั้น ═══════════════════════════════════════
+    /* ค่าครองชีพของ v4.0: เคลียร์ชั้นปกติ +150 ทอง / +60 EXP · ชั้นบอส +500 / +250
+       การ์ดสายแลกเปลี่ยนจ่ายเพิ่มอีกก้อนเท่ากันเพื่อให้เป็น ×2 พอดี
+       ทองก้อนนี้บวกเข้า totalGoldEarned ด้วย (กฎเดียวกับออโรร่าของ v4.6) เพราะมาจากการ
+       ไต่หอคอยจริง ไม่ได้วนกลับไปปั๊มเงื่อนไขของตัวเองแบบทองรางวัลเควสของ v4.2 */
+    function cdFloorReward(g, card, st, boss) {
+      const gold = boss ? 500 : 150;
+      const exp  = boss ? 250 : 60;
+      const fb   = document.getElementById('gFeedback');
+      const add  = function (t) { if (fb) fb.textContent += t; };
+      const done = st.hit > 0;
+
+      if (card.id === 'shackle') {
+        g.gold += gold;
+        g.totalGoldEarned = (g.totalGoldEarned || 0) + gold;
+        add(' | ⛓️ โซ่ตรวนคลาย — ทอง ×2 (+' + gold + ')');
+
+      } else if (card.id === 'chrono') {
+        g.exp += exp;
+        levelUpCheck();
+        add(' | 👁️‍🗨️ นาฬิกาตาบอดคืนค่า — EXP ×2 (+' + exp + ')');
+
+      } else if (card.id === 'seal') {
+        const got = cdRandomItem(false);
+        if (got) add(' | 🚫 ผนึกพ็อกเก็ตคลาย — ' + got);
+
+      } else if (card.id === 'curse') {
+        if (done && st.perfect) {
+          const got = cdRandomItem(true);
+          if (got) add(' | ⚡ ไร้ที่ติทั้งชั้น! คำสาปย้อนกลับมอบ ' + got);
+        }
+
+      } else if (card.id === 'vow') {
+        if (done && st.perfect) {
+          const gg = gold * CD_VOW_MUL, ge = exp * CD_VOW_MUL;
+          g.gold += gg;
+          g.totalGoldEarned = (g.totalGoldEarned || 0) + gg;
+          g.exp += ge;
+          levelUpCheck();
+          const b = cdOf(g);
+          if (b) b.vow = (b.vow || 0) + 1;
+          add(' | 💀 พันธสัญญาสำเร็จ — ทอง/EXP ×' + (CD_VOW_MUL + 1) + '!');
+          cdNotify('CD_VOW', { gold: gg, exp: ge });
+          try { announceTitles(checkTitles(g), fb); } catch (e) {}
+        }
+      }
+
+      cdBump(card.id, 'cleared');
+    }
+
+    // ══ ห่อฟังก์ชันของ v4.0-v4.6 ═══════════════════════════════════
+    /* ทุกตัวเป็น wrapper ล้วน ไม่มีบรรทัดไหนแก้ของเดิม — ลบบล็อกนี้ทิ้งแล้วเกมกลับไปเป็น v4.6 ทันที */
+
+    const _cdMigrateAccount = migrateAccount;
+    migrateAccount = function (a) {
+      const r = _cdMigrateAccount.apply(this, arguments);
+      if (r && typeof r === 'object') cdEnsure(r);
+      return r;
+    };
+
+    /* CD_BOOT ปิดการจั่วไว้ตลอดช่วงที่ v4.0 ยังตั้งค่า G ใหม่อยู่ (มันเรียก nextMonster เองข้างใน)
+       แล้วค่อยจั่วให้หลังอ่านค่าจาก store เข้ามาครบ — มอนสเตอร์ตัวที่ v4.0 สร้างไว้จะถูก
+       nextMonster() รอบใหม่หลังเลือกการ์ดทับให้เอง จึงไม่มีข้อไหนเริ่มโดยไม่มีการ์ด */
+    const _cdStartGame = startGame;
+    startGame = function (user) {
+      CD_READY = false;
+      CD_BOOT  = true;
+      cdReset();
+      const r = _cdStartGame.apply(this, arguments);
+      try {
+        CD_BOOT = false;
+        const a = CURRENT_USER ? loadStore()[CURRENT_USER] : null;
+        const g = cdG();
+        if (g) {
+          const src = (a && a.cd) ? a.cd : null;
+          g.cd = {
+            drafts:  src ? src.drafts : 0,
+            vow:     src ? src.vow : 0,
+            picks:   src ? Object.assign({}, src.picks) : {},
+            cleared: src ? Object.assign({}, src.cleared) : {}
+          };
+          cdEnsure(g);
+          CD_READY = true;      /* ค่าจริงเข้า G.cd แล้ว เขียนกลับ store ได้ (กับดักข้อ 16) */
+        }
+        cdPaintUi();
+        if (cdNeedDraft()) cdBeginDraft();
+      } catch (e) { cdErr(e, 'cdStartGame'); }
+      return r;
+    };
+
+    const _cdSaveProgress = saveProgress;
+    saveProgress = function () {
+      const r = _cdSaveProgress.apply(this, arguments);
+      try { cdSave(); } catch (e) { cdErr(e, 'cdSaveProgress'); }
+      return r;
+    };
+
+    const _cdExitGame = exitGame;
+    exitGame = function () {
+      try { cdSave(); cdReset(); } catch (e) { cdErr(e, 'cdExitGame'); }
+      const r = _cdExitGame.apply(this, arguments);
+      CD_READY = false;
+      return r;
+    };
+
+    /* จุดเข้าเดียวของระบบ — ทุกทางที่พาไปยืนบนชั้นใหม่ (เคลียร์ชั้น · ประตูวาปหลังบอส ·
+       ร่วงเพราะ HP หมด · รูเล็ตข้ามชั้น · ตาชั่งดึงลง · GM ย้ายชั้น) ไหลมาลงที่ nextMonster ทั้งหมด
+       จึงดักที่นี่ที่เดียวพอ ไม่ต้องไปแทรกตามเส้นทางเปลี่ยนชั้นทีละเส้น */
+    const _cdNextMonster = nextMonster;
+    nextMonster = function () {
+      try {
+        if (cdNeedDraft()) { cdBeginDraft(); return; }
+      } catch (e) { cdErr(e, 'cdNextMonster'); }
+      return _cdNextMonster.apply(this, arguments);
+    };
+
+    /* 🧘 สมาธิแน่วแน่ — แช่แข็งหลอดเวลาต้นข้อด้วยกลไก freezeQuestionTimer ของ v4.0
+       ข้อกำหนดกันบั๊คข้อ 6: G.questionStart ถูก v4.0 รีเซ็ตใหม่ทุกข้ออยู่แล้วใน startQuestionTimer
+       ตัวการ์ดเลื่อนจุดเริ่มนับไปอีกทีตอนน้ำแข็งละลาย เวลาคิดจริงจึงไม่ถูกบวกช่วงที่แช่แข็งเข้าไปด้วย
+       (โทเคน CD_FOCUS กัน setTimeout ของข้อเก่ายิงข้ามมาแก้ questionStart ของข้อใหม่) */
+    const _cdStartQuestionTimer = startQuestionTimer;
+    startQuestionTimer = function () {
+      const r = _cdStartQuestionTimer.apply(this, arguments);
+      try {
+        CD_FOCUS++;
+        if (cdOn('focus')) {
+          const token = CD_FOCUS;
+          freezeQuestionTimer(CD_FOCUS_MS);
+          setTimeout(function () {
+            const g = cdG();
+            if (g && CD_FOCUS === token && !g.locked) g.questionStart = Date.now();
+          }, CD_FOCUS_MS + 40);
+        }
+      } catch (e) { cdErr(e, 'cdStartQuestionTimer'); }
+      return r;
+    };
+
+    /* ข้อกำหนดกันบั๊คข้อ 2 — คำนวณจากค่าที่สูตรของชั้นล่างคืนมาทุกครั้ง
+       ไม่มีบรรทัดไหนเขียนทับ QUESTION_MS / BOSS_QUESTION_MS ซึ่งเป็นค่าฐานของระบบ
+       และข้อ 8 — ปัดด้วย Math.round() เสมอ */
+    const _cdQuestionMs = questionMs;
+    questionMs = function () {
+      const ms = _cdQuestionMs.apply(this, arguments);
+      try {
+        if (cdOn('sand'))    return CD_SAND_MS;
+        if (cdOn('shackle')) return Math.max(CD_MS_MIN, Math.round(ms * (1 - CD_SHACKLE_CUT)));
+      } catch (e) { cdErr(e, 'cdQuestionMs'); }
+      return ms;
+    };
+
+    /* ตัวคูณทองใส่ที่ wrapper ของสูตรจุดเดียวตามกฎของ v4.4/v4.6 — ไม่ไล่แก้ตามจุดเรียก
+       จึงมีผลกับทุกที่ที่อ่าน goldMul() (การให้ทองตอนตอบถูก · แถว LUK ในแผงสถานะ) พร้อมกัน */
+    function cdGoldMul() {
+      if (cdOn('merchant')) return 1 + CD_MERCHANT;
+      if (cdOn('sand'))     return 2;
+      return 1;
+    }
+    const _cdGoldMul = goldMul;
+    goldMul = function () {
+      const v = _cdGoldMul.apply(this, arguments);
+      try { return v * cdGoldMul(); } catch (e) { return v; }
+    };
+
+    /* ข้อกำหนดกันบั๊คข้อ 4 — Flag ห้ามใช้ไอเทม/ห้ามฟื้นพลังถูกบล็อกที่ "ตัวฟังก์ชันกลาง"
+       ไม่ใช่ที่ปุ่ม UI จึงครอบทุกทางเข้า: กดปุ่มในกระเป๋า · useSelected() · โค้ดอื่นที่เรียกตรง ๆ
+       (เกมนี้ไม่มีคีย์ลัดไอเทม แต่ถ้าเพิ่มในอนาคตก็ยังถูกบล็อกโดยอัตโนมัติ) */
+    const _cdUseItem = useItem;
+    useItem = function (kind) {
+      try {
+        const st = cdSt();
+        if (st && st.noItem) {
+          itemMsg('🚫 ผนึกพ็อกเก็ต — ชั้นนี้ห้ามใช้ไอเทมจากกระเป๋า');
+          return;
+        }
+        if (st && st.noHeal && kind === 'potion') {
+          itemMsg('💀 พันธสัญญาโลหิตทมิฬ — ชั้นนี้ห้ามฟื้นพลังทุกทาง');
+          return;
+        }
+      } catch (e) { cdErr(e, 'cdUseItem'); }
+      return _cdUseItem.apply(this, arguments);
+    };
+
+    const _cdUseSkill = useSkill;
+    useSkill = function (key) {
+      try {
+        const st = cdSt();
+        if (st && st.noHeal && key === 'ward') {
+          skillTip('💀 พันธสัญญาโลหิตทมิฬ — ชั้นนี้ร่ายสกิลฟื้นคืนชีพไม่ได้');
+          return;
+        }
+      } catch (e) { cdErr(e, 'cdUseSkill'); }
+      return _cdUseSkill.apply(this, arguments);
+    };
+
+    /* 🛡️ ประกันภัยฮันเตอร์เป็น Passive ที่ฟื้น HP เต็มหลอด — จึงต้องถูกบล็อกด้วยตอนถือ 💀
+       บล็อกด้วยการซ่อนของไว้ชั่วคราวแล้วคืนให้ทีหลัง ไอเทมจึงไม่ถูกกินทิ้งฟรี ๆ */
+    const _cdOnHunterDown = onHunterDown;
+    onHunterDown = function () {
+      const g = cdG();
+      const st = cdSt();
+      let keep = null;
+      try {
+        if (g && st && st.noHeal && g.items && (g.items.insurance || 0) > 0) {
+          keep = g.items.insurance;
+          g.items.insurance = 0;
+        }
+      } catch (e) { cdErr(e, 'cdHunterDownPre'); }
+
+      const before = (g && g.items) ? (g.items.insurance || 0) : 0;
+      const r = _cdOnHunterDown.apply(this, arguments);
+
+      try {
+        const used = g && g.items && (g.items.insurance || 0) < before;
+        if (keep !== null && g && g.items) { g.items.insurance = keep; renderItems(); }
+        /* รอดด้วยประกันภัย = ยืนชั้นเดิมต่อ การ์ดใบเดิมยังมีผล
+           ร่วงจริง = ชั้นเปลี่ยน การ์ดหมดอายุเอง แต่สั่งล้างให้ชัดเจนเผื่อชั้นปลายทางเป็นชั้นเดิม */
+        if (!used) cdClear();
+      } catch (e) { cdErr(e, 'cdHunterDownPost'); }
+      return r;
+    };
+
+    /* เคลียร์ชั้น = จ่ายรางวัลของการ์ด แล้วล้างการ์ดทิ้งทั้งชุด (ข้อกำหนดกันบั๊คข้อ 8)
+       ต้องอ่าน cdActive() ก่อนเรียกของเดิม เพราะ clearFloor ของ v4.0 บวก G.floor ไปแล้ว
+       การ์ดจะกลายเป็น "ของชั้นก่อน" ทันทีที่ของเดิมทำงานจบ */
+    const _cdClearFloor = clearFloor;
+    clearFloor = function (boss) {
+      const g    = cdG();
+      const card = cdActive();
+      const st   = CD_ST;
+      const r = _cdClearFloor.apply(this, arguments);
+      try {
+        if (g && card && st && !g.practiceMode) {
+          cdFloorReward(g, card, st, !!boss);
+          renderStats();
+        }
+      } catch (e) { cdErr(e, 'cdClearFloor'); }
+      try { cdClear(); cdSave(); } catch (e) { cdErr(e, 'cdClearFloorReset'); }
+      return r;
+    };
+
+    /* หัวใจของชั้นนี้ — เก็บภาพก่อนตอบ ปล่อยให้ v4.0-v4.6 ทำงานจนจบ แล้วค่อยเติมผลของการ์ด
+       ทุกการ์ดใช้ส่วนต่างจริง (ดาเมจที่ลงไปแล้ว · HP ที่เสียไปแล้ว) เป็นฐานคูณ
+       จึงไม่ต้องรู้สูตร ATK/VIT/คริต ของ v4.0 เลย และไม่พังถ้าสูตรพวกนั้นถูกแก้ทีหลัง */
+    const _cdResolveAnswer = resolveAnswer;
+    resolveAnswer = function (choice, btn, timedOut) {
+      const g    = cdG();
+      const card = cdActive();
+      const st   = CD_ST;
+      const m    = g ? g.currentMonster : null;
+      const correct = !timedOut && !!m && choice === m.answer;
+
+      const before = g ? {
+        hp: g.hp, mhp: g.monsterHp, streak: g.streak || 0,
+        shield: g.shield || 0, noDmg: g.bossNoDamage,
+        spent: g.questionStart ? (Date.now() - g.questionStart) : 999999
+      } : null;
+
+      const r = _cdResolveAnswer.apply(this, arguments);
+      if (!g || !card || !st || !before || g.practiceMode) return r;
+
+      try {
+        const fb  = document.getElementById('gFeedback');
+        const add = function (t) { if (fb) fb.textContent += t; };
+        const hpAfter  = g.hp;              /* HP ฮันเตอร์หลังชั้นล่างทำงานจบ */
+        const mhpAfter = g.monsterHp;       /* HP มอนสเตอร์หลังชั้นล่างทำงานจบ */
+        const dealt = Math.max(0, before.mhp - mhpAfter);
+        const took  = Math.max(0, before.hp - hpAfter);
+
+        if (correct) st.hit++;
+        else { st.miss++; st.perfect = false; }
+
+        // ── 🛡️ โล่พิพากษา — Mutex ใบเดียว (ข้อกำหนดกันบั๊คข้อ 7) ──
+        if (!correct && st.ward) {
+          st.ward = false;                  /* ปิดสวิตช์ "ทันที" ก่อนทำอย่างอื่น กันโล่อมตะ */
+          g.hp     = before.hp;
+          g.shield = before.shield;
+          g.streak = before.streak;
+          g.bossNoDamage = before.noDmg;
+          /* v4.0 สั่งคิว onHunterDown ไปแล้วถ้า HP หมด — ต้องเปลี่ยนคิวกลับเป็น "ไปข้อถัดไป" */
+          if (hpAfter <= 0) scheduleTurn(function () { g.locked = false; renderMonster(); }, 1600);
+          add(' | 🛡️ โล่พิพากษาสลาย — กันความเสียหายและรักษาสตรีคไว้');
+          cdNotify('CD_WARD', { streak: before.streak });
+        }
+
+        switch (card.id) {
+
+          // ─── สายประคองเกม ───────────────────────────────────
+          case 'mana': {
+            if (correct) {
+              const cap  = maxMpOf(g);
+              const gain = Math.min(Math.max(0, cap - g.mp), Math.max(1, Math.round(cap * CD_MANA_PCT / 100)));
+              if (gain > 0) { g.mp += gain; add(' | 🌀 การไหลเวียนเวทมนตร์ +' + gain + ' MP'); }
+            }
+            break;
+          }
+          case 'dew': {
+            if (correct && g.streak > 0 && g.streak % CD_DEW_EVERY === 0) {
+              const h = cdHeal(g.maxHp * CD_DEW_PCT / 100);
+              if (h > 0) add(' | 🌿 หยาดน้ำทิพย์สตรีค +' + h + ' HP');
+            }
+            break;
+          }
+
+          // ─── สายแลกเปลี่ยน ──────────────────────────────────
+          case 'blood': {
+            if (correct) {
+              if (st.atk > 0 && dealt > 0) {
+                const ex = cdHitMonster(dealt * st.atk, mhpAfter);
+                if (ex > 0) add(' | 🩸 พันธะโลหิต +' + ex + ' ดาเมจสะสม');
+              }
+              st.atk = Math.min(CD_BLOOD_CAP, st.atk + CD_BLOOD_STEP);
+            }
+            break;
+          }
+          case 'edge': {
+            if (correct) {
+              const ex = cdHitMonster(dealt * CD_EDGE_DEAL, mhpAfter);
+              if (ex > 0) add(' | 🗡️ ดาบสองคมฟันซ้ำ +' + ex + ' ดาเมจ');
+            } else {
+              const ex = cdHurt(took * CD_EDGE_TAKE, hpAfter);
+              if (ex > 0) add(' | 🗡️ คมด้านในย้อนเข้าตัว -' + ex + ' HP');
+            }
+            break;
+          }
+
+          // ─── สายวัดใจ ───────────────────────────────────────
+          case 'curse': {
+            if (!correct) {
+              const ex = cdHurt(took * CD_CURSE_TAKE, hpAfter);
+              if (ex > 0) add(' | ⚡ คำสาปย้อนกลับ -' + ex + ' HP');
+            }
+            break;
+          }
+          case 'exec': {
+            if (correct) {
+              if (before.spent <= CD_EXEC_MS && mhpAfter > 0) {
+                const gone = cdExecute(mhpAfter);
+                add(' | 🗡️ ตัดสินเทพเจ้า — สังหารทันที! (-' + gone + ')');
+              }
+            } else {
+              const ex = cdEnsureLoss(CD_EXEC_LOSS, before.hp, hpAfter);
+              if (ex > 0) add(' | 🗡️ คมดาบเทพเจ้าหันกลับ -' + ex + ' HP');
+            }
+            break;
+          }
+          case 'sand': {
+            if (correct) {
+              const sh = cdShards(CD_SAND_SHARD);
+              if (sh > 0) add(' | ⏳ +' + sh + ' 💎 เศษคริสตัล');
+            } else {
+              const ex = cdEnsureLoss(CD_SAND_LOSS, before.hp, hpAfter);
+              if (ex > 0) add(' | ⏳ ทรายมรณะกลืนกิน -' + ex + ' HP');
+            }
+            break;
+          }
+          case 'inferno': {
+            if (correct) {
+              const sealed = cdSealLeft();
+              if (sealed > 0) {
+                g.monsterHp -= sealed;
+                try { abSealBroken(); } catch (e) { cdErr(e, 'cdInfernoSeal'); }
+                renderMonsterHp();
+                add(' | 🔥 เปลวเพลิงเผาเกราะผนึกจนสิ้นซาก!');
+              }
+              const ex = cdHitMonster(dealt * CD_INF_DEAL, mhpAfter);
+              if (ex > 0) add(' | 🔥 เปลวเพลิงล้างบาง +' + ex + ' ดาเมจ');
+            } else {
+              const ex = cdHurt(took * CD_INF_TAKE, hpAfter);
+              if (ex > 0) add(' | 🔥 เปลวเพลิงย้อนเผา -' + ex + ' HP');
+            }
+            break;
+          }
+
+          /* สองใบสุดท้ายย้ายชั้นกลางคัน — วางไว้ท้ายสุดเสมอ เพราะมันล้าง CD_ST ทิ้งทันที */
+          case 'scales': {
+            if (correct) {
+              const h  = cdHeal(g.maxHp);
+              const sh = cdShards(CD_SCALES_SHARD);
+              add(' | ⚖️ ตาชั่งเอนข้างเจ้า — ฟื้น ' + h + ' HP' + (sh > 0 ? ' · 💎 +' + sh : ''));
+            } else if (hpAfter > 0) {
+              /* HP ยังไม่หมด → ตาชั่งดึงลงเอง · ถ้า HP หมดพอดี ปล่อยให้ onHunterDown ของ v4.0
+                 พาร่วงตามกติกาเดิม (ผลลัพธ์เป็นต้นโซนเหมือนกัน แต่หักทอง 20% ตามกฎเดิม) */
+              add(' | ⚖️ ตาชั่งพิพากษา — ร่วงกลับต้นโซนทันที!');
+              cdDropZone();
+            }
+            break;
+          }
+          case 'roulette': {
+            const roll = Math.floor(Math.random() * 3);
+            if (roll === 0) {
+              const sh = cdShards(CD_ROU_SHARD);
+              add(' | 🎲 รูเล็ตออกหน้าคริสตัล 💎 +' + sh);
+            } else if (roll === 1) {
+              const ex = cdHurt(g.maxHp * CD_ROU_LOSS, hpAfter);
+              if (ex > 0) add(' | 🎲 รูเล็ตออกหน้าหายนะ -' + ex + ' HP');
+            } else if (hpAfter > 0) {
+              add(' | 🎲 รูเล็ตออกหน้าประตูมิติ — ทะลุขึ้นชั้นถัดไป!');
+              cdSkipFloor();
+            }
+            break;
+          }
+        }
+
+        renderStats();
+      } catch (e) { cdErr(e, 'cdResolveAnswer'); }
+      return r;
+    };
+
+    const _cdRenderStats = renderStats;
+    renderStats = function () {
+      const r = _cdRenderStats.apply(this, arguments);
+      try { cdPaintUi(); } catch (e) { cdErr(e, 'cdRenderStats'); }
+      return r;
+    };
+
+    /* แผงสถานะบอกที่มาของตัวเลขที่เพี้ยนไปจากปกติ ไม่งั้นเวลา/ทอง/ดาเมจจะดูเหมือนคำนวณผิด */
+    const _cdRenderStatus = renderStatus;
+    renderStatus = function () {
+      const r = _cdRenderStatus.apply(this, arguments);
+      try {
+        const body = document.getElementById('gStatusBody');
+        const g = cdG(), b = cdOf(g);
+        if (body && g && b && !body.querySelector('.cd-strow')) {
+          const card = cdActive();
+          const top  = CD_CARDS.slice()
+            .sort(function (x, y) { return ((b.picks[y.id] || 0) - (b.picks[x.id] || 0)); })
+            .filter(function (c) { return (b.picks[c.id] || 0) > 0; })
+            .slice(0, 3)
+            .map(function (c) {
+              return '<span style="white-space:nowrap">' + c.icon + ' ' + esc(c.name) +
+                     ' ×' + b.picks[c.id] + '</span>';
+            }).join(' · ');
+          body.insertAdjacentHTML('afterbegin',
+            '<div class="g-mrow cd-strow"><div class="g-mlabel">🃏 การ์ดเวทมนตร์ประจำชั้น</div>' +
+            '<div class="g-mtext">' +
+              (card ? 'ชั้นนี้ถือ ' + card.icon + ' <b>' + esc(card.name) + '</b> — ' + esc(card.tag)
+                    : 'ยังไม่ได้จั่วการ์ดของชั้นนี้') +
+              '<br>จั่วไปแล้ว ' + b.drafts + ' ครั้ง · 💀 พันธสัญญาสำเร็จ ' + b.vow + ' ครั้ง' +
+              (top ? '<br>ใบที่เลือกบ่อยสุด: ' + top : '') +
+            '</div></div>');
+        }
+      } catch (e) { cdErr(e, 'cdRenderStatus'); }
+      return r;
+    };
+
+    /* ทางออกฉุกเฉินของครู — ปุ่ม 🚑 กู้คืนของชั้น v4.3 ต้องปลดหน้าต่างจั่วการ์ดที่ค้างได้ด้วย
+       ตั้ง CD_SKIP ไว้ที่ชั้นปัจจุบัน เพื่อไม่ให้ nextMonster() ที่ gcUnlockScreen เรียกต่อ
+       เปิดหน้าต่างเดิมกลับมาซ้ำเป็นวงจรปิด — พอเปลี่ยนชั้นแล้วระบบจั่วก็กลับมาทำงานเอง */
+    const _cdGcUnlockScreen = gcUnlockScreen;
+    gcUnlockScreen = function () {
+      const closed = [];
+      try {
+        const g = cdG();
+        const el = document.getElementById('cdDraft');
+        if (CD_OPEN || (el && el.classList.contains('active'))) closed.push('หน้าต่างจั่วการ์ด');
+        CD_OPEN = false;
+        if (el) el.classList.remove('active', 'cd-out');
+        if (g) CD_SKIP = g.floor;
+        cdClear();
+      } catch (e) { cdErr(e, 'cdGcUnlock'); }
+      const r = _cdGcUnlockScreen.apply(this, arguments);
+      return Array.isArray(r) ? r.concat(closed) : r;
+    };
+
+    // ══ ติดตั้งชั้นนี้ลง DOM ══════════════════════════════════════════
+    (function cdInstall() {
+
+      /* ── ฉายาลับ — ต่อท้าย TITLES ไม่แก้รายการเดิม (ท่าเดียวกับ v4.2/v4.4/v4.6)
+           check ต้องทนกับบัญชีที่ยังไม่มี s.cd (รอบแรกที่ migrate) ให้ได้ */
+      if (!TITLES.some(function (t) { return t.key === 'bloodvow'; })) {
+        TITLES.push({
+          key:'bloodvow', icon:'💀', name:'ผู้สาบานโลหิต',
+          cond:'ผ่านชั้นด้วย 💀 พันธสัญญาโลหิตทมิฬ โดยไม่ตอบผิดเลยสักข้อ',
+          bonus:{ str:12, luk:8 },
+          check: function (s) { return !!s && !!s.cd && (s.cd.vow || 0) >= 1; }
+        });
+      }
+
+      if (!document.getElementById('cdStyle')) {
+        document.head.insertAdjacentHTML('beforeend',
+          '<style id="cdStyle">' +
+
+          /* ── หน้าต่างจั่วการ์ด ── */
+          /* หน้าต่างนี้เป็นการเลือกบังคับ ไม่มีอย่างอื่นให้ดูพร้อมกัน จึงกินจอได้เต็มกว่าโมดัลอื่น
+             (โมดัลปกติของ v4.0 ใช้ 84vh) — ยิ่งสูงยิ่งมีโอกาสเห็นครบ 3 ใบโดยไม่ต้องเลื่อน */
+          '#cdDraft{padding:8px}' +
+          '#cdDraft .g-modal-inner{max-width:760px;max-height:92vh;padding:13px;position:relative;' +
+            'border-color:rgba(180,140,255,.6);' +
+            'background:linear-gradient(180deg,#1a1430 0%,#141c28 55%,#101722 100%);' +
+            'box-shadow:0 0 40px rgba(150,110,255,.32)}' +
+          '#cdDraft .g-modal-title{font-size:15px;padding-bottom:7px;margin-bottom:8px}' +
+          '#cdDraft.cd-out .g-modal-inner{animation:cdVanish .6s ease forwards}' +
+          '@keyframes cdVanish{0%{opacity:1}100%{opacity:0;transform:translateY(-14px) scale(.96)}}' +
+          '.cd-kicker{text-align:center;font-size:9.5px;font-weight:800;letter-spacing:2.4px;' +
+            'color:#b48cff;margin-bottom:4px}' +
+          '#cdDraft .g-modal-title{color:#d9c4ff;border-bottom-color:rgba(180,140,255,.4)}' +
+          '.cd-sub{text-align:center;font-size:11px;color:#9aa8c4;line-height:1.6;margin-bottom:9px}' +
+          '.cd-sub b{color:#ffc845}' +
+          '.cd-boss{color:#ff9c4a;font-weight:700}' +
+          '.cd-foot{text-align:center;font-size:10px;color:#6d7b96;margin-top:8px;line-height:1.6}' +
+          /* ป้ายบอกว่ายังมีการ์ดอยู่ข้างล่าง — โผล่เฉพาะตอนที่เนื้อหาสูงเกินกรอบจริง ๆ
+             ถ้าไม่มีตัวนี้ นักเรียนจอเล็กจะเห็นแค่ 2 ใบแล้วเลือกโดยไม่รู้ว่ามีใบที่สาม */
+          '.cd-more{display:none;position:sticky;bottom:2px;z-index:3;margin:6px auto 0;width:max-content;' +
+            'padding:5px 13px;border-radius:99px;font-size:10.5px;font-weight:700;' +
+            'background:rgba(180,140,255,.2);border:1px solid rgba(180,140,255,.55);color:#d9c4ff;' +
+            'box-shadow:0 3px 12px rgba(0,0,0,.6);animation:cdMore 1.8s ease-in-out infinite}' +
+          '#cdDraft.cd-scroll .cd-more{display:block}' +
+          '@keyframes cdMore{0%,100%{transform:translateY(0)}50%{transform:translateY(3px)}}' +
+
+          /* ── ตัวการ์ด ── */
+          '.cd-slots{display:grid;grid-template-columns:1fr;gap:8px}' +
+          '.cd-card{display:block;width:100%;text-align:left;position:relative;overflow:hidden;' +
+            'padding:9px 11px 10px;border-radius:11px;cursor:pointer;' +
+            "font-family:'Noto Sans Thai',sans-serif;" +
+            'border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.035);' +
+            'transition:transform .16s ease,box-shadow .16s ease,border-color .16s ease;' +
+            'animation:cdDeal .42s cubic-bezier(.2,.9,.3,1.2) both}' +
+          '.cd-card:nth-child(2){animation-delay:.09s}' +
+          '.cd-card:nth-child(3){animation-delay:.18s}' +
+          '@keyframes cdDeal{0%{opacity:0;transform:translateY(22px) rotate(-2.5deg) scale(.93)}' +
+            '100%{opacity:1;transform:none}}' +
+          '.cd-card:active{transform:scale(.985)}' +
+          '.cd-card .cd-rune{position:absolute;right:-26px;top:-26px;width:96px;height:96px;' +
+            'border-radius:50%;opacity:.16;pointer-events:none;' +
+            'background:radial-gradient(circle,#ffffff 0%,rgba(255,255,255,0) 68%)}' +
+
+          '.cd-card.t1{border-color:rgba(46,242,208,.42);' +
+            'background:linear-gradient(160deg,rgba(46,242,208,.10),rgba(46,242,208,.02) 62%)}' +
+          '.cd-card.t2{border-color:rgba(255,200,69,.45);' +
+            'background:linear-gradient(160deg,rgba(255,200,69,.11),rgba(255,200,69,.02) 62%)}' +
+          '.cd-card.t3{border-color:rgba(255,107,122,.5);' +
+            'background:linear-gradient(160deg,rgba(255,107,122,.13),rgba(255,60,80,.02) 62%)}' +
+          '.cd-card.t1:hover{box-shadow:0 0 20px rgba(46,242,208,.3);border-color:#2ef2d0}' +
+          '.cd-card.t2:hover{box-shadow:0 0 20px rgba(255,200,69,.3);border-color:#ffc845}' +
+          '.cd-card.t3:hover{box-shadow:0 0 20px rgba(255,107,122,.34);border-color:#ff6b7a}' +
+
+          '.cd-slot{display:block;font-size:8.5px;font-weight:800;letter-spacing:1.2px;' +
+            'color:#8a97b5;margin-bottom:5px}' +
+          '.cd-slot i{font-style:normal;opacity:.6;margin-left:5px;letter-spacing:.6px}' +
+          '.cd-face{display:flex;align-items:center;gap:9px}' +
+          '.cd-ico{flex:0 0 auto;font-size:26px;line-height:1;filter:drop-shadow(0 0 8px rgba(0,0,0,.6))}' +
+          '.cd-title{display:block;min-width:0}' +
+          '.cd-title b{display:block;font-size:13.5px;font-weight:700;color:#f2f6fa;line-height:1.3}' +
+          '.cd-title i{display:block;font-style:normal;font-size:9.5px;letter-spacing:.9px;' +
+            'color:#7f8daa;margin-top:1px}' +
+          '.cd-tag{display:block;margin:6px 0 5px;padding:3px 9px;border-radius:99px;' +
+            'font-size:10px;font-weight:700;text-align:center;' +
+            'background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);color:#e3edf5}' +
+          '.cd-card.t1 .cd-tag{color:#2ef2d0;border-color:rgba(46,242,208,.32)}' +
+          '.cd-card.t2 .cd-tag{color:#ffc845;border-color:rgba(255,200,69,.32)}' +
+          '.cd-card.t3 .cd-tag{color:#ff9aa6;border-color:rgba(255,107,122,.36)}' +
+          '.cd-lines{display:block}' +
+          '.cd-l{font-size:10.5px;line-height:1.5;margin-top:2px}' +
+          '.cd-l.ok{color:#9be9d8}' +
+          '.cd-l.no{color:#ffa9b4}' +
+          '.cd-go{display:block;margin-top:7px;padding:5px 8px;border-radius:7px;text-align:center;' +
+            'font-size:10.5px;font-weight:800;letter-spacing:.6px;' +
+            'background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);color:#e3edf5}' +
+          '.cd-card.t1 .cd-go{background:rgba(46,242,208,.12);border-color:rgba(46,242,208,.4);color:#2ef2d0}' +
+          '.cd-card.t2 .cd-go{background:rgba(255,200,69,.12);border-color:rgba(255,200,69,.4);color:#ffc845}' +
+          '.cd-card.t3 .cd-go{background:rgba(255,107,122,.14);border-color:rgba(255,107,122,.44);color:#ff9aa6}' +
+
+          /* ── อนิเมชันสลายเวทมนตร์ตอนเลือก ── */
+          '.cd-card.cd-chosen{animation:cdChosen .6s ease forwards}' +
+          '@keyframes cdChosen{0%{transform:none}22%{transform:scale(1.05);' +
+            'box-shadow:0 0 34px rgba(255,255,255,.55);filter:brightness(1.7)}' +
+            '100%{transform:scale(.9);opacity:0;filter:brightness(2.4) blur(2px)}}' +
+          '.cd-card.cd-gone{animation:cdGone .34s ease forwards}' +
+          '@keyframes cdGone{100%{opacity:0;transform:translateY(10px) scale(.94)}}' +
+
+          '@media (min-width:720px){.cd-slots{grid-template-columns:repeat(3,1fr)}' +
+            '.cd-card:nth-child(n){animation-delay:0s}' +
+            '.cd-card:nth-child(2){animation-delay:.08s}.cd-card:nth-child(3){animation-delay:.16s}}' +
+
+          /* ── แบดจ์มุมจอ UI ต่อสู้ ── */
+          /* padding-bottom ของ #gameScreen เผื่อที่ให้แบดจ์เสมอ แถวปุ่มล่างจึงไม่โดนทับ */
+          '#gameScreen.cd-on{padding-bottom:56px}' +
+          '.cd-badge{position:fixed;left:8px;bottom:8px;z-index:110;display:none;' +
+            'align-items:center;gap:7px;max-width:62vw;padding:6px 11px 6px 8px;border-radius:99px;' +
+            'cursor:pointer;text-align:left;' +
+            "font-family:'Noto Sans Thai',sans-serif;" +
+            'border:1px solid rgba(255,255,255,.2);background:rgba(16,23,34,.94);' +
+            'box-shadow:0 3px 14px rgba(0,0,0,.55)}' +
+          '#gameScreen.cd-on .cd-badge{display:flex}' +
+          '.cd-badge.t1{border-color:rgba(46,242,208,.6);box-shadow:0 0 14px rgba(46,242,208,.28)}' +
+          '.cd-badge.t2{border-color:rgba(255,200,69,.6);box-shadow:0 0 14px rgba(255,200,69,.28)}' +
+          '.cd-badge.t3{border-color:rgba(255,107,122,.65);box-shadow:0 0 14px rgba(255,107,122,.3);' +
+            'animation:cdPulse 2.4s ease-in-out infinite}' +
+          '@keyframes cdPulse{0%,100%{box-shadow:0 0 10px rgba(255,107,122,.22)}' +
+            '50%{box-shadow:0 0 20px rgba(255,107,122,.5)}}' +
+          '.cd-badge-ico{flex:0 0 auto;font-size:17px;line-height:1}' +
+          '.cd-badge-txt{display:block;min-width:0;overflow:hidden}' +
+          '.cd-badge-txt b{display:block;font-size:11px;font-weight:700;color:#f2f6fa;' +
+            'white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
+          '.cd-badge-txt i{display:block;font-style:normal;font-size:9px;color:#8a97b5;' +
+            'white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
+          '.cd-badge.t1 .cd-badge-txt b{color:#2ef2d0}' +
+          '.cd-badge.t2 .cd-badge-txt b{color:#ffc845}' +
+          '.cd-badge.t3 .cd-badge-txt b{color:#ff9aa6}' +
+
+          /* ── 👁️‍🗨️ นาฬิกาตาบอด — ซ่อนด้วย CSS ล้วน ตัวจับเวลาเบื้องหลังยังเดินครบทุกวินาที ── */
+          '#gameScreen.cd-blind #gTimerText{visibility:hidden}' +
+          '#gameScreen.cd-blind .g-timer-fill{opacity:0}' +
+          '#gameScreen.cd-blind .g-timer-track{' +
+            'background-image:repeating-linear-gradient(135deg,rgba(180,140,255,.16) 0 7px,' +
+            'rgba(180,140,255,0) 7px 14px)}' +
+          '#gameScreen.cd-blind .g-timer-head span:first-child::after{content:" · 👁️‍🗨️ ถูกปิดตา";' +
+            'color:#b48cff;font-weight:700}' +
+          '#gameScreen.cd-blind #gTimer.danger .g-timer-head{color:#8a97b5}' +
+          '#gameScreen.cd-blind #gTimer.danger .g-timer-fill{background:none}' +
+
+          /* ── 🚫 ผนึกพ็อกเก็ต — ช่องกระเป๋าเป็นสีเทาให้เห็นว่าใช้ไม่ได้ ── */
+          '#gameScreen.cd-noitem .g-slot{filter:grayscale(1);opacity:.5}' +
+          '#gameScreen.cd-noitem #gTipUse{opacity:.4}' +
+
+          '@media (max-width:400px){.cd-ico{font-size:23px}.cd-title b{font-size:12.5px}' +
+            '.cd-title i,.cd-slot i,.cd-foot{display:none}' +
+            '.cd-l{font-size:10px}.cd-tag{font-size:9.5px}.cd-go{font-size:10px;padding:4px 8px}' +
+            '.cd-badge{max-width:70vw}}' +
+          /* เคารพการตั้งค่าลดการเคลื่อนไหวของระบบ (กฎเดียวกับชั้น v4.5/v4.6) */
+          '@media (prefers-reduced-motion:reduce){' +
+            '.cd-card,.cd-card.cd-chosen,.cd-card.cd-gone,.cd-badge.t3,' +
+            '#cdDraft.cd-out .g-modal-inner{animation:none}}' +
+          '</style>');
+      }
+
+      /* กติกาข้อ 2: ทุกตัวติดตั้งที่ยัด DOM ต้องกันแทรกซ้ำเสมอ */
+
+      /* หน้าต่างจั่วการ์ด — ไม่มีปุ่มปิดโดยตั้งใจ ต้องเลือก 1 ใบถึงจะไปต่อได้
+         (ทางออกฉุกเฉินอยู่ที่ปุ่ม 🚑 กู้คืนของแผง GM ซึ่งห่อไว้แล้วที่ gcUnlockScreen) */
+      if (!document.getElementById('cdDraft')) {
+        document.body.insertAdjacentHTML('beforeend',
+          '<div class="g-modal" id="cdDraft">' +
+            '<div class="g-modal-inner">' +
+              '<div class="cd-kicker">CARD DRAFTING PROTOCOL</div>' +
+              '<div class="g-modal-title">🃏 เลือกการ์ดเวทมนตร์ประจำชั้น</div>' +
+              '<div class="cd-sub" id="cdSub"></div>' +
+              '<div class="cd-slots" id="cdSlots"></div>' +
+              '<div class="cd-more" id="cdMore">▼ เลื่อนลงดูการ์ดให้ครบ 3 ใบ</div>' +
+              '<div class="cd-foot">การ์ดสลายเมื่อเคลียร์ชั้น · ร่วงชั้นหรือถูกดึงลงก็ได้จั่วใหม่</div>' +
+            '</div>' +
+          '</div>');
+      }
+
+      /* แบดจ์การ์ดที่กำลังมีผล — วางเป็นลูกของ #gameScreen จึงถูกซ่อนเองตอนออกจากเกท */
+      const scr = document.getElementById('gameScreen');
+      if (scr && !document.getElementById('cdBadge')) {
+        scr.insertAdjacentHTML('beforeend',
+          '<button type="button" class="cd-badge" id="cdBadge" onclick="cdShowCard()" ' +
+            'title="ดูรายละเอียดการ์ดประจำชั้น">' +
+            '<span class="cd-badge-ico" id="cdBadgeIcon">🃏</span>' +
+            '<span class="cd-badge-txt"><b id="cdBadgeName">—</b><i id="cdBadgeSub">—</i></span>' +
+          '</button>');
+      }
+
+      cdPaintUi();
+    })();
+
   </script>
 </body>
 </html>

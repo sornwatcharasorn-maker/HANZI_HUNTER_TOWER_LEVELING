@@ -10672,8 +10672,8 @@
       { id:'ward', slot:1, icon:'🛡️', tone:'good',
         name:'โล่พิพากษา', en:'Judgment Shield',
         tag:'กันพลาดครั้งแรก 1 ครั้ง',
-        good:['ตอบผิด "ครั้งแรกครั้งเดียว" ของช่วงชั้นนี้ ไม่เสีย HP และสตรีคไม่ขาด'],
-        bad:['กันได้ครั้งเดียวแล้วโล่แตกทันที — ครั้งต่อไปรับเต็ม'] },
+        good:['ตอบผิด "ครั้งแรกของแต่ละชั้น" ไม่เสีย HP และสตรีคไม่ขาด ตลอดช่วงชั้นนี้'],
+        bad:['กันได้ชั้นละครั้งเดียว โล่แตกแล้วต้องรอเคลียร์ชั้นถึงจะก่อใหม่'] },
 
       { id:'focus', slot:1, icon:'🧘', tone:'good',
         name:'สมาธิแน่วแน่', en:'Absolute Focus',
@@ -10710,10 +10710,10 @@
 
       { id:'blood', slot:2, icon:'🩸', tone:'warn',
         name:'พันธะโลหิต', en:'Blood Pact',
-        tag:'จ่าย ' + CD_BLOOD_HP + ' HP · พลังโจมตีสะสมขึ้นเรื่อย ๆ',
+        tag:'จ่าย ' + CD_BLOOD_HP + ' HP/ชั้น · พลังโจมตีสะสมขึ้นเรื่อย ๆ',
         good:['ตอบถูกทุกข้อสะสมพลังโจมตี +' + Math.round(CD_BLOOD_STEP * 100) +
               '% (เพดาน +' + Math.round(CD_BLOOD_CAP * 100) + '%) ตลอดช่วงชั้น'],
-        bad:['เสีย HP ทันที ' + CD_BLOOD_HP + ' หน่วยตอนก้าวเข้าช่วงชั้น (ไม่ทำให้ HP ต่ำกว่า 1)'] },
+        bad:['เสีย HP ' + CD_BLOOD_HP + ' หน่วยทุกครั้งที่ก้าวเข้าชั้นใหม่ในช่วงนี้ (ไม่ทำให้ HP ต่ำกว่า 1)'] },
 
       { id:'chrono', slot:2, icon:'👁️‍🗨️', tone:'warn',
         name:'นาฬิกาตาบอด', en:'Hidden Chrono',
@@ -10737,7 +10737,7 @@
       { id:'curse', slot:3, icon:'⚡', tone:'danger',
         name:'คำสาปย้อนกลับ', en:'Retaliation Curse',
         tag:'ตอบผิดรับดาเมจ ×3 · ไร้ที่ติได้ไอเทมพิเศษ',
-        good:['ไม่พลาดเลยสักข้อตลอดช่วงชั้นนี้ ได้ไอเทมสุ่มพิเศษทุกครั้งที่เคลียร์ชั้น'],
+        good:['ชั้นไหนตอบถูกหมดไม่พลาดเลย ได้ไอเทมสุ่มพิเศษตอนเคลียร์ชั้นนั้น (นับใหม่ทุกชั้น)'],
         bad:['ตอบผิด รับความเสียหายย้อนกลับ ×' + (1 + CD_CURSE_TAKE) + ' ของปกติ'] },
 
       { id:'exec', slot:3, icon:'🗡️', tone:'danger',
@@ -10755,8 +10755,8 @@
       { id:'vow', slot:3, icon:'💀', tone:'danger',
         name:'พันธสัญญาโลหิตทมิฬ', en:'Dark Blood Pact',
         tag:'เริ่มช่วงชั้นด้วย HP 1 · ไร้ที่ติได้ ×' + (CD_VOW_MUL + 1),
-        good:['ไม่พลาดเลยสักข้อตลอดช่วงชั้นนี้ ได้ทองและ EXP รางวัลเคลียร์ชั้น ×' +
-              (CD_VOW_MUL + 1) + ' ทุกชั้น พร้อมฉายาลับ'],
+        good:['ชั้นไหนตอบถูกหมดไม่พลาดเลย ได้ทองและ EXP รางวัลเคลียร์ชั้นนั้น ×' +
+              (CD_VOW_MUL + 1) + ' พร้อมฉายาลับ (นับใหม่ทุกชั้น)'],
         bad:['เริ่มช่วงชั้นด้วย HP เหลือ 1 หน่วย และห้ามฟื้นพลังทุกทางตลอดช่วง (รวมการฟื้นตอนเคลียร์ชั้น)'] },
 
       { id:'sand', slot:3, icon:'⏳', tone:'danger',
@@ -10924,10 +10924,31 @@
         return out;
       };
 
+      /* การ์ดที่ถืออยู่ตอนนี้ — ต้องรอดข้ามการล็อกอิน ไม่งั้นออกแล้วเข้าใหม่ = สุ่มการ์ดใหม่ได้
+         { band, id, st } · id เป็น null แปลว่า "จั่วช่วงนี้ไปแล้วแต่การ์ดสลายก่อนเวลา"
+         ซึ่งต้องจำไว้ด้วย ไม่งั้นตั้งใจร่วงแล้วล็อกอินใหม่จะได้จั่วซ้ำกลางช่วง */
+      const flag = function (v) { return v === true || v === 1 ? 1 : 0; };
+      const pos  = function (v) { return (typeof v === 'number' && isFinite(v) && v > 0) ? v : 0; };
+      const stOf = function (o) {
+        const s = (o && typeof o === 'object') ? o : {};
+        return { ward: flag(s.ward), noItem: flag(s.noItem), noHeal: flag(s.noHeal),
+                 atk: Math.min(CD_BLOOD_CAP, pos(s.atk)), perfect: s.perfect !== false,
+                 hit: Math.floor(pos(s.hit)), miss: Math.floor(pos(s.miss)),
+                 paid: Math.floor(pos(s.paid)) };
+      };
+      const curOf = function (v) {
+        if (!v || typeof v !== 'object') return null;
+        const band = Math.floor(v.band);
+        if (!(band >= 0) || band > cdBandOf(FLOOR_MAX)) return null;
+        const id = (typeof v.id === 'string' && CD_BY_ID[v.id]) ? v.id : null;
+        return { band: band, id: id, st: id ? stOf(v.st) : null };
+      };
+
       c.drafts  = num(c.drafts);
       c.vow     = num(c.vow);
       c.picks   = tally(c.picks);
       c.cleared = tally(c.cleared);
+      c.cur     = curOf(c.cur);
 
       a.cd = c;
       if (a.cdv !== CD_VER) a.cdv = CD_VER;
@@ -10959,7 +10980,31 @@
         if (p > 0) a.cd.picks[d.id]   = Math.max(a.cd.picks[d.id]   || 0, p);
         if (q > 0) a.cd.cleared[d.id] = Math.max(a.cd.cleared[d.id] || 0, q);
       });
+      /* ตัวนับสะสมใช้ Math.max กันค่าถอยหลัง แต่ "การ์ดที่ถืออยู่" ต้องเขียนทับตรง ๆ
+         เพราะมันคือสถานะสด ไม่ใช่ยอดสะสม (การ์ดสลายแล้วต้องกลายเป็น id: null จริง ๆ) */
+      a.cd.cur = cdCurSnapshot();
       saveStore(s);
+    }
+
+    /* ภาพนิ่งของการ์ดที่ถืออยู่ ณ วินาทีนี้ — CD_BAND < 0 แปลว่ายังไม่ได้จั่วช่วงไหนเลย */
+    function cdCurSnapshot() {
+      if (CD_BAND < 0) return null;
+      return {
+        band: CD_BAND,
+        id:   CD_CARD ? CD_CARD.id : null,
+        st:   (CD_CARD && CD_ST) ? Object.assign({}, CD_ST) : null
+      };
+    }
+
+    /* คืนการ์ดที่ค้างไว้จากรอบก่อนกลับเข้ามือ — เรียกจาก wrapper ของ startGame เท่านั้น
+       ต้องเรียก "ก่อน" cdNeedDraft() ไม่งั้นจะจั่วใบใหม่ทับใบที่ยังไม่หมดอายุ */
+    function cdRestore(cur) {
+      if (!cur || !(cur.band >= 0)) return;
+      CD_BAND = cur.band;
+      if (cur.id && CD_BY_ID[cur.id] && cur.st) {
+        CD_CARD = CD_BY_ID[cur.id];
+        CD_ST   = Object.assign({}, cur.st);
+      }
     }
 
     function cdBump(id, field) {
@@ -11167,9 +11212,9 @@
       if (!st) return '';
       if (card.id === 'ward')  return st.ward ? 'โล่ยังอยู่ · กันได้ 1 ครั้ง' : 'โล่แตกแล้ว';
       if (card.id === 'blood') return 'พลังสะสม +' + Math.round(st.atk * 100) + '%';
-      if (card.id === 'vow')   return st.perfect ? 'ยังไร้ที่ติ · HP 1' : 'พันธสัญญาขาดแล้ว';
-      if (card.id === 'curse') return st.perfect ? 'ยังไร้ที่ติ' : 'พลาดแล้ว — ไม่ได้ไอเทมพิเศษ';
-      if (card.id === 'seal')  return 'ห้ามใช้ไอเทม · ตอบไปแล้ว ' + (st.hit + st.miss) + ' ข้อ';
+      if (card.id === 'vow')   return st.perfect ? 'ชั้นนี้ยังไร้ที่ติ · HP 1' : 'ชั้นนี้พลาดแล้ว';
+      if (card.id === 'curse') return st.perfect ? 'ชั้นนี้ยังไร้ที่ติ' : 'ชั้นนี้พลาดแล้ว — อดไอเทมพิเศษ';
+      if (card.id === 'seal')  return 'ห้ามใช้ไอเทม · ชั้นนี้ตอบไปแล้ว ' + (st.hit + st.miss) + ' ข้อ';
       const g = cdG();
       return g ? ('ช่วงชั้น ' + cdBandText(g.floor) + ' · ถึงบอสชั้น ' + cdBandTo(cdBandOf(g.floor))) : '';
     }
@@ -11365,6 +11410,35 @@
       CD_CARD = null;
       CD_ST   = null;
       cdPaintUi();
+      try { cdSave(); } catch (e) { cdErr(e, 'cdClearSave'); }
+    }
+
+    /* ── ขึ้นชั้นใหม่ "ในช่วงเดิม" — การ์ดอยู่ต่อ แต่โควตารายชั้นรีเซ็ต ────────────
+       กฎแบ่งของชั้นนี้: **ผลต่อเนื่องมีตลอดช่วง · โควตาที่เคยผูกกับหนึ่งชั้นยังคิดรายชั้น**
+         ต่อเนื่อง → ตัวคูณเวลา/ทอง/ดาเมจ · Flag ห้ามใช้ไอเทม/ห้ามฟื้น · พลังสะสมของ 🩸
+         รายชั้น   → โล่ 🛡️ 1 ใบ · สถานะไร้ที่ติของ ⚡/💀 · ค่าผ่านทาง HP ของ 🩸
+       ทำให้ "พลังต่อชั้น" ของทุกใบเท่ารุ่นจั่วรายชั้นเป๊ะ — patch นี้เปลี่ยนแค่ "ตอนไหนได้เลือก"
+       ไม่ได้เปลี่ยน "เลือกแล้วแรงแค่ไหน" ถ้าไม่มีตัวนี้ ⚡/💀 จะกลายเป็นใบตายทันที
+       (ไร้ที่ติ 5 ชั้นติดเป็นไปไม่ได้สำหรับ A1) และ 🩸 จะกลายเป็นใบฟรีของช่องกลาง */
+    function cdFloorRollover() {
+      const g = cdG(), card = cdActive();
+      if (!g || !card || !CD_ST) return;
+
+      CD_ST.ward    = (card.id === 'ward');   /* ก่อโล่ใหม่ให้ชั้นถัดไป (ข้อกำหนดข้อ 7 ยังเป็น Mutex ใบเดียว) */
+      CD_ST.perfect = true;
+      CD_ST.hit     = 0;
+      CD_ST.miss    = 0;
+
+      /* 🩸 ค่าผ่านทางเก็บทุกชั้น — ข้อกำหนดกันบั๊คข้อ 3 ห้ามให้ HP แตะ 0 จากค่าผ่านทาง
+         จุดนี้อยู่นอกจังหวะตอบคำถาม จึงไม่ต้องยุ่งกับคิวเทิร์น (กับดักข้อ 19) */
+      if (card.id === 'blood') {
+        const before = g.hp;
+        g.hp = Math.max(1, g.hp - CD_BLOOD_HP);
+        CD_ST.paid = (CD_ST.paid || 0) + (before - g.hp);
+        const fb = document.getElementById('gFeedback');
+        if (fb && before > g.hp) fb.textContent += ' | 🩸 พันธะโลหิตเก็บค่าผ่านทาง -' + (before - g.hp) + ' HP';
+      }
+      cdPaintUi();
     }
 
     /* Zone Cleanup Routine — จบช่วงชั้นแล้ว (เคลียร์ด่านบอสประจำช่วงสำเร็จ)
@@ -11376,6 +11450,7 @@
       CD_BAND = -1;
       CD_FOCUS++;            /* ตัดโทเคนของ 🧘 ที่อาจค้างอยู่ ไม่ให้ไปแก้ questionStart ของช่วงถัดไป */
       cdPaintUi();
+      try { cdSave(); } catch (e) { cdErr(e, 'cdZoneCleanupSave'); }
     }
 
     function cdReset() {
@@ -11472,6 +11547,7 @@
             cleared: src ? Object.assign({}, src.cleared) : {}
           };
           cdEnsure(g);
+          cdRestore(src ? src.cur : null);   /* คืนการ์ดก่อนเปิดสวิตช์เขียน กันเขียนทับด้วยมือเปล่า */
           CD_READY = true;      /* ค่าจริงเข้า G.cd แล้ว เขียนกลับ store ได้ (กับดักข้อ 16) */
         }
         cdPaintUi();
@@ -11489,10 +11565,13 @@
 
     const _cdExitGame = exitGame;
     exitGame = function () {
-      try { cdSave(); cdReset(); } catch (e) { cdErr(e, 'cdExitGame'); }
-      const r = _cdExitGame.apply(this, arguments);
+      /* ลำดับตรงนี้สำคัญ — เซฟการ์ดที่ถืออยู่ก่อน แล้ว **ปิดสวิตช์ CD_READY ทันที**
+         เพราะ exitGame ของ v4.0 เรียก saveProgress() ต่อข้างใน ถ้าปิดทีหลัง cdSave() รอบนั้น
+         จะเขียน cur ทับเป็น null (cdReset ล้าง CD_BAND ไปแล้ว) การ์ดที่ค้างไว้จะหายทุกครั้งที่ออกจากเกม */
+      try { cdSave(); } catch (e) { cdErr(e, 'cdExitGame'); }
       CD_READY = false;
-      return r;
+      try { cdReset(); } catch (e) { cdErr(e, 'cdExitGameReset'); }
+      return _cdExitGame.apply(this, arguments);
     };
 
     /* จุดเข้าเดียวของระบบ — ทุกทางที่พาไปยืนบนชั้นใหม่ (เคลียร์ชั้น · ประตูวาปหลังบอส ·
@@ -11639,8 +11718,9 @@
           renderStats();
         }
       } catch (e) { cdErr(e, 'cdClearFloor'); }
-      /* กลางช่วง: การ์ดอยู่ต่อ แค่วาด UI ใหม่ · จบช่วง: Zone Cleanup Routine ล้างคืนค่าเริ่มต้น */
-      try { if (zoneEnd) cdZoneCleanup(); else cdPaintUi(); cdSave(); }
+      /* กลางช่วง: การ์ดอยู่ต่อ รีเซ็ตเฉพาะโควตารายชั้น · จบช่วง: Zone Cleanup Routine ล้างทั้งชุด
+         ต้องมาหลัง cdFloorReward เสมอ เพราะรางวัลอ่าน st.perfect / st.hit ของชั้นที่เพิ่งจบ */
+      try { if (zoneEnd) cdZoneCleanup(); else cdFloorRollover(); cdSave(); }
       catch (e) { cdErr(e, 'cdClearFloorReset'); }
       return r;
     };

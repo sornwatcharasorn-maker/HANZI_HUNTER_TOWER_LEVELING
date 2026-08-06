@@ -21,7 +21,7 @@ from PIL import Image, ImageDraw
 HERE = os.path.dirname(os.path.abspath(__file__))
 GAME = os.path.join(os.path.dirname(HERE), 'hanzi_hunter_tower_v3_1_intro.html')
 
-TARGET_W = 560      # เพดานความกว้าง — ไม่ขยายภาพเกินขนาดต้นฉบับ (ขยายแล้วได้แต่ความเบลอกับไฟล์ที่ใหญ่ขึ้น)
+TARGET_W = 800      # เพดานความกว้าง — ไม่ขยายภาพเกินขนาดต้นฉบับ (ขยายแล้วได้แต่ความเบลอกับไฟล์ที่ใหญ่ขึ้น)
 QUALITY = 82        # เท่ากับ SN_WARP_ART ที่ใช้อยู่
 BUDGET_KB = 2048    # เพดานไฟล์รวมตาม CLAUDE.md
 

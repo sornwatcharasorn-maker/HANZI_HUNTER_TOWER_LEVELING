@@ -9516,6 +9516,1099 @@
 
       trPaint(false);
     })();
+
+    // ══════════════════════════════════════════════════════════════
+    // v4.6 · ABYSS PROTOCOL — สตรีคสะเทือนหอคอย · ประตูผนึก · หมอกสงคราม · เหวลึก
+    // ══════════════════════════════════════════════════════════════
+    /* ชั้นนี้ไม่แก้โค้ด v4.0 / v4.1 / v4.2 / v4.3 / v4.4 / v4.5 เลย — ห่อฟังก์ชันแบบเดียวกับห้าชั้นก่อนหน้า
+       ลบตั้งแต่บรรทัดนี้ถึงท้ายไฟล์ทิ้งได้ทั้งก้อน แล้วเกมจะกลับไปเป็น v4.5 ครบทุกอย่าง
+
+       สี่ระบบในชั้นเดียว:
+         1) TOWER QUAKE — สตรีคถึงขั้น → หอคอยสั่น + ออโรร่าพุ่ง + โบนัสทันที
+         2) SEAL GATES  — ชั้น 5/10/15/20 มีเกราะผนึกหน้าบอส ทลายด้วยความแม่นยำหรือไอเทม
+         3) FOG OF WAR  — ชั้นที่ยังไม่เคยไปถึงถูกหมอกคลุมบนเรดาร์ + เตือนแดงตอน HP วิกฤต
+         4) ABYSS MODE  — โหมดจับเวลาโหด ได้ 💎 เศษคริสตัล เอาไปอัปเกรดแกนกลางระบบถาวร */
+
+    const AB_VER = 1;
+
+    // ── 1. TOWER QUAKE ──────────────────────────────────────────────
+    /* ขั้นสตรีค: 3 → ขั้น 1 · 5 → ขั้น 2 · ทุก ๆ 10 (10,20,30…) → ขั้น 3
+       mul/hits คือ "ออโรร่าเสริมทอง" — คูณทองที่ได้จากการตอบถูก n ข้อถัดไป
+       ค่าครองชีพเทียบ: ตอบถูก 1 ข้อได้ ~20 ทอง · เคลียร์ชั้น 150 · บอส 500
+       ขั้นสูงสุดให้ทองเสริมรวม ~20×0.8×5 = 80 ทอง ต่อสตรีค 10 ข้อ = ครึ่งหนึ่งของเคลียร์ชั้น
+       ยังต่ำกว่าการไต่หอคอยชัดเจน จึงเป็นรางวัลฝีมือ ไม่ใช่ทางลัดปั๊มทอง */
+    const AB_QUAKE = [
+      { lv: 1, at: 3,  mp: 8,  mul: 0.30, hits: 3, name: 'แรงสั่นขั้นต้น' },
+      { lv: 2, at: 5,  mp: 0,  mul: 0.50, hits: 4, name: 'ออโรร่าพุ่งทะยาน' },
+      { lv: 3, at: 10, mp: 15, mul: 0.80, hits: 5, name: 'หอคอยสะเทือน' }
+    ];
+
+    // ── 2. SEAL GATES ───────────────────────────────────────────────
+    /* ทุกชั้นบอสคือชั้นผนึก (isBossFloor = ทุก 5 ชั้น) — เกราะผนึกเป็น HP ชั้นนอกที่บวกทับ
+       HP บอสเดิมของ v4.0 จึงไม่ต้องแตะสูตร monsterHpFor เลย
+       เกราะ = hits × ATK ปัจจุบัน · ทลายเร็วขึ้นด้วยความแม่นยำ (สตรีค) หรือกดใช้ไอเทม
+       ตอบผิดขณะผนึกยังตั้งอยู่ = ผนึกซ่อมตัวเอง จึงต้อง "แม่นยำสูง" จริงตามคอนเซปต์ */
+    const AB_SEAL_FLOORS = [5, 10, 15, 20];
+    const AB_SEAL_HITS   = { 5: 2, 10: 2, 15: 3, 20: 3 };
+    const AB_SEAL_REBIND = 0.34;   /* ตอบผิด 1 ข้อ ผนึกคืนตัว 34% ของเกราะเต็ม */
+    const AB_ITEM_STRIP  = 0.30;   /* ใช้ไอเทม 1 ชิ้น ทลายเกราะ 30% */
+    const AB_PREC_1      = 0.60;   /* สตรีค ≥ 3 → ดาเมจต่อเกราะ +60% */
+    const AB_PREC_2      = 1.20;   /* สตรีค ≥ 6 → ดาเมจต่อเกราะ +120% */
+    const AB_SEAL_SHARD  = 12;     /* ทลายผนึกได้ 💎 12 เศษ (แหล่งรองจากโหมดเหวลึก) */
+
+    // ── 3. FOG OF WAR + DANGER ──────────────────────────────────────
+    const AB_WARN_PCT = 40;   /* HP ต่ำกว่านี้ = เตือนเหลือง */
+    const AB_CRIT_PCT = 25;   /* HP ต่ำกว่านี้ = กระพริบแดง */
+    const AB_MISS_WARN = 3;   /* ตอบผิดติดกันกี่ข้อถึงถือว่าอยู่ในอันตราย */
+
+    // ── 4. ABYSS MODE + SYSTEM CORE ─────────────────────────────────
+    const AB_ABYSS_MUL = 0.62;   /* เวลาต่อข้อในโหมดเหวลึก */
+    const AB_ABYSS_MIN = 4000;   /* พื้นเวลาขั้นต่ำ กันเวลาสั้นจนอ่านตัวเลือกไม่ทัน */
+    const AB_FAST_MS   = 3500;   /* ตอบไวกว่านี้ได้ 💎 เพิ่ม 1 */
+    const AB_SHARD_CAP = 99999;
+
+    const AB_CORE_MAX     = 6;
+    const AB_CORE_COST    = [8, 14, 22, 32, 46, 64];   /* รวมเส้นละ 186 · ครบสามเส้น 558 เศษ */
+    const AB_CORE_MP_PCT  = 5;      /* ต่อขั้น — คืน MP หลังร่ายสกิล (เพดาน 30%) */
+    const AB_CORE_TIME_MS = 400;    /* ต่อขั้น — เวลาต่อข้อ (เพดาน +2.4 วิ) */
+    const AB_CORE_GOLD    = 1;      /* ต่อขั้น — อัตราทอง % (เพดาน +6%) */
+
+    /* กันเงินเฟ้อ: เศษคริสตัลได้จาก "โหมดที่ยากกว่าเดิม" กับ "การทลายผนึก" เท่านั้น
+       ซื้อด้วยทองไม่ได้ · ขายเป็นทองไม่ได้ → แกนกลางระบบไม่กลายเป็นงูกินหางกับทอง
+       และเพดานทอง +6% ของแกนนี้แยกจากเพดาน +10% ของคลังอักขระ (v4.4) คนละก้อนกัน */
+    const AB_CORES = [
+      { key:'mp',   icon:'🔮', name:'แกนมานา',
+        desc:'ร่ายสกิลแล้วคืน MP ส่วนหนึ่งกลับมาทันที',
+        eff: function (lv) { return 'คืน MP ' + (lv * AB_CORE_MP_PCT) + '% ของค่าร่าย'; },
+        cap: 'เพดาน 30%' },
+      { key:'time', icon:'⏱️', name:'แกนเวลา',
+        desc:'ยืดเวลาตอบต่อข้อทุกโหมด (คิดก่อนตัวคูณของเหวลึก)',
+        eff: function (lv) { return 'เวลาต่อข้อ +' + (lv * AB_CORE_TIME_MS / 1000).toFixed(1) + ' วินาที'; },
+        cap: 'เพดาน +2.4 วิ' },
+      { key:'gold', icon:'🪙', name:'แกนโชคลาภ',
+        desc:'เพิ่มอัตราทองที่ได้จากการตอบถูก',
+        eff: function (lv) { return 'อัตราทอง +' + (lv * AB_CORE_GOLD) + '%'; },
+        cap: 'เพดาน +6%' }
+    ];
+
+    const AB_CORE_BY_KEY = {};
+    AB_CORES.forEach(function (c) { AB_CORE_BY_KEY[c.key] = c; });
+
+    /* ระดับแรงค์ที่ต้องมี — ลงตารางกลางของ v4.0 เพื่อให้ showLock() อธิบายเงื่อนไขให้เองได้
+       ตั้งไว้ที่ D-RANK (ชั้น 6) เท่ากับร้านค้า จะได้เริ่มสะสมเศษคริสตัลได้ตั้งแต่ต้นเกม
+       (กติกาข้อ 5: อย่าผูกของที่ต้องใช้บ่อยไว้กับแรงค์สูงจนกลายเป็นฟีเจอร์ตาย) */
+    FEATURE_RANK.abyss = 'D'; FEATURE_NAME.abyss = '🕳️ โหมดเหวลึก (Abyss)';
+    FEATURE_RANK.core  = 'D'; FEATURE_NAME.core  = '⚙️ แกนกลางระบบ (System Core)';
+
+    // ── แจ้งเตือนของชั้นนี้ — สารบัญของตัวเอง แยกจาก SYS_NOTIF (25) / Q_NOTIF (6) / CX_NOTIF (4) ──
+    const AB_NOTIF = {
+      AB_QUAKE: {
+        tag: 'ABYSS 01/09', tone: 'good',
+        title: d => `🌌 ${d.name} — สตรีค ${d.streak} ข้อติด`,
+        body:  d => `หอคอยสั่นสะเทือน ออโรร่าพุ่งทะยานขึ้นชั้น\n` +
+                    `ทองจากการตอบถูก <b>×${(1 + d.mul).toFixed(2)}</b> อีก <b>${d.hits} ข้อ</b>` +
+                    (d.mp ? `\nแกนพลังคืนมานาให้ <b>+${d.mp} MP</b>` : '')
+      },
+      AB_SEAL_NEAR: {
+        tag: 'ABYSS 02/09', tone: 'warn',
+        title: d => `🔒 ประตูผนึกเวทมนตร์ — ชั้น ${d.floor}`,
+        body:  d => `ชั้นถัดไปมี <b>เกราะผนึก ${d.hits} ระลอก</b> คลุมบอสไว้\n` +
+                    `ตอบถูกติดกันจะทลายเร็วขึ้น · <i>ตอบผิดผนึกจะซ่อมตัวเอง</i>\n` +
+                    `กดใช้ไอเทมจากกระเป๋าช่วยทลายเกราะได้ชิ้นละ ${Math.round(AB_ITEM_STRIP * 100)}%`
+      },
+      AB_SEAL_BREAK: {
+        tag: 'ABYSS 03/09', tone: 'good',
+        title: d => `🔓 ทลายประตูผนึกชั้น ${d.floor} สำเร็จ`,
+        body:  d => (d.clean ? `<b>💠 ไร้รอย</b> — ไม่พลาดแม้แต่ข้อเดียว\n` : '') +
+                    `ได้ <b>💎 ${d.shard} เศษคริสตัล</b>\n` +
+                    `ผนึกที่ทลายแล้ว <b>${d.n}/${AB_SEAL_FLOORS.length}</b> บาน — บอสไร้เกราะแล้ว ลุยต่อได้`
+      },
+      AB_SEAL_REBIND: {
+        tag: 'ABYSS 04/09', tone: 'danger',
+        title: () => '🔒 ผนึกซ่อมตัวเอง',
+        body:  d => `ตอบพลาดขณะเกราะผนึกยังตั้งอยู่ ผนึกคืนตัว <b>+${d.back}</b>\n` +
+                    `เหลือต้องทลายอีก <b>${d.left}</b> — ต้องแม่นยำติดต่อกันถึงจะผ่าน`
+      },
+      AB_FOG: {
+        tag: 'ABYSS 05/09', tone: '',
+        title: d => `🌫️ หมอกเวทมนตร์เปิดออก — ชั้น ${d.floor}`,
+        body:  d => `เรดาร์หอคอยเผยชั้น ${d.floor} แล้ว\n` +
+                    (d.left > 0 ? `ยังเหลืออีก <b>${d.left} ชั้น</b> ที่หมอกยังปกคลุมอยู่`
+                                : `<b>หมอกสลายหมดทั้งหอคอย</b> — เห็นครบทั้ง ${FLOOR_MAX} ชั้นแล้ว`)
+      },
+      AB_DANGER: {
+        tag: 'ABYSS 06/09', tone: 'danger',
+        title: () => '🩸 สัญญาณอันตราย — HP วิกฤต',
+        body:  d => `HP เหลือ <b>${d.hp}/${d.max}</b> (${d.pct}%)\n` +
+                    `พลาดอีกครั้งอาจร่วงกลับต้นโซน — ใช้ 🧪 ยาฟื้นพลัง หรือสกิล 🛡️ ฟื้นคืนชีพเดี๋ยวนี้`
+      },
+      AB_ABYSS_ON: {
+        tag: 'ABYSS 07/09', tone: 'warn',
+        title: () => '🕳️ เปิดโหมดเหวลึก (ABYSS)',
+        body:  d => `เวลาต่อข้อเหลือ <b>${Math.round(AB_ABYSS_MUL * 100)}%</b> ของปกติ (ตอนนี้ ${(d.ms / 1000).toFixed(1)} วินาที)\n` +
+                    `ตอบถูกได้ <b>💎 เศษคริสตัล</b> · ตอบไวกว่า ${(AB_FAST_MS / 1000).toFixed(1)} วิ ได้เพิ่ม · ชั้นบอสได้เพิ่มอีก 2\n` +
+                    `<i>มีผลตั้งแต่ข้อถัดไป — ข้อที่กำลังตอบอยู่ยังใช้เวลาเดิม</i>`
+      },
+      AB_ABYSS_OFF: {
+        tag: 'ABYSS 08/09', tone: '',
+        title: () => '🕳️ ปิดโหมดเหวลึก',
+        body:  d => `กลับมาใช้เวลาต่อข้อตามปกติ (${(d.ms / 1000).toFixed(1)} วินาที)\n` +
+                    `เศษคริสตัลที่สะสมไว้ <b>💎 ${d.shards}</b> ยังอยู่ครบ`
+      },
+      AB_CORE_UP: {
+        tag: 'ABYSS 09/09', tone: 'good',
+        title: d => `⚙️ อัปเกรด${d.name} → ขั้น ${d.lv}`,
+        body:  d => `ใช้ <b>💎 ${d.cost} เศษคริสตัล</b> · เหลือ 💎 ${d.left}\n` +
+                    `ผลถาวรตอนนี้: <b>${d.eff}</b> (${d.cap})`
+      }
+    };
+
+    function abNotify(key, data) {
+      const def = AB_NOTIF[key];
+      if (!def) return;
+      const d = data || {};
+      let title, body;
+      try { title = def.title(d); body = def.body(d); } catch (e) { return; }
+      if (def.gate) { snShowGate(def, title, body, null); return; }
+      snShowToast(def, title, body);
+    }
+
+    /* เรดาร์พังต้องไม่ลากเกมลงไปด้วย — ทุก wrapper ของชั้นนี้ห่อ try/catch แล้วเขียนลง Error Log ของ v4.3 */
+    function abErr(e, where) {
+      if (typeof gcErrPush !== 'function') return;
+      try { gcErrPush('err', 'ABYSS: ' + ((e && e.message) || e), where || '', (e && e.stack) || ''); } catch (e2) {}
+    }
+
+    // ── สถานะระหว่างเล่น (ไม่เซฟ — เป็นของชั่วคราวรายด่าน) ──────────
+    let AB_SEAL   = null;                  /* { floor, max, base, clean, done } */
+    let AB_SURGE  = { mul: 0, left: 0 };   /* ออโรร่าเสริมทอง */
+    let AB_LIVE   = false;                 /* โหมดเหวลึก "ของข้อที่กำลังตอบอยู่" — ล็อกไว้ตอนนาฬิกาเริ่มเดิน */
+    let AB_MISS   = 0;                     /* ตอบผิดติดกันกี่ข้อ */
+    let AB_DANGER = 0;
+    let AB_DANGER_SEEN = false;            /* edge-trigger กันแจ้งเตือนซ้ำรัว (กับดักข้อ 3) */
+    let AB_READY  = false;                 /* อ่านค่าจาก store เข้า G.ab เรียบร้อยแล้วหรือยัง — ดูหมายเหตุที่ abSave() */
+
+    function abG() { return (typeof G !== 'undefined' && G) ? G : null; }
+
+    // ── ข้อมูลถาวร: account.ab ──────────────────────────────────────
+    /* ต้อง idempotent เพราะถูกเรียกทุกครั้งที่อ่าน store ผ่าน migrateAccount
+       a.abv คือตรารุ่น (กฎเดียวกับ gcv / cxv / trv — กับดักข้อ 8) แต่เคสนี้ไม่มีอะไรให้ backfill:
+       v4.0-v4.5 ไม่เคยเก็บว่าใครทลายผนึกไหนไปแล้ว การเดาย้อนหลังจาก bossClears จะแจกฉายา
+       ระดับตำนานฟรีให้บัญชีเก่า — บัญชีเก่าจึงเริ่มนับจากศูนย์และไปทลายผนึกเอาเองในรอบถัดไป */
+    function abEnsure(a) {
+      if (!a || typeof a !== 'object') return a;
+      const ab = (a.ab && typeof a.ab === 'object') ? a.ab : {};
+
+      if (typeof ab.shards !== 'number' || !isFinite(ab.shards) || ab.shards < 0) ab.shards = 0;
+      ab.shards = Math.min(AB_SHARD_CAP, Math.floor(ab.shards));
+
+      const core = (ab.core && typeof ab.core === 'object') ? ab.core : {};
+      Object.keys(core).forEach(function (k) { if (!AB_CORE_BY_KEY[k]) delete core[k]; });
+      AB_CORES.forEach(function (c) {
+        let v = core[c.key];
+        if (typeof v !== 'number' || !isFinite(v) || v < 0) v = 0;
+        core[c.key] = Math.min(AB_CORE_MAX, Math.floor(v));
+      });
+      ab.core = core;
+
+      const old = (ab.seals && typeof ab.seals === 'object') ? ab.seals : {};
+      const seals = {};
+      AB_SEAL_FLOORS.forEach(function (f) {
+        const s = old[String(f)];
+        const broken = !!(s && s.broken);
+        seals[String(f)] = { broken: broken, flawless: broken && !!s.flawless };
+      });
+      ab.seals = seals;
+
+      ab.abyss = !!ab.abyss;
+      a.ab = ab;
+      if (a.abv !== AB_VER) a.abv = AB_VER;
+      return a;
+    }
+
+    /* อ่านอย่างเดียว — ห้ามสร้าง g.ab เปล่าให้เอง
+       ระหว่าง startGame ของ v4.0 ทำงาน ชั้นล่าง ๆ เรียก renderStats() ก่อนที่ wrapper ของชั้นนี้
+       จะได้อ่านค่าจาก store ถ้าตรงนั้นเผลอสร้าง g.ab เป็นศูนย์ไว้ saveProgress() รอบถัดไป
+       (ซึ่งอยู่ในสายเดียวกัน) จะเขียนศูนย์ทับของจริงในเครื่องทันที — เศษคริสตัลกับผนึกหายเกลี้ยง */
+    function abOf(src) {
+      const g = src || abG();
+      return (g && g.ab && typeof g.ab === 'object') ? g.ab : null;
+    }
+
+    function abShards(src)  { const b = abOf(src); return b ? b.shards : 0; }
+    function abCoreLv(src, key) { const b = abOf(src); return (b && b.core && b.core[key]) || 0; }
+    function abyssOn(src)   { const b = abOf(src); return !!(b && b.abyss); }
+
+    function abSealsOf(src) {
+      const b = abOf(src);
+      return (b && b.seals) ? b.seals : {};
+    }
+    function abSealCount(src) {
+      const s = abSealsOf(src);
+      return AB_SEAL_FLOORS.filter(function (f) { return s[String(f)] && s[String(f)].broken; }).length;
+    }
+    function abSealFlawless(src) {
+      const s = abSealsOf(src);
+      return AB_SEAL_FLOORS.filter(function (f) { return s[String(f)] && s[String(f)].flawless; }).length;
+    }
+
+    /* v4.0 saveProgress ไม่รู้จักฟิลด์ ab — เขียนเองต่อท้ายเหมือนที่ v4.5 ทำกับ trFloors */
+    /* AB_READY กันเคสเดียวที่อันตรายจริง: ระหว่าง startGame ของ v4.0 ยังทำงานไม่จบ
+       ชั้นล่างเรียก saveProgress() ไปแล้วหลายรอบ ถ้าปล่อยให้เขียนตอนนั้น ค่าที่ยังไม่ได้โหลด
+       จะทับของจริงในเครื่อง — เปิดสวิตช์ก็ต่อเมื่อ wrapper ของชั้นนี้อ่านค่าเข้ามาครบแล้วเท่านั้น */
+    function abSave() {
+      if (!AB_READY || !CURRENT_USER) return;
+      const g = abG();
+      if (!g || !g.ab) return;
+      const s = loadStore(), a = s[CURRENT_USER];
+      if (!a) return;
+      abEnsure(a);
+      a.ab.shards = Math.min(AB_SHARD_CAP, Math.max(0, Math.floor(g.ab.shards || 0)));
+      a.ab.abyss  = !!g.ab.abyss;
+      AB_CORES.forEach(function (c) {
+        a.ab.core[c.key] = Math.min(AB_CORE_MAX, Math.max(0, Math.floor((g.ab.core || {})[c.key] || 0)));
+      });
+      AB_SEAL_FLOORS.forEach(function (f) {
+        const src = (g.ab.seals || {})[String(f)];
+        if (!src) return;
+        const dst = a.ab.seals[String(f)];
+        if (src.broken)   dst.broken = true;
+        if (src.flawless) dst.flawless = true;
+      });
+      saveStore(s);
+    }
+
+    // ══ 1. TOWER QUAKE ═══════════════════════════════════════════════
+    function abQuakeOf(streak) {
+      if (streak === 3) return AB_QUAKE[0];
+      if (streak === 5) return AB_QUAKE[1];
+      if (streak >= 10 && streak % 10 === 0) return AB_QUAKE[2];
+      return null;
+    }
+
+    /* สั่นเฉพาะแผงเรดาร์ ไม่สั่นทั้งหน้าจอ — transform บน #gameScreen จะดันเลย์เอาต์ล้นแนวนอน
+       (กติกาก่อนส่งงาน: document.body.scrollWidth ต้องไม่เกิน window.innerWidth) */
+    function abShake(lv) {
+      const p = document.getElementById('trPanel');
+      if (!p || p.style.display === 'none') return;
+      p.classList.remove('ab-quake', 'q2', 'q3');
+      void p.offsetWidth;                      /* บังคับ reflow ให้อนิเมชันเริ่มใหม่จริงเมื่อยิงติด ๆ กัน */
+      p.classList.add('ab-quake');
+      if (lv >= 2) p.classList.add('q2');
+      if (lv >= 3) p.classList.add('q3');
+      setTimeout(function () { p.classList.remove('ab-quake', 'q2', 'q3'); }, lv >= 3 ? 900 : 620);
+      abAurora(lv);
+    }
+
+    /* ออโรร่าพุ่งขึ้นชั้น — วางไว้ใน #abFx ที่อยู่ "นอกกลุ่มกล้อง" จึงพุ่งเต็มกรอบเสมอ
+       และไม่ชนกับ #trFx ที่ trBreakthrough() ล้างทิ้งทุกครั้งที่ขึ้นชั้นใหม่ */
+    function abAurora(lv) {
+      const fx = document.getElementById('abFx');
+      if (!fx) return;
+      fx.innerHTML = '';
+      const n = 4 + lv * 2;
+      let s = '';
+      for (let i = 0; i < n; i++) {
+        const x = 14 + (272 / Math.max(1, n - 1)) * i + (Math.random() * 12 - 6);
+        const w = 3 + Math.random() * 7;
+        s += '<rect class="ab-aur" x="' + x.toFixed(1) + '" y="0" width="' + w.toFixed(1) +
+             '" height="' + (170 + Math.random() * 110).toFixed(0) + '" rx="' + (w / 2).toFixed(1) +
+             '" style="animation-delay:' + (i * 0.045).toFixed(3) + 's"/>';
+      }
+      fx.innerHTML = s;
+      setTimeout(function () { if (fx.innerHTML) fx.innerHTML = ''; }, 1500);
+    }
+
+    // ══ 2. SEAL GATES ════════════════════════════════════════════════
+    function abSealHits(floor) { return AB_SEAL_HITS[floor] || 2; }
+
+    /* เกราะที่เหลือ = HP ส่วนที่เกิน HP ตั้งต้นของบอส (เกราะเป็นชั้นนอกที่บวกทับเข้าไป) */
+    function abSealLeft() {
+      const g = abG();
+      if (!AB_SEAL || !g || AB_SEAL.floor !== g.floor) return 0;
+      return Math.max(0, Math.round(g.monsterHp - AB_SEAL.base));
+    }
+
+    function abSealSetup() {
+      const g = abG();
+      AB_SEAL = null;
+      if (!g || g.practiceMode || !g.currentMonster || !isBossFloor(g.floor)) { abSealBar(); return; }
+
+      const max = Math.max(1, abSealHits(g.floor) * hunterAtk());
+      AB_SEAL = { floor: g.floor, max: max, base: g.monsterMaxHp, clean: true, done: false };
+      g.monsterMaxHp += max;
+      g.monsterHp    += max;
+      renderMonsterHp();
+    }
+
+    function abSealBroken() {
+      const g = abG();
+      if (!AB_SEAL || AB_SEAL.done || !g) return;
+      AB_SEAL.done = true;
+
+      const b = abOf(g);
+      if (!b) return;
+      const k = String(AB_SEAL.floor);
+      if (!b.seals[k]) b.seals[k] = { broken: false, flawless: false };
+      b.seals[k].broken = true;
+      if (AB_SEAL.clean) b.seals[k].flawless = true;
+
+      b.shards = Math.min(AB_SHARD_CAP, b.shards + AB_SEAL_SHARD);
+
+      abNotify('AB_SEAL_BREAK', { floor: AB_SEAL.floor, clean: AB_SEAL.clean,
+                                  shard: AB_SEAL_SHARD, n: abSealCount(g) });
+      announceTitles(checkTitles(g), document.getElementById('gFeedback'));
+      renderMonsterHp();
+      abSave();
+    }
+
+    function abSealBar() {
+      const wrap = document.getElementById('abSealWrap');
+      if (!wrap) return;
+      const bar  = document.getElementById('abSealBar');
+      const text = document.getElementById('abSealText');
+      const tag  = document.getElementById('abSealTag');
+      const left = abSealLeft();
+
+      if (!AB_SEAL) { wrap.style.display = 'none'; return; }
+
+      if (left <= 0) {
+        /* ทลายแล้วยังโชว์ค้างไว้จนขึ้นมอนสเตอร์ตัวใหม่ เพื่อให้เห็นผลของสิ่งที่เพิ่งทำ */
+        wrap.style.display = '';
+        wrap.classList.add('done');
+        bar.style.width = '0%';
+        text.textContent = 'ทลายแล้ว';
+        tag.textContent = AB_SEAL.clean ? '💠 ไร้รอย' : '';
+        return;
+      }
+
+      wrap.style.display = '';
+      wrap.classList.remove('done');
+      bar.style.width = Math.max(0, Math.min(100, left / AB_SEAL.max * 100)) + '%';
+      text.textContent = left + '/' + AB_SEAL.max;
+      tag.textContent = AB_SEAL.clean ? '💠 ยังไร้รอย' : '⚠️ เคยซ่อมตัว';
+    }
+
+    // ══ 3. FOG OF WAR + DANGER ═══════════════════════════════════════
+    /* แถบหมอกรายชั้น — ใช้ trY() ของ v4.5 เป็นตัวบอกพิกัด จึงย้ายตามโหมดภาพ/โหมดเส้นเองอัตโนมัติ
+       แถบต่อกันพอดีที่กึ่งกลางระหว่างชั้น (0.5) ไม่ซ้อนทับกัน — จงใจ
+       ถ้าซ้อนเหลื่อมกัน พื้นที่ทับจะได้อัลฟาสองชั้นแล้วขึ้นเป็นริ้วขวางให้เห็นชัด
+       (ลองมาแล้วที่ 0.72 เห็นเป็นแถบ ๆ บนภาพหอคอย) และเบลอด้วยฟิลเตอร์ SVG 20 ก้อน
+       ก็หนักเกินไปสำหรับมือถือนักเรียน จึงใช้สีทึบเรียบ + ปุยหมอกเรเดียลเป็นเท็กซ์เจอร์แทน */
+    function abBandY(f) {
+      const y  = trY(f);
+      const up = trY(Math.min(FLOOR_MAX, f + 1));
+      const dn = trY(Math.max(1, f - 1));
+      const gapUp = Math.abs((f >= FLOOR_MAX ? dn : up) - y) || TR_FH;
+      const gapDn = Math.abs((f <= 1 ? up : dn) - y) || TR_FH;
+      let top = y - gapUp * 0.5;
+      const bot = y + gapDn * 0.5;
+      /* ยอดหอคอย (หลังคาคริสตัล · ยอดแหลม · ลำแสง) อยู่สูงกว่าชั้น 20 ไปอีกมาก
+         และกลุ่มนี้อยู่ในกล้องซึ่งถูก SVG ตัดขอบให้อยู่แล้ว จึงยืดขึ้นไปเผื่อ ๆ ได้ฟรี
+         ถ้าเผื่อน้อยไป ยอดหอคอยจะโผล่พ้นหมอกทั้งที่ยังไปไม่ถึง */
+      if (f >= FLOOR_MAX) top -= 900;
+      return { top: top, bot: bot };
+    }
+
+    function abFogSvg() {
+      let s = '<defs>' +
+        '<radialGradient id="abPuffG" cx=".5" cy=".5" r=".5">' +
+          '<stop offset="0" stop-color="#9fb6d4" stop-opacity=".24"/>' +
+          '<stop offset="1" stop-color="#9fb6d4" stop-opacity="0"/></radialGradient>' +
+        '<linearGradient id="abAurG" x1="0" y1="1" x2="0" y2="0">' +
+          '<stop offset="0" stop-color="#2ef2d0" stop-opacity="0"/>' +
+          '<stop offset=".35" stop-color="#8fd8ff" stop-opacity=".95"/>' +
+          '<stop offset=".75" stop-color="#c9a6ff" stop-opacity=".8"/>' +
+          '<stop offset="1" stop-color="#ffffff" stop-opacity="0"/></linearGradient>' +
+        '</defs>';
+
+      for (let f = 1; f <= FLOOR_MAX; f++) {
+        const b = abBandY(f);
+        const h = Math.max(2, b.bot - b.top);
+        const cy = (b.top + b.bot) / 2;
+        s += '<g class="ab-fog-b" data-f="' + f + '">' +
+               '<rect x="' + (TR_CX - 200) + '" y="' + b.top.toFixed(2) + '" width="400" height="' +
+                 h.toFixed(2) + '" fill="#101d31" fill-opacity=".9"/>' +
+               '<ellipse cx="' + (TR_CX - 46) + '" cy="' + (cy - h * 0.16).toFixed(1) +
+                 '" rx="' + (h * 1.5).toFixed(1) + '" ry="' + (h * 0.62).toFixed(1) + '" fill="url(#abPuffG)"/>' +
+               '<ellipse cx="' + (TR_CX + 52) + '" cy="' + (cy + h * 0.18).toFixed(1) +
+                 '" rx="' + (h * 1.35).toFixed(1) + '" ry="' + (h * 0.55).toFixed(1) + '" fill="url(#abPuffG)"/>' +
+             '</g>';
+      }
+      return s;
+    }
+
+    function abFogPaint() {
+      const g = abG();
+      const fog = document.getElementById('abFog');
+      if (!fog || !g) return;
+      const maxF = Math.max(1, Math.min(FLOOR_MAX, g.maxFloor || 1));
+      const bands = fog.querySelectorAll('.ab-fog-b');
+      for (let i = 0; i < bands.length; i++) {
+        bands[i].classList.toggle('clear', Number(bands[i].getAttribute('data-f')) <= maxF);
+      }
+    }
+
+    function abDangerLevel() {
+      const g = abG();
+      if (!g || !g.maxHp || g.practiceMode) return 0;
+      const pct = g.hp / g.maxHp * 100;
+      if (pct <= AB_CRIT_PCT) return 2;
+      if (pct <= AB_WARN_PCT || AB_MISS >= AB_MISS_WARN) return 1;
+      return 0;
+    }
+
+    function abDangerSync() {
+      const g = abG();
+      const lv = abDangerLevel();
+      const scr = document.getElementById('gameScreen');
+      const veil = document.getElementById('abDanger');
+      if (scr) {
+        scr.classList.toggle('ab-warn', lv === 1);
+        scr.classList.toggle('ab-crit', lv === 2);
+      }
+      if (veil) {
+        veil.style.display = lv ? 'block' : 'none';
+        veil.className = lv === 2 ? 'crit' : (lv === 1 ? 'warn' : '');
+      }
+      /* edge-trigger: แจ้งครั้งเดียวตอนตกเข้าเขตวิกฤต แล้วรีเซ็ตเมื่อกลับมาปลอดภัย
+         ถ้าลืมส่วนนี้ ทุกครั้งที่ HP ขยับจะยิงแจ้งเตือนซ้ำรัว (กับดักข้อ 3) */
+      if (lv >= 2 && !AB_DANGER_SEEN && g) {
+        AB_DANGER_SEEN = true;
+        abNotify('AB_DANGER', { hp: Math.max(0, Math.round(g.hp)), max: g.maxHp,
+                                pct: Math.max(0, Math.round(g.hp / g.maxHp * 100)) });
+      }
+      if (lv === 0) AB_DANGER_SEEN = false;
+      AB_DANGER = lv;
+    }
+
+    // ══ 4. ABYSS MODE + SYSTEM CORE ══════════════════════════════════
+    function abToggleAbyss() {
+      const g = abG();
+      const b = abOf(g);
+      if (!g || !b) return;
+      if (!unlocked('abyss')) { showLock('abyss'); return; }
+      if (g.practiceMode) { itemMsg('🧠 โหมดฝึกจุดอ่อนใช้โหมดเหวลึกไม่ได้ — กลับหอคอยก่อน'); return; }
+
+      b.abyss = !b.abyss;
+      abSyncButtons();
+      /* questionMs() อ่านสถานะที่ล็อกไว้ตอนนาฬิกาเริ่มเดิน (AB_LIVE) จึงไม่กระชากข้อที่กำลังตอบอยู่ —
+         ค่าที่โชว์ในแจ้งเตือนคือเวลาของ "ข้อถัดไป" ต้องคำนวณจากสถานะใหม่ ไม่ใช่ AB_LIVE */
+      const was = AB_LIVE;
+      AB_LIVE = b.abyss;
+      const ms = questionMs();
+      AB_LIVE = was;
+      abNotify(b.abyss ? 'AB_ABYSS_ON' : 'AB_ABYSS_OFF', { ms: ms, shards: b.shards });
+      renderStats();
+      abSave();
+    }
+
+    function abOpenCore() {
+      if (!unlocked('core')) { showLock('core'); return; }
+      abRenderCore();
+      document.getElementById('abCore').classList.add('active');
+    }
+    function abCloseCore() { document.getElementById('abCore').classList.remove('active'); }
+
+    function abBuyCore(key) {
+      const g = abG(), b = abOf(g), c = AB_CORE_BY_KEY[key];
+      if (!g || !b || !c) return;
+      const lv = abCoreLv(g, key);
+      if (lv >= AB_CORE_MAX) return;
+      const cost = AB_CORE_COST[lv];
+      if (b.shards < cost) { abCoreMsg('💎 เศษคริสตัลไม่พอ — ต้องมี ' + cost + ' มีอยู่ ' + b.shards); return; }
+
+      b.shards -= cost;
+      b.core[key] = lv + 1;
+      abNotify('AB_CORE_UP', { name: c.name, lv: lv + 1, cost: cost, left: b.shards,
+                               eff: c.eff(lv + 1), cap: c.cap });
+      abCoreMsg('');
+      abRenderCore();
+      renderStats();
+      abSave();
+    }
+
+    function abCoreMsg(t) {
+      const el = document.getElementById('abCoreMsg');
+      if (el) el.textContent = t || '';
+    }
+
+    function abRenderCore() {
+      const body = document.getElementById('abCoreBody');
+      const g = abG(), b = abOf(g);
+      if (!body || !g || !b) return;
+
+      const seals = abSealsOf(g);
+      const sealHtml = AB_SEAL_FLOORS.map(function (f) {
+        const s = seals[String(f)] || {};
+        const cls = s.flawless ? 'flaw' : s.broken ? 'on' : '';
+        return '<span class="ab-seal-pill ' + cls + '">' +
+               (s.flawless ? '💠' : s.broken ? '🔓' : '🔒') + ' ชั้น ' + f + '</span>';
+      }).join('');
+
+      const tracks = AB_CORES.map(function (c) {
+        const lv = abCoreLv(g, c.key);
+        const maxed = lv >= AB_CORE_MAX;
+        const cost = maxed ? 0 : AB_CORE_COST[lv];
+        const pips = [];
+        for (let i = 0; i < AB_CORE_MAX; i++) pips.push('<i class="' + (i < lv ? 'on' : '') + '"></i>');
+        return '<div class="ab-track">' +
+          '<div class="ab-track-h"><b>' + c.icon + ' ' + c.name + '</b>' +
+            '<span class="ab-lv">ขั้น ' + lv + '/' + AB_CORE_MAX + '</span></div>' +
+          '<div class="ab-pips">' + pips.join('') + '</div>' +
+          '<div class="ab-track-d">' + esc(c.desc) + '</div>' +
+          '<div class="ab-track-e">ตอนนี้: <b>' + esc(lv ? c.eff(lv) : 'ยังไม่ได้อัปเกรด') + '</b> · ' + esc(c.cap) + '</div>' +
+          (maxed
+            ? '<button class="ab-buy" disabled>✅ เต็มขั้นแล้ว</button>'
+            : '<button class="ab-buy' + (b.shards >= cost ? '' : ' poor') + '" onclick="abBuyCore(\'' + c.key + '\')">' +
+              'อัปเป็นขั้น ' + (lv + 1) + ' — <span class="ab-cost">💎 ' + cost + '</span></button>') +
+        '</div>';
+      }).join('');
+
+      body.innerHTML =
+        '<div class="ab-core-top">' +
+          '<div class="ab-shard"><span>💎 เศษคริสตัลเหวลึก</span><b>' + b.shards + '</b></div>' +
+          '<button class="ab-abyss-btn' + (b.abyss ? ' on' : '') + '" onclick="abToggleAbyss()">' +
+            (b.abyss ? '🕳️ กำลังอยู่ในเหวลึก — กดเพื่อออก' : '🕳️ เข้าโหมดเหวลึก') + '</button>' +
+        '</div>' +
+        '<div class="ab-note">💎 ได้จาก <b>โหมดเหวลึก</b> (ตอบถูก 1 · ตอบไว +1 · ชั้นบอส +2) และ ' +
+          '<b>การทลายประตูผนึก</b> (บานละ ' + AB_SEAL_SHARD + ')<br>' +
+          'ซื้อด้วยทองไม่ได้และขายเป็นทองไม่ได้ — แกนกลางระบบจึงไม่ผูกกับค่าครองชีพในหอคอย</div>' +
+        '<div class="ab-tracks">' + tracks + '</div>' +
+        '<div class="ab-seal-box"><div class="ab-seal-h">🔒 ประตูผนึกเวทมนตร์ ' +
+          abSealCount(g) + '/' + AB_SEAL_FLOORS.length + ' บาน · 💠 ไร้รอย ' + abSealFlawless(g) + '</div>' +
+          '<div class="ab-seal-row">' + sealHtml + '</div></div>' +
+        '<div class="ab-core-msg" id="abCoreMsg"></div>';
+    }
+
+    /* ปุ่ม 🕳️ ABYSS กับ ⚙️ CORE ต้องอัปเดตป้ายตัวเลข/สถานะทุกครั้งที่วาดสถานะ */
+    function abSyncButtons() {
+      const g = abG(), b = abOf(g);
+      const ab = document.getElementById('abAbyssBtn');
+      const co = document.getElementById('abCoreBtn');
+      if (ab) {
+        const on = !!(b && b.abyss);
+        ab.classList.toggle('ab-on', on);
+        ab.innerHTML = '🕳️ ABYSS — ' + (on ? 'เหวลึก: เปิด' : 'เหวลึก: ปิด');
+      }
+      if (co) co.innerHTML = '⚙️ SYSTEM CORE — แกนกลาง <span class="ab-badge">💎 ' + (b ? b.shards : 0) + '</span>';
+    }
+
+    // ══ ห่อฟังก์ชันของชั้นล่าง ════════════════════════════════════════
+    /* เติม ab ให้บัญชีทุกใบที่อ่านผ่าน store */
+    const _abMigrateAccount = migrateAccount;
+    migrateAccount = function (a) {
+      const r = _abMigrateAccount.apply(this, arguments);
+      if (r && typeof r === 'object') abEnsure(r);
+      return r;
+    };
+
+    const _abStartGame = startGame;
+    startGame = function (user) {
+      AB_READY = false;                    /* ปิดสวิตช์ตลอดช่วงที่ชั้นล่างกำลังตั้งค่า G ใหม่ */
+      const r = _abStartGame.apply(this, arguments);
+      try {
+        const a = CURRENT_USER ? loadStore()[CURRENT_USER] : null;
+        const g = abG();
+        if (g) {
+          const src = (a && a.ab) ? a.ab : null;
+          g.ab = {
+            shards: src ? src.shards : 0,
+            core:   src ? Object.assign({}, src.core) : {},
+            seals:  src ? JSON.parse(JSON.stringify(src.seals)) : {},
+            abyss:  src ? !!src.abyss : false
+          };
+          abEnsure(g);
+          AB_READY = true;                 /* ค่าจริงเข้า G.ab แล้ว เขียนกลับ store ได้ */
+        }
+        AB_SEAL = null;
+        AB_SURGE = { mul: 0, left: 0 };
+        AB_LIVE = false;
+        AB_MISS = 0;
+        AB_DANGER = 0;
+        AB_DANGER_SEEN = false;
+        abSealBar();
+        abFogPaint();
+        abDangerSync();
+        abSyncButtons();
+      } catch (e) { abErr(e, 'abStartGame'); }
+      return r;
+    };
+
+    const _abSaveProgress = saveProgress;
+    saveProgress = function () {
+      const r = _abSaveProgress.apply(this, arguments);
+      try { abSave(); } catch (e) { abErr(e, 'abSave'); }
+      return r;
+    };
+
+    const _abExitGame = exitGame;
+    exitGame = function () {
+      try {
+        abSave();
+        abCloseCore();
+        AB_SEAL = null;
+        AB_SURGE = { mul: 0, left: 0 };
+        AB_LIVE = false; AB_MISS = 0;
+        AB_DANGER = 0; AB_DANGER_SEEN = false;
+        const veil = document.getElementById('abDanger');
+        if (veil) veil.style.display = 'none';
+        const scr = document.getElementById('gameScreen');
+        if (scr) scr.classList.remove('ab-warn', 'ab-crit');
+        abSealBar();
+      } catch (e) { abErr(e, 'abExitGame'); }
+      const r = _abExitGame.apply(this, arguments);
+      AB_READY = false;
+      return r;
+    };
+
+    /* โหมดเหวลึกถูก "ล็อกค่า" ตอนนาฬิกาเริ่มเดิน ไม่ใช่ตอนอ่าน questionMs()
+       ไม่งั้นการกดสลับโหมดกลางข้อจะทำให้หลอดเวลากับ limitMs ใน resolveAnswer คนละค่ากัน */
+    const _abStartQuestionTimer = startQuestionTimer;
+    startQuestionTimer = function () {
+      const g = abG();
+      AB_LIVE = !!(g && abyssOn(g) && !g.practiceMode);
+      return _abStartQuestionTimer.apply(this, arguments);
+    };
+
+    /* แกนเวลาบวกก่อน แล้วค่อยคูณตัวหารของเหวลึก — เหวลึกจึงยังโหดตามสัดส่วนเสมอ */
+    const _abQuestionMs = questionMs;
+    questionMs = function () {
+      let ms = _abQuestionMs.apply(this, arguments);
+      ms += abCoreLv(null, 'time') * AB_CORE_TIME_MS;
+      if (AB_LIVE) ms = Math.max(AB_ABYSS_MIN, Math.round(ms * AB_ABYSS_MUL));
+      return ms;
+    };
+
+    /* โบนัสถาวรใส่ที่สูตรจุดเดียวตามกฎของ v4.4 — ไม่ไล่แก้ตามจุดเรียก
+       (ตัวนี้ห่อทับ wrapper ของ v4.4 อีกที ผลจึงบวกกันเป็น LUK + คลังอักขระ + แกนโชคลาภ) */
+    const _abGoldMul = goldMul;
+    goldMul = function () {
+      return _abGoldMul.apply(this, arguments) + abCoreLv(null, 'gold') * AB_CORE_GOLD / 100;
+    };
+
+    /* แกนมานาคืน MP หลังร่ายสำเร็จ — วัดจากส่วนต่างจริงของ G.mp ก่อน/หลัง
+       ถ้าร่ายไม่ติด (คูลดาวน์ · MP ไม่พอ · จังหวะไม่ได้) ส่วนต่างเป็น 0 จึงไม่คืนอะไรเอง */
+    const _abUseSkill = useSkill;
+    useSkill = function (key) {
+      const g = abG();
+      const before = g ? g.mp : 0;
+      const r = _abUseSkill.apply(this, arguments);
+      try {
+        const pct = abCoreLv(g, 'mp') * AB_CORE_MP_PCT;
+        if (g && pct > 0) {
+          const spent = before - g.mp;
+          if (spent > 0) {
+            const back = Math.min(Math.max(0, maxMpOf(g) - g.mp), Math.round(spent * pct / 100));
+            if (back > 0) {
+              g.mp += back;
+              const el = document.getElementById('gSkillTip');
+              if (el) el.textContent += ' | ⚙️ แกนมานาคืน ' + back + ' MP';
+              renderStats();
+            }
+          }
+        }
+      } catch (e) { abErr(e, 'abUseSkill'); }
+      return r;
+    };
+
+    /* ใช้ไอเทมจากกระเป๋าเพื่อทลายเกราะผนึก — นับว่าใช้จริงก็ต่อเมื่อจำนวนในกระเป๋าลดลงจริง
+       (useItem ของ v4.0 มีทางออกก่อนหักของหลายทาง เช่น HP เต็ม · ยังไม่มีนาฬิกา · ตัวเลือกเหลือ 2) */
+    const _abUseItem = useItem;
+    useItem = function (kind) {
+      const g = abG();
+      const before = (g && g.items) ? (g.items[kind] || 0) : 0;
+      const sealBefore = abSealLeft();
+      const r = _abUseItem.apply(this, arguments);
+      try {
+        const after = (g && g.items) ? (g.items[kind] || 0) : 0;
+        if (g && AB_SEAL && sealBefore > 0 && after < before) {
+          const cut = Math.min(sealBefore, Math.max(1, Math.round(AB_SEAL.max * AB_ITEM_STRIP)));
+          g.monsterHp = Math.max(AB_SEAL.base, g.monsterHp - cut);
+          renderMonsterHp();
+          const el = document.getElementById('gItemMsg');
+          if (el) el.textContent = (el.textContent ? el.textContent + ' | ' : '') +
+                                   '🔓 เกราะผนึกแตก -' + cut;
+          if (abSealLeft() <= 0) abSealBroken();
+        }
+      } catch (e) { abErr(e, 'abUseItem'); }
+      return r;
+    };
+
+    /* ตั้งเกราะผนึกทุกครั้งที่ขึ้นมอนสเตอร์ตัวใหม่ — ชั้นบอสมีบอสตัวเดียว จึงตั้งครั้งเดียวต่อชั้น */
+    const _abNextMonster = nextMonster;
+    nextMonster = function () {
+      const r = _abNextMonster.apply(this, arguments);
+      try { abSealSetup(); } catch (e) { abErr(e, 'abSealSetup'); }
+      return r;
+    };
+
+    const _abRenderMonsterHp = renderMonsterHp;
+    renderMonsterHp = function () {
+      const r = _abRenderMonsterHp.apply(this, arguments);
+      try { abSealBar(); } catch (e) { abErr(e, 'abSealBar'); }
+      return r;
+    };
+
+    const _abRenderStats = renderStats;
+    renderStats = function () {
+      const r = _abRenderStats.apply(this, arguments);
+      try { abDangerSync(); abSyncButtons(); } catch (e) { abErr(e, 'abRenderStats'); }
+      return r;
+    };
+
+    /* หมอกเปิดออกเมื่อ maxFloor ขยับ · ประกาศประตูผนึกล่วงหน้าตอนก้าวเข้าชั้นผนึก
+       (หลัง clearFloor ของ v4.0 ทำงานจบ G.floor คือชั้นใหม่แล้ว) */
+    const _abClearFloor = clearFloor;
+    clearFloor = function (boss) {
+      const g = abG();
+      const before = g ? (g.maxFloor || 1) : 0;
+      const r = _abClearFloor.apply(this, arguments);
+      try {
+        if (g && !g.practiceMode) {
+          if ((g.maxFloor || 1) > before) {
+            abFogPaint();
+            abNotify('AB_FOG', { floor: g.maxFloor, left: Math.max(0, FLOOR_MAX - g.maxFloor) });
+          }
+          if (AB_SEAL_FLOORS.indexOf(g.floor) !== -1) {
+            abNotify('AB_SEAL_NEAR', { floor: g.floor, hits: abSealHits(g.floor) });
+          }
+        }
+        abSave();
+      } catch (e) { abErr(e, 'abClearFloor'); }
+      return r;
+    };
+
+    /* หัวใจของชั้นนี้ — เก็บสถานะก่อนตอบ ปล่อยให้ v4.0-v4.5 ทำงานจนจบ แล้วค่อยเทียบผล
+       ลำดับในนี้สำคัญ: จ่ายออโรร่าที่ค้างอยู่ก่อน แล้วค่อยจุดสตรีคชุดใหม่
+       ไม่งั้นข้อที่ "จุด" สตรีคจะกินโบนัสของตัวเองไปด้วย */
+    const _abResolveAnswer = resolveAnswer;
+    resolveAnswer = function (choice, btn, timedOut) {
+      const g = abG();
+      const m = g ? g.currentMonster : null;
+      const correct    = !timedOut && !!m && choice === m.answer;
+      const sealBefore = abSealLeft();
+      const hpBefore   = g ? g.monsterHp : 0;
+      const goldBefore = g ? g.gold : 0;
+      const streakB    = g ? (g.streak || 0) : 0;
+      const spent      = (g && g.questionStart) ? (Date.now() - g.questionStart) : 999999;
+
+      const r = _abResolveAnswer.apply(this, arguments);
+      if (!g) return r;
+
+      try {
+        const fb = document.getElementById('gFeedback');
+        const add = function (t) { if (fb) fb.textContent += t; };
+
+        AB_MISS = correct ? 0 : AB_MISS + 1;
+
+        // ── เกราะผนึก ─────────────────────────────────────────
+        if (AB_SEAL && sealBefore > 0) {
+          if (correct) {
+            /* ความแม่นยำ = ดาเมจพิเศษที่ลงเฉพาะเกราะ · หนีบไม่ให้ทะลุลงไปกิน HP จริงของบอส
+               (ถ้าปล่อยทะลุ บอสอาจตายในทิกที่ v4.0 ตรวจ monsterHp ไปแล้ว → ชั้นค้าง) */
+            const bonus = g.streak >= 6 ? AB_PREC_2 : g.streak >= 3 ? AB_PREC_1 : 0;
+            if (bonus > 0) {
+              const dmg = Math.max(0, hpBefore - g.monsterHp);
+              const extra = Math.min(Math.max(0, g.monsterHp - AB_SEAL.base), Math.round(dmg * bonus));
+              if (extra > 0) {
+                g.monsterHp -= extra;
+                add(' | 🎯 ความแม่นยำเจาะผนึก -' + extra);
+              }
+            }
+            if (abSealLeft() <= 0) { add(' | 🔓 เกราะผนึกแตกสลาย!'); abSealBroken(); }
+            else renderMonsterHp();
+          } else {
+            AB_SEAL.clean = false;
+            const back = Math.max(1, Math.round(AB_SEAL.max * AB_SEAL_REBIND));
+            const room = Math.max(0, AB_SEAL.base + AB_SEAL.max - g.monsterHp);
+            const real = Math.min(back, room);
+            if (real > 0) {
+              g.monsterHp += real;
+              renderMonsterHp();
+              add(' | 🔒 ผนึกซ่อมตัวเอง +' + real);
+              abNotify('AB_SEAL_REBIND', { back: real, left: abSealLeft() });
+            }
+          }
+        }
+
+        // ── ออโรร่าเสริมทองที่ค้างอยู่จากสตรีคก่อนหน้า ────────
+        if (correct && !g.practiceMode && AB_SURGE.left > 0) {
+          const gained = g.gold - goldBefore;
+          if (gained > 0 && AB_SURGE.mul > 0) {
+            const extra = Math.round(gained * AB_SURGE.mul);
+            if (extra > 0) {
+              g.gold += extra;
+              g.totalGoldEarned = (g.totalGoldEarned || 0) + extra;
+              add(' | 🌌 ออโรร่า +' + extra + ' ทอง');
+            }
+          }
+          AB_SURGE.left--;
+          if (AB_SURGE.left <= 0) { AB_SURGE.mul = 0; AB_SURGE.left = 0; }
+        }
+
+        // ── สตรีคสะเทือนหอคอย ─────────────────────────────────
+        if (correct && g.streak > streakB) {
+          const q = abQuakeOf(g.streak);
+          if (q) {
+            let mpAdd = 0;
+            if (q.mp > 0) {
+              mpAdd = Math.min(Math.max(0, maxMpOf(g) - g.mp), q.mp);
+              if (mpAdd > 0) g.mp += mpAdd;
+            }
+            if (!g.practiceMode && q.mul > 0) { AB_SURGE.mul = q.mul; AB_SURGE.left = q.hits; }
+            add(' | 🌌 ' + q.name + (mpAdd ? ' 🔮 +' + mpAdd + ' MP' : '') +
+                (!g.practiceMode && q.mul > 0 ? ' 🪙 ×' + (1 + q.mul).toFixed(2) + ' อีก ' + q.hits + ' ข้อ' : ''));
+            abShake(q.lv);
+            /* ขั้นแรกยิงบ่อยมากในการเล่นจริง — ปล่อยไว้ที่บรรทัดผลลัพธ์อย่างเดียว
+               ไม่ยิง toast กันคิวแจ้งเตือนล้น (กับดักข้อ 1) */
+            if (q.lv >= 2) abNotify('AB_QUAKE', { name: q.name, streak: g.streak, mul: q.mul,
+                                                  hits: q.hits, mp: mpAdd });
+          }
+        }
+
+        // ── เศษคริสตัลจากโหมดเหวลึก ───────────────────────────
+        if (correct && !g.practiceMode && AB_LIVE) {
+          const b = abOf(g);
+          if (b) {
+            let n = 1;
+            if (spent <= AB_FAST_MS) n++;
+            if (isBossFloor(g.floor)) n += 2;
+            b.shards = Math.min(AB_SHARD_CAP, b.shards + n);
+            add(' | 💎 +' + n + ' เศษคริสตัล');
+          }
+        }
+
+        abDangerSync();
+      } catch (e) { abErr(e, 'abResolveAnswer'); }
+      return r;
+    };
+
+    /* เรดาร์ของ v4.5 วาดใหม่เมื่อไร หมอกก็ต้องตามไปด้วย */
+    const _abTrPaint = trPaint;
+    trPaint = function (animate) {
+      const r = _abTrPaint.apply(this, arguments);
+      try { abFogPaint(); } catch (e) { abErr(e, 'abFogPaint'); }
+      return r;
+    };
+
+    /* แผงสถานะบอกที่มาของของใหม่ทั้งหมดในที่เดียว ไม่งั้นตัวเลขทอง/เวลาจะดูเหมือนคำนวณเพี้ยน */
+    const _abRenderStatus = renderStatus;
+    renderStatus = function () {
+      const r = _abRenderStatus.apply(this, arguments);
+      try {
+        const body = document.getElementById('gStatusBody');
+        const g = abG(), b = abOf(g);
+        if (body && g && b && !body.querySelector('.ab-strow')) {
+          const eff = AB_CORES.map(function (c) {
+            const lv = abCoreLv(g, c.key);
+            return '<span style="white-space:nowrap">' + c.icon + ' ' + esc(c.name) + ' ' + lv + '/' + AB_CORE_MAX + '</span>';
+          }).join(' · ');
+          body.insertAdjacentHTML('afterbegin',
+            '<div class="g-mrow ab-strow"><div class="g-mlabel">⚙️ แกนกลางระบบ</div>' +
+            '<div class="g-mtext">💎 ' + b.shards + ' เศษ · ' + eff +
+            '<br>🔒 ผนึกที่ทลายแล้ว ' + abSealCount(g) + '/' + AB_SEAL_FLOORS.length +
+            ' · 💠 ไร้รอย ' + abSealFlawless(g) +
+            ' · 🕳️ เหวลึก ' + (b.abyss ? 'เปิด' : 'ปิด') + '</div></div>');
+        }
+      } catch (e) { abErr(e, 'abRenderStatus'); }
+      return r;
+    };
+
+    // ══ ติดตั้งชั้นนี้ลง DOM ══════════════════════════════════════════
+    (function abInstall() {
+      /* ── ฉายาระดับตำนานสองใบ — ต่อท้าย TITLES ไม่แก้รายการเดิม (ท่าเดียวกับ v4.2/v4.4)
+           check ต้องทนกับบัญชีที่ยังไม่มี s.ab (รอบแรกที่ migrate) ให้ได้ */
+      if (!TITLES.some(function (t) { return t.key === 'sealbreaker'; })) {
+        TITLES.push({
+          key:'sealbreaker', icon:'🔓', name:'ผู้ทลายผนึก',
+          cond:'ทลายประตูผนึกครบทั้ง ' + AB_SEAL_FLOORS.length + ' บาน (ชั้น ' + AB_SEAL_FLOORS.join('/') + ')',
+          bonus:{ str:10, agi:8 },
+          check: function (s) { return !!s && !!s.ab && abSealCount(s) >= AB_SEAL_FLOORS.length; }
+        });
+      }
+      if (!TITLES.some(function (t) { return t.key === 'unbroken'; })) {
+        TITLES.push({
+          key:'unbroken', icon:'💠', name:'ผนึกไร้รอย',
+          cond:'ทลายประตูผนึกโดยไม่ตอบผิดเลยสักข้อ',
+          bonus:{ int:10, vit:8 },
+          check: function (s) { return !!s && !!s.ab && abSealFlawless(s) >= 1; }
+        });
+      }
+
+      if (!document.getElementById('abStyle')) {
+        document.head.insertAdjacentHTML('beforeend',
+          '<style id="abStyle">' +
+
+          /* ── หอคอยสั่นสะเทือน ── */
+          '.tr-panel.ab-quake{animation:abQ .55s cubic-bezier(.36,.07,.19,.97) both}' +
+          '.tr-panel.ab-quake.q2{animation-duration:.62s}' +
+          '.tr-panel.ab-quake.q3{animation:abQ3 .9s cubic-bezier(.36,.07,.19,.97) both;' +
+            'box-shadow:0 0 30px 4px var(--tr-glow)}' +
+          '@keyframes abQ{10%,90%{transform:translate3d(-1.5px,0,0)}20%,80%{transform:translate3d(2px,0,0)}' +
+            '30%,50%,70%{transform:translate3d(-3px,.5px,0)}40%,60%{transform:translate3d(3px,-.5px,0)}}' +
+          '@keyframes abQ3{6%,94%{transform:translate3d(-3px,1px,0)}12%,88%{transform:translate3d(4px,-1px,0)}' +
+            '24%,48%,72%{transform:translate3d(-6px,1.5px,0)}36%,60%,84%{transform:translate3d(6px,-1.5px,0)}}' +
+
+          /* ── ออโรร่าพุ่งขึ้นชั้น ── */
+          '.ab-aur{fill:url(#abAurG);transform-box:fill-box;transform-origin:50% 100%;' +
+            'animation:abAur 1s ease-out forwards}' +
+          '@keyframes abAur{0%{opacity:0;transform:translateY(90px) scaleY(.25)}' +
+            '22%{opacity:1}100%{opacity:0;transform:translateY(-130px) scaleY(1.45)}}' +
+
+          /* ── หมอกสงคราม ── */
+          '#abFog{pointer-events:none}' +
+          '.ab-fog-b{opacity:1;transition:opacity 1.2s ease}' +
+          '.ab-fog-b.clear{opacity:0}' +
+
+          /* ── เกราะผนึก ── */
+          '.ab-seal-wrap .ab-seal-fill{background:linear-gradient(90deg,#ffc845,#ff9c4a)}' +
+          '.ab-seal-wrap.done .ab-seal-fill{background:rgba(255,255,255,.08)}' +
+          '.ab-seal-tag{font-size:9px;font-weight:700;color:#ffc845;margin-left:5px;white-space:nowrap}' +
+
+          /* ── สัญญาณอันตราย ── */
+          '#abDanger{position:fixed;left:0;top:0;right:0;bottom:0;display:none;pointer-events:none;z-index:120}' +
+          '#abDanger.warn{box-shadow:inset 0 0 70px 12px rgba(255,200,69,.22);' +
+            'animation:abPulseW 2.2s ease-in-out infinite}' +
+          '#abDanger.crit{box-shadow:inset 0 0 90px 20px rgba(255,60,80,.42);' +
+            'animation:abPulseC 1.1s ease-in-out infinite}' +
+          '@keyframes abPulseW{0%,100%{opacity:.5}50%{opacity:1}}' +
+          '@keyframes abPulseC{0%,100%{opacity:.45}50%{opacity:1}}' +
+          '#gameScreen.ab-crit #gHpBar{animation:abHp 1.1s ease-in-out infinite}' +
+          '@keyframes abHp{0%,100%{filter:none}50%{filter:brightness(1.9) drop-shadow(0 0 7px #ff3b52)}}' +
+          '#gameScreen.ab-crit .g-monster-avatar{animation:abAv 1.4s ease-in-out infinite}' +
+          '@keyframes abAv{0%,100%{filter:none}50%{filter:drop-shadow(0 0 9px rgba(255,60,80,.85))}}' +
+
+          /* ── ปุ่มสองใบในแถวปฏิบัติการ ── */
+          '#abAbyssBtn.ab-on{border-color:#ff6b7a;color:#ffd0d6;' +
+            'background:linear-gradient(180deg,#4a1020,#1a0a12)}' +
+          '.ab-badge{display:inline-block;min-width:17px;padding:0 6px;margin-left:5px;border-radius:99px;' +
+            'background:#7fe3ff;color:#04131f;font-size:10px;font-weight:800;line-height:16px;' +
+            'text-align:center;vertical-align:middle;white-space:nowrap}' +
+
+          /* ── แผงแกนกลางระบบ ── */
+          '.ab-core-top{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}' +
+          '.ab-shard{flex:1 1 130px;text-align:left;background:rgba(127,227,255,.08);' +
+            'border:1px solid rgba(127,227,255,.32);border-radius:9px;padding:7px 10px}' +
+          '.ab-shard span{display:block;font-size:10px;color:#8a97b5;white-space:nowrap}' +
+          '.ab-shard b{font-size:19px;color:#7fe3ff}' +
+          '.ab-abyss-btn{flex:1 1 150px;padding:9px 10px;border-radius:9px;cursor:pointer;' +
+            'border:1px solid rgba(255,200,69,.4);background:rgba(255,255,255,.04);color:#ffc845;' +
+            "font-family:'Noto Sans Thai',sans-serif;font-size:11.5px;font-weight:700;line-height:1.35}" +
+          '.ab-abyss-btn.on{border-color:#ff6b7a;color:#ffd0d6;background:linear-gradient(180deg,#4a1020,#1a0a12)}' +
+          '.ab-note{text-align:left;font-size:10px;color:#8a97b5;line-height:1.6;margin-bottom:9px}' +
+          '.ab-note b{color:#7fe3ff}' +
+          '.ab-tracks{display:flex;flex-direction:column;gap:7px}' +
+          '.ab-track{text-align:left;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.09);' +
+            'border-radius:9px;padding:8px 10px}' +
+          '.ab-track-h{display:flex;justify-content:space-between;align-items:baseline;gap:6px}' +
+          '.ab-track-h b{font-size:12.5px;color:#ffc845}' +
+          '.ab-lv{font-size:10px;color:#8a97b5;white-space:nowrap}' +
+          '.ab-pips{display:flex;gap:3px;margin:5px 0 4px}' +
+          '.ab-pips i{flex:1 1 0;height:5px;border-radius:99px;background:rgba(255,255,255,.1)}' +
+          '.ab-pips i.on{background:linear-gradient(90deg,#38b6ff,#2ef2d0)}' +
+          '.ab-track-d{font-size:10px;color:#8a97b5;line-height:1.5}' +
+          '.ab-track-e{font-size:10px;color:#9dc3e0;line-height:1.5;margin-top:2px}' +
+          '.ab-track-e b{color:#2ef2d0}' +
+          '.ab-buy{width:100%;margin-top:6px;padding:7px 8px;border-radius:7px;cursor:pointer;' +
+            'border:1px solid rgba(46,242,208,.4);background:rgba(46,242,208,.08);color:#2ef2d0;' +
+            "font-family:'Noto Sans Thai',sans-serif;font-size:11px;font-weight:700;white-space:nowrap}" +
+          '.ab-buy.poor{border-color:rgba(255,255,255,.14);background:rgba(255,255,255,.03);color:#5d6b86}' +
+          '.ab-buy:disabled{border-color:rgba(255,255,255,.12);background:rgba(255,255,255,.03);' +
+            'color:#5d6b86;cursor:default}' +
+          '.ab-cost{white-space:nowrap}' +
+          '.ab-seal-box{margin-top:10px;text-align:left;background:rgba(255,200,69,.06);' +
+            'border:1px solid rgba(255,200,69,.26);border-radius:9px;padding:8px 10px}' +
+          '.ab-seal-h{font-size:11px;font-weight:700;color:#ffc845;margin-bottom:5px}' +
+          '.ab-seal-row{display:flex;flex-wrap:wrap;gap:5px}' +
+          '.ab-seal-pill{font-size:9.5px;font-weight:700;padding:2px 7px;border-radius:99px;white-space:nowrap;' +
+            'border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.03);color:#5d6b86}' +
+          '.ab-seal-pill.on{border-color:rgba(46,242,208,.5);background:rgba(46,242,208,.1);color:#2ef2d0}' +
+          '.ab-seal-pill.flaw{border-color:#ffc845;background:rgba(255,200,69,.14);color:#ffc845}' +
+          '.ab-core-msg{margin-top:8px;font-size:11px;color:#ff9c4a;min-height:14px}' +
+
+          '@media (max-width:390px){.ab-shard b{font-size:17px}.ab-track-h b{font-size:12px}}' +
+          /* เคารพการตั้งค่าลดการเคลื่อนไหวของระบบ (กฎเดียวกับชั้น v4.5) */
+          '@media (prefers-reduced-motion:reduce){' +
+            '.tr-panel.ab-quake,.tr-panel.ab-quake.q3,.ab-aur,#abDanger.warn,#abDanger.crit,' +
+            '#gameScreen.ab-crit #gHpBar,#gameScreen.ab-crit .g-monster-avatar{animation:none}' +
+            '.ab-fog-b{transition:none}}' +
+          '</style>');
+      }
+
+      /* กติกาข้อ 2: ทุกตัวติดตั้งที่ยัด DOM ต้องกันแทรกซ้ำเสมอ */
+
+      /* หลอดเกราะผนึก — วางต่อจากหลอด MONSTER HP ให้อ่านเป็นชั้นเดียวกัน */
+      const mhp = document.getElementById('gMhpBar');
+      if (mhp && !document.getElementById('abSealWrap')) {
+        const wrap = mhp.parentNode && mhp.parentNode.parentNode;
+        if (wrap && wrap.classList.contains('g-bar-wrap')) {
+          wrap.insertAdjacentHTML('afterend',
+            '<div class="g-bar-wrap ab-seal-wrap" id="abSealWrap" style="display:none">' +
+              '<div class="g-bar-label"><span>🔒 เกราะผนึก<span class="ab-seal-tag" id="abSealTag"></span></span>' +
+                '<span id="abSealText">0/0</span></div>' +
+              '<div class="g-bar"><div class="g-bar-fill ab-seal-fill" id="abSealBar" style="width:100%"></div></div>' +
+            '</div>');
+        }
+      }
+
+      /* ม่านสัญญาณอันตราย — pointer-events:none จึงไม่บังการกดปุ่มใด ๆ
+         และ z-index 120 อยู่ใต้ทุกหน้าต่าง (โมดัลของ v4.0 อยู่ที่ 200 ขึ้นไป) */
+      if (!document.getElementById('abDanger')) {
+        document.body.insertAdjacentHTML('beforeend', '<div id="abDanger"></div>');
+      }
+
+      /* แผงแกนกลางระบบ */
+      if (!document.getElementById('abCore')) {
+        document.body.insertAdjacentHTML('beforeend',
+          '<div class="g-modal" id="abCore">' +
+            '<div class="g-modal-inner">' +
+              '<div class="g-modal-title">[ระบบ] ⚙️ SYSTEM CORE — แกนกลางระบบ</div>' +
+              '<div id="abCoreBody"></div>' +
+              '<button class="g-btn next" style="margin-top:12px" onclick="abCloseCore()">✕ ปิดแกนกลางระบบ</button>' +
+            '</div>' +
+          '</div>');
+      }
+
+      /* ปุ่มสองใบ — ต้องเพิ่ม "เป็นคู่" เท่านั้น (กับดักข้อ 11)
+         เดิมมี 7 ปุ่ม = 3 แถวคู่ + 👁️ SYSTEM SCAN กินเต็มแถวด้วยกฎ :last-child
+         เพิ่มทีละใบจะเหลือช่องว่างกลับมา และถ้าไปแทรกท้ายสุด SYSTEM SCAN จะเสีย :last-child
+         ทั้งบล็อกพังทันที → แทรกไว้ "ก่อน" ปุ่ม SYSTEM SCAN เสมอ ตอนนี้ครบ 9 = 4 แถวคู่ + เต็มแถว */
+      const act = document.querySelector('.g-actions');
+      if (act && !document.getElementById('abCoreBtn')) {
+        const scan = Array.prototype.filter.call(act.children, function (b) {
+          return (b.getAttribute('onclick') || '').indexOf('showHint') !== -1;
+        })[0];
+        const html =
+          '<button class="g-btn hint" id="abCoreBtn" onclick="abOpenCore()">⚙️ SYSTEM CORE — แกนกลาง</button>' +
+          '<button class="g-btn hint" id="abAbyssBtn" onclick="abToggleAbyss()">🕳️ ABYSS — เหวลึก: ปิด</button>';
+        if (scan) scan.insertAdjacentHTML('beforebegin', html);
+        else act.insertAdjacentHTML('beforeend', html);
+      }
+
+      /* หมอก + ชั้นออโรร่าบนเรดาร์ของ v4.5
+         - #abFog อยู่ "ใน" กลุ่มกล้อง จึงเลื่อนตามการปีนหอคอย
+         - #abFx อยู่ "นอก" กลุ่มกล้อง ออโรร่าจึงพุ่งเต็มกรอบเสมอ และไม่โดน trBreakthrough() ล้างทิ้ง */
+      const svg = document.getElementById('trSvg');
+      const cam = document.getElementById('trCam');
+      if (svg && cam && !document.getElementById('abFog')) {
+        try {
+          const NS = 'http://www.w3.org/2000/svg';
+          const fog = document.createElementNS(NS, 'g');
+          fog.setAttribute('id', 'abFog');
+          fog.innerHTML = abFogSvg();
+          cam.appendChild(fog);
+
+          const fx = document.createElementNS(NS, 'g');
+          fx.setAttribute('id', 'abFx');
+          svg.appendChild(fx);
+        } catch (e) { abErr(e, 'abFogInstall'); }
+      }
+
+      abFogPaint();
+      abSyncButtons();
+      abSealBar();
+    })();
   </script>
 </body>
 </html>

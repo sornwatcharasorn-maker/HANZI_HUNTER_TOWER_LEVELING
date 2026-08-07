@@ -12633,6 +12633,473 @@
       return r;
     };
 
+    // ══════════════════════════════════════════════════════════════════
+    // v4.8.1 · ANTI-CHEAT PAUSE — หยุดเวลากันโกง + ปิดบังโจทย์ + ล็อกหน้าจอเล่น
+    // ══════════════════════════════════════════════════════════════════
+    /* ชั้นนี้ไม่แก้โค้ด v4.0-v4.8 เลย — ห่อฟังก์ชันแบบเดียวกับแปดชั้นก่อนหน้า
+
+       สามเรื่องในชั้นเดียว ทุกเรื่องวิ่งผ่านสวิตช์เดียวคือ acPaused()
+
+       1) หยุดนาฬิกาต่อข้อทุกครั้งที่ "จอถูกบัง" — เปิดหน้าต่างระบบใด ๆ · กดปุ่ม ⏸️ เอง
+          · สลับแท็บ/สลับแอป/พับจอ — แล้วเดินต่อจากวินาทีที่เหลืออยู่เดิมเป๊ะ
+       2) ระหว่างหยุด โจทย์ (อักษรจีน · พินอิน · คำถาม · ตัวเลือก) ถูกเบลอ+ถมทับ
+          จึงแอบอ่านโจทย์ไปค้นคำตอบระหว่างหยุดไม่ได้
+       3) ล็อกหน้าจอเล่นให้สูงเท่าจอพอดี (100dvh) แล้วให้การ์ดโจทย์ติดหนึบอยู่บนสุด
+          เลื่อนดูกระเป๋า/ปุ่มล่างยังไงโจทย์ก็ไม่หลุดจอ
+
+       ข้อยกเว้นที่ตั้งใจ: หยุด "นาฬิกาต่อข้อ" อย่างเดียว บัฟที่นับเป็นจำนวนข้อ
+       (⚡ ยาเพิ่มสมาธิ = G.focusLeft · 🧘 การ์ดสมาธิแน่วแน่) ไม่ถูกแตะเลย */
+
+    const AC_VER = '4.8.1';
+
+    /* หน้าต่างทุกชนิดของทุกชั้นใช้คลาส .active เหมือนกันหมด จึงกวาดด้วยตัวเลือกเดียวได้
+       (.g-modal ครอบ #gShop #gStatus #gBoard #gAnalytics #gModal #gLock #qBoard
+        #cxBoard #abCore #cdDraft · .sn-gate ครอบ #snGate #snPanel) */
+    const AC_OVL_SEL = '.g-modal.active, .sn-gate.active, #gmPanel.active, #gmModal.active, #gcModal.active';
+
+    /* เหตุผลที่ผู้เล่นสั่งเอง — ส่วน "มีหน้าต่างเปิดค้าง" ไม่เก็บเป็นตัวแปร แต่อ่าน DOM สดทุกครั้ง
+       จึงไม่มีทางค้างไม่ตรงกับของจริงตอนหน้าต่างถูกปิดด้วยเส้นทางที่ชั้นนี้ไม่รู้จัก */
+    let AC_MANUAL = false;      /* กดปุ่ม ⏸️ เอง */
+    let AC_FOCUS  = false;      /* ละสายตาจากจอ — ปลดได้ด้วยการกด "เล่นต่อ" เท่านั้น */
+    let AC_READY  = false;      /* ติดตั้งเสร็จหรือยัง (กัน wrapper ทำงานก่อน DOM พร้อม) */
+
+    /* สถานะนาฬิกาที่ "ถือค้างไว้" — เป็นของข้อที่กำลังตอบอยู่ ไม่ใช่ของบัญชี จึงไม่ต้องเซฟ */
+    let AC_HELD = false;        /* ถือนาฬิกาที่หยุดไว้จริง ๆ อยู่หรือไม่ */
+    let AC_LEFT = 0;            /* เวลาที่เหลือของข้อ (ms) */
+    let AC_FRZ  = 0;            /* เวลาแช่แข็ง ❄️ ที่เหลือ (ms) · 0 = ไม่ได้แช่แข็งอยู่ */
+    let AC_AT   = 0;            /* Date.now() ตอนหยุด — ใช้เลื่อน G.questionStart ตอนเล่นต่อ */
+    let AC_FRZ_ENDS = 0;        /* freezeQuestionTimer ของ v4.0 ไม่เปิดเผยเวลาจบ จึงจดไว้เองที่ wrapper */
+
+    let AC_SIG = '', AC_RAF = 0;
+
+    function acErr(e, where) {
+      if (typeof gcErrPush !== 'function') return;
+      try { gcErrPush('err', 'ANTICHEAT: ' + ((e && e.message) || e), where || '', (e && e.stack) || ''); } catch (e2) {}
+    }
+
+    function acG() { return (typeof G !== 'undefined' && G) ? G : null; }
+
+    function acInGame() {
+      const gs = document.getElementById('gameScreen');
+      return !!gs && gs.classList.contains('active');
+    }
+
+    function acOverlayOpen() { return !!document.querySelector(AC_OVL_SEL); }
+
+    /* ตัวอ่านกลาง — ทุกจุดถามที่นี่ที่เดียว */
+    function acPaused() { return acInGame() && (AC_MANUAL || AC_FOCUS || acOverlayOpen()); }
+
+    // ── หยุด / เดินต่อ นาฬิกาต่อข้อ ────────────────────────────────
+    /* เคลียร์ handle ตรง ๆ ไม่เรียก clearQuestionTimer() เพราะตัวนั้นล้างค่าที่เราต้องเก็บไว้
+       (และ wrapper ของเราเองก็ดักมันอยู่เพื่อทิ้งสถานะค้างเวลาข้อจบจริง) */
+    function acPauseTimer() {
+      if (AC_HELD) return;
+      if (!QUESTION_TIMER && !FREEZE_TIMER) return;   /* ไม่มีนาฬิกาเดินอยู่ ไม่มีอะไรให้หยุด */
+
+      if (FREEZE_TIMER) {
+        AC_FRZ  = Math.max(0, AC_FRZ_ENDS - Date.now());
+        AC_LEFT = Math.max(0, FROZEN_LEFT);
+      } else {
+        AC_FRZ  = 0;
+        AC_LEFT = Math.max(0, QUESTION_ENDS - Date.now());
+      }
+
+      clearTimeout(QUESTION_TIMER);  QUESTION_TIMER = null;
+      clearInterval(QUESTION_TICK);  QUESTION_TICK = null;
+      clearTimeout(FREEZE_TIMER);    FREEZE_TIMER   = null;
+
+      AC_AT   = Date.now();
+      AC_HELD = true;
+      acPaintClock();
+    }
+
+    function acResumeTimer() {
+      if (!AC_HELD) return;
+      AC_HELD = false;
+
+      /* ออกจากเกทระหว่างหยุด = ไม่มีข้อให้กลับไปเดินต่อแล้ว ทิ้งทั้งก้อน
+         (ถ้าปล่อยผ่านจะไป setTimeout(onQuestionTimeout) บนเกมที่ปิดไปแล้ว) */
+      if (!acInGame()) { AC_LEFT = 0; AC_FRZ = 0; AC_AT = 0; return; }
+
+      const paused = Math.max(0, Date.now() - AC_AT);
+      const g = acG();
+      /* เวลาที่หยุดต้องไม่ถูกนับเป็น "เวลาที่ใช้ตอบ" ไม่งั้นเงื่อนไขที่วัดความไว
+         (🗡️ ตัดสินเทพเจ้า 3 วิ · 💎 เศษคริสตัลตอบไว · ค่า AGI) จะเพี้ยนทั้งชุด */
+      if (g && g.questionStart) g.questionStart = Math.min(Date.now(), g.questionStart + paused);
+
+      const left = AC_LEFT, frz = AC_FRZ;
+      AC_LEFT = 0; AC_FRZ = 0; AC_AT = 0;
+
+      const wrap = document.getElementById('gTimer');
+      if (frz > 0) {
+        /* กลับไปแช่แข็งต่อจากเดิม — ตั้ง QUESTION_ENDS ให้ freezeQuestionTimer อ่านค่าที่เหลือถูก
+           (ตอนนี้ FREEZE_TIMER เป็น null แล้ว มันจึงอ่านจาก QUESTION_ENDS ไม่ใช่ FROZEN_LEFT) */
+        QUESTION_ENDS = Date.now() + left;
+        freezeQuestionTimer(frz);
+      } else {
+        if (wrap) wrap.classList.remove('frozen');
+        resumeQuestionTimer(left);
+      }
+    }
+
+    /* หลอดเวลาระหว่างหยุด — ตรึงหลอดไว้ที่สัดส่วนที่เหลือ แล้วเขียนตัวเลขค้างไว้ */
+    function acPaintClock() {
+      if (!AC_HELD) return;
+      const bar  = document.getElementById('gTimerBar');
+      const wrap = document.getElementById('gTimer');
+      const text = document.getElementById('gTimerText');
+      let limit = 15000;
+      try { limit = Math.max(1, questionMs()); } catch (e) {}
+      if (bar) {
+        bar.style.transition = 'none';
+        bar.style.transform  = 'scaleX(' + Math.min(1, AC_LEFT / limit) + ')';
+      }
+      if (wrap) wrap.classList.remove('danger');
+      if (text) text.textContent = (AC_FRZ > 0 ? '❄️ ' : '') + '⏸️ ' + (AC_LEFT / 1000).toFixed(1) + ' วิ';
+    }
+
+    // ── ตัวประสานงานกลาง ───────────────────────────────────────────
+    function acSync(force) {
+      if (!AC_READY) return;
+      const inGame = acInGame();
+      const ovl    = inGame && acOverlayOpen();
+      const on     = inGame && (AC_MANUAL || AC_FOCUS || ovl);
+
+      /* ลายเซ็นสถานะ — MutationObserver ถูกปลุกถี่มาก (หลอดเวลาสลับคลาส danger ทุก 100ms)
+         ถ้าไม่กันไว้จะไปเขียน DOM ซ้ำ ๆ ฟรีทุกเฟรม */
+      const sig = (on ? '1' : '0') + (ovl ? '1' : '0') + (AC_MANUAL ? 'm' : '') +
+                  (AC_FOCUS ? 'f' : '') + (inGame ? 'g' : '');
+      if (!force && sig === AC_SIG) return;
+      AC_SIG = sig;
+
+      try { if (on) acPauseTimer(); else acResumeTimer(); } catch (e) { acErr(e, 'acSync/timer'); }
+
+      const gs = document.getElementById('gameScreen');
+      if (gs) gs.classList.toggle('ac-mask', on);
+
+      /* ม่านดำ + ปุ่มเล่นต่อ โผล่เฉพาะตอนไม่มีหน้าต่างระบบบังอยู่แล้ว
+         (หน้าต่างระบบเป็น position:fixed เต็มจอ z-index 200 ขึ้นไป บังโจทย์ให้อยู่แล้ว
+          และการ์ดโจทย์ข้างหลังก็ถูกเบลอด้วยคลาส ac-mask อีกชั้น) */
+      const veil = document.getElementById('acVeil');
+      if (veil) {
+        const show = on && !ovl;
+        veil.classList.toggle('active', show);
+        if (show) acPaintVeil();
+      }
+      acPaintBtn();
+    }
+
+    /* หน้าต่างระบบทุกบานเป็นโหนดแบบไหนบ้าง — ใช้ทั้งตอนกรอง mutation และตอนหาหน้าต่างที่เปิดอยู่ */
+    function acIsOvl(n) {
+      if (!n || n.nodeType !== 1) return false;
+      if (n.classList && (n.classList.contains('g-modal') || n.classList.contains('sn-gate'))) return true;
+      return n.id === 'gmPanel' || n.id === 'gmModal' || n.id === 'gcModal';
+    }
+
+    /* ตัวกรองนี้ "จำเป็น ไม่ใช่การรีดประสิทธิภาพเล่น ๆ" — หลอดเวลาเขียนตัวเลขใหม่และสลับคลาส
+       danger ทุก 100ms ถ้าปล่อยผ่าน acSync จะถูกปลุกวินาทีละ 10 ครั้งตลอดเกม
+       (วัดจริงแล้วได้ 53 ครั้งต่อ 5 วินาที) แล้วยิง querySelector ทั้งเอกสารทิ้งฟรีทุกครั้ง */
+    function acRelevant(muts) {
+      for (let i = 0; i < muts.length; i++) {
+        const m = muts[i];
+        if (m.type === 'childList') {
+          for (let k = 0; k < m.addedNodes.length; k++) {
+            const n = m.addedNodes[k];
+            if (n.nodeType !== 1) continue;                 /* โหนดข้อความของหลอดเวลาตกตรงนี้ */
+            if (acIsOvl(n)) return true;
+            if (n.querySelector && n.querySelector('.g-modal, .sn-gate')) return true;
+          }
+          continue;
+        }
+        const t = m.target;
+        if (acIsOvl(t) || (t && t.id === 'gameScreen')) return true;
+      }
+      return false;
+    }
+
+    function acKick(muts) {
+      if (muts && !acRelevant(muts)) return;
+      if (AC_RAF) return;
+      AC_RAF = requestAnimationFrame(function () {
+        AC_RAF = 0;
+        try { acSync(); } catch (e) { acErr(e, 'acKick'); }
+      });
+    }
+
+    function acPaintVeil() {
+      const t = document.getElementById('acVeilTitle');
+      const b = document.getElementById('acVeilBody');
+      const l = document.getElementById('acVeilLeft');
+      if (t) t.textContent = AC_FOCUS ? '👁️ ตรวจพบการละสายตาจากจอ' : '⏸️ หยุดเกมชั่วคราว';
+      if (b) {
+        b.innerHTML = AC_FOCUS
+          ? 'ระบบพบว่าคุณสลับแท็บ / สลับแอป / พับหน้าจอ<br>' +
+            '<b>โจทย์ถูกปิดบังไว้</b> และนาฬิกาหยุดเดินแล้ว<br>' +
+            'กด “เล่นต่อ” เมื่อพร้อมตอบ เวลาจะเดินต่อจากวินาทีเดิม'
+          : 'นาฬิกาหยุดเดินแล้ว และ<b>โจทย์ถูกปิดบังไว้</b><br>' +
+            'กด “เล่นต่อ” เมื่อพร้อม เวลาจะเดินต่อจากวินาทีเดิม';
+      }
+      if (l) {
+        l.textContent = AC_HELD
+          ? '⏱️ เวลาที่เหลือของข้อนี้ ' + (AC_LEFT / 1000).toFixed(1) + ' วิ' +
+            (AC_FRZ > 0 ? ' · ❄️ แช่แข็งค้างอีก ' + (AC_FRZ / 1000).toFixed(1) + ' วิ' : '')
+          : '⏱️ ยังไม่มีนาฬิกาเดินอยู่';
+      }
+    }
+
+    function acPaintBtn() {
+      const btn = document.getElementById('acPause');
+      if (!btn) return;
+      const on = AC_MANUAL || AC_FOCUS;
+      btn.classList.toggle('on', on);
+      btn.textContent = on ? '▶ เล่นต่อ' : '⏸️ พัก';
+      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    }
+
+    // ── ปุ่มและเหตุการณ์ที่ผู้เล่นสั่งเอง ──────────────────────────
+    function acTogglePause() {
+      if (!acInGame()) return;
+      if (AC_MANUAL || AC_FOCUS) { acResumeClick(); return; }
+      AC_MANUAL = true;
+      acSync();
+    }
+
+    function acResumeClick() {
+      AC_MANUAL = false;
+      AC_FOCUS  = false;
+      acSync();
+    }
+
+    /* ละสายตา = หยุดทันที และปลดได้ด้วยการกดปุ่มเท่านั้น
+       ถ้าปลดให้อัตโนมัติตอนสลับกลับมา นักเรียนจะเปิดหน้าค้นคำแปลข้าง ๆ
+       แล้วสลับกลับมาตอบทันทีโดยไม่เสียเวลาสักวินาที */
+    function acOnAway() {
+      if (!acInGame() || AC_FOCUS) return;
+      AC_FOCUS = true;
+      try { acSync(); } catch (e) { acErr(e, 'acOnAway'); }
+    }
+
+    // ── ห่อฟังก์ชันของชั้นล่าง ─────────────────────────────────────
+    /* ข้อใหม่ = ทิ้งเวลาค้างของข้อเก่าเสมอ แล้วถ้ายังหยุดอยู่ให้จับหยุดทันทีที่นาฬิกาเริ่มเดิน
+       (เกิดได้จริงตอน cdPick ของ v4.7 เรียก nextMonster ต่อจากหน้าต่างจั่ว หรือกด ⏸️ ค้างไว้) */
+    const _acStartQuestionTimer = startQuestionTimer;
+    startQuestionTimer = function () {
+      AC_HELD = false; AC_LEFT = 0; AC_FRZ = 0; AC_AT = 0; AC_FRZ_ENDS = 0;
+      const r = _acStartQuestionTimer.apply(this, arguments);
+      try { if (acPaused()) { acPauseTimer(); acSync(true); } } catch (e) { acErr(e, 'startQuestionTimer'); }
+      return r;
+    };
+
+    /* ข้อจบจริง (ตอบ/หมดเวลา/ย้ายชั้น) — เวลาที่ถือค้างไว้ต้องตายไปพร้อมข้อนั้น
+       ไม่งั้นการกด "เล่นต่อ" ทีหลังจะไปปลุกนาฬิกาของข้อที่ตัดสินไปแล้ว */
+    const _acClearQuestionTimer = clearQuestionTimer;
+    clearQuestionTimer = function () {
+      AC_HELD = false; AC_LEFT = 0; AC_FRZ = 0; AC_AT = 0; AC_FRZ_ENDS = 0;
+      return _acClearQuestionTimer.apply(this, arguments);
+    };
+
+    /* จดเวลาจบของการแช่แข็งไว้เอง — v4.0 เก็บไว้ในตัวแปรท้องถิ่น อ่านจากข้างนอกไม่ได้ */
+    const _acFreezeQuestionTimer = freezeQuestionTimer;
+    freezeQuestionTimer = function (ms) {
+      if (AC_HELD) {   /* หยุดอยู่ — พักเวลาแช่แข็งไว้ก่อน แล้วค่อยเริ่มจริงตอนเล่นต่อ */
+        AC_FRZ = Math.max(AC_FRZ, ms || 0);
+        acPaintClock();
+        return;
+      }
+      AC_FRZ_ENDS = Date.now() + (ms || 0);
+      return _acFreezeQuestionTimer.apply(this, arguments);
+    };
+
+    /* ⏳ ต่อเวลาระหว่างหยุด — บวกเข้ากองเวลาที่ถือไว้ ไม่ปลุก setTimeout ขึ้นมาเดินสวนทาง
+       (ปกติ useItem ของ v4.0 กันไว้อยู่แล้วด้วย `if (!QUESTION_TIMER)` แต่กันซ้ำอีกชั้นให้แน่) */
+    const _acExtendQuestionTimer = extendQuestionTimer;
+    extendQuestionTimer = function (bonusMs) {
+      if (AC_HELD) {
+        /* บวกดิบ ๆ ไม่หนีบเพดาน — ให้ตรงกับ extendQuestionTimer ของ v4.0 เป๊ะ
+           (ของเดิมก็บวกทับ QUESTION_ENDS ตรง ๆ ใช้ questionMs() แค่คิดสัดส่วนหลอดเท่านั้น) */
+        AC_LEFT += (bonusMs || 0);
+        acPaintClock();
+        return;
+      }
+      return _acExtendQuestionTimer.apply(this, arguments);
+    };
+
+    /* กันตอบระหว่างหยุดอีกชั้น — ม่านบังปุ่มอยู่แล้วและ #gChoices ถูกตั้ง pointer-events:none
+       แต่ถ้ามีทางเรียก answer() ที่ไม่ได้ผ่านการกดปุ่ม ก็ต้องไม่หลุด */
+    const _acAnswer = answer;
+    answer = function (choice, btn) {
+      if (acPaused()) return;
+      return _acAnswer.apply(this, arguments);
+    };
+
+    const _acStartGame = startGame;
+    startGame = function () {
+      AC_MANUAL = false; AC_FOCUS = false;
+      AC_HELD = false; AC_LEFT = 0; AC_FRZ = 0; AC_AT = 0; AC_FRZ_ENDS = 0;
+      const r = _acStartGame.apply(this, arguments);
+      try { acSync(true); } catch (e) { acErr(e, 'startGame'); }
+      return r;
+    };
+
+    /* ออกจากเกท — ล้างธงก่อนเสมอ ไม่งั้น acResumeTimer จะไปตั้งนาฬิกาบนเกมที่ปิดไปแล้ว */
+    const _acExitGame = exitGame;
+    exitGame = function () {
+      AC_MANUAL = false; AC_FOCUS = false;
+      AC_HELD = false; AC_LEFT = 0; AC_FRZ = 0; AC_AT = 0; AC_FRZ_ENDS = 0;
+      const veil = document.getElementById('acVeil');
+      if (veil) veil.classList.remove('active');
+      const gs = document.getElementById('gameScreen');
+      if (gs) gs.classList.remove('ac-mask');
+      const r = _acExitGame.apply(this, arguments);
+      AC_SIG = '';
+      try { acSync(true); } catch (e) { acErr(e, 'exitGame'); }
+      return r;
+    };
+
+    // ══ ติดตั้งชั้นนี้ลง DOM ═══════════════════════════════════════════
+    (function acInstall() {
+
+      if (!document.getElementById('acStyle')) {
+        document.head.insertAdjacentHTML('beforeend',
+          '<style id="acStyle">' +
+
+          /* ── 1) ล็อกหน้าจอเล่นให้พอดีจอ ─────────────────────────────
+             หน้าเล่นกลายเป็น "กล่องเลื่อนของตัวเอง" สูงเท่าจอพอดี body จึงไม่เลื่อนอีกเลย
+             (แถบที่อยู่ของเบราว์เซอร์มือถือจึงไม่ยุบ-ยืดจนโจทย์กระโดดหนีนิ้ว)
+             ประกาศ 100vh ไว้ก่อนแล้วทับด้วย 100dvh — เบราว์เซอร์เก่าที่ไม่รู้จัก dvh
+             จะได้ 100vh ซึ่งยังใช้ได้ ไม่ใช่จอพัง (กับดักข้อ 15) */
+          'body.game-mode{align-items:stretch;justify-content:center;padding:0;' +
+            'height:100vh;height:100dvh;min-height:0;max-height:100dvh;overflow:hidden}' +
+          '#gameScreen.active{height:100%;min-height:0;overflow-y:auto;overflow-x:hidden;' +
+            '-webkit-overflow-scrolling:touch;overscroll-behavior:contain;' +
+            'padding:0 12px calc(28px + env(safe-area-inset-bottom)) 12px}' +
+          /* v4.7 เผื่อที่ให้แบดจ์การ์ดมุมซ้ายล่าง — ต้องเขียนคืนด้วยความจำเพาะที่สูงกว่า
+             เพราะกฎ #gameScreen.active ข้างบนเขียน padding ทั้งชุดทับไปแล้ว */
+          '#gameScreen.active.cd-on{padding-bottom:calc(56px + env(safe-area-inset-bottom))}' +
+          /* ที่ว่างหัวจอ — ใส่เป็น "ของในสายเลื่อน" ไม่ใช่ padding ของกล่องเลื่อน
+             เพราะการ์ดโจทย์ที่ติดหนึบใช้ top:0 ถ้ามี padding-top เนื้อหาจะไหลผ่านช่องนั้นให้เห็น */
+          '.ac-space{flex:0 0 auto;height:max(4px,env(safe-area-inset-top))}' +
+          /* การ์ดโจทย์ติดหนึบบนสุด — เลื่อนดูกระเป๋า/ปุ่มล่างยังไงโจทย์ก็ไม่หลุดจอ
+             .g-card มีพื้นทึบอยู่แล้ว เนื้อหาที่ไหลลอดข้างใต้จึงไม่ทะลุขึ้นมา */
+          '.ac-battle{position:relative}' +
+          '#gameScreen.active .ac-battle{position:sticky;top:0;z-index:6}' +
+          /* จอเตี้ยมาก (แนวนอน/แท็บเล็ตพับ) การ์ดโจทย์จะกินจนไม่เหลือที่ให้ตัวเลือก — ปล่อยให้เลื่อนตามปกติ
+             คืนเป็น relative ไม่ใช่ static เพราะป้าย ::after ของหน้ากากยึดกล่องนี้เป็นหลัก */
+          '@media (max-height:620px){#gameScreen.active .ac-battle{position:relative;top:auto}}' +
+
+          /* ── 2) หน้าต่างระบบแทรกลงมาจากด้านบน ───────────────────────
+             ความจำเพาะ 0,3,0 จึงยังแพ้ #cdDraft.cd-out .g-modal-inner (1,2,0) ของ v4.7
+             อนิเมชันสลายการ์ดตอนเลือกเสร็จจึงยังทำงานเหมือนเดิม */
+          '.g-modal.active > .g-modal-inner{animation:acDrop .26s cubic-bezier(.2,.9,.3,1.15) both}' +
+          '@keyframes acDrop{from{opacity:0;transform:translateY(-30px)}to{opacity:1;transform:none}}' +
+
+          /* ── 3) หน้ากากปิดโจทย์ ─────────────────────────────────────
+             เบลอเฉพาะโหนดที่เป็น "เนื้อโจทย์" ไม่เบลอทั้ง #gameScreen
+             เพราะ filter บนตัวแม่จะสร้าง containing block ใหม่ แล้วแบดจ์การ์ดของ v4.7
+             ที่เป็น position:fixed จะหลุดตำแหน่งทันที */
+          '#gameScreen.ac-mask #gWord,' +
+          '#gameScreen.ac-mask #gPinyin,' +
+          '#gameScreen.ac-mask #gQuestion,' +
+          '#gameScreen.ac-mask #gChoices,' +
+          '#gameScreen.ac-mask #gFeedback{' +
+            'filter:blur(10px);opacity:.5;pointer-events:none;' +
+            '-webkit-user-select:none;user-select:none}' +
+          /* กล่องโจทย์ทั้งใบได้ป้ายกำกับว่าถูกปิดอยู่ กันนักเรียนคิดว่าเกมค้าง */
+          '#gameScreen.ac-mask .ac-battle::after{content:"🔒 โจทย์ถูกปิดบังระหว่างหยุดเกม";' +
+            'position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:4;' +
+            'white-space:nowrap;font-size:11.5px;font-weight:800;letter-spacing:.4px;color:#8fd8ff;' +
+            'background:rgba(4,11,20,.86);border:1px solid rgba(143,216,255,.5);' +
+            'border-radius:99px;padding:6px 14px;pointer-events:none}' +
+
+          /* ปุ่ม ⏸️ บนหัวหลอดเวลา */
+          '.ac-pause{flex:0 0 auto;margin-left:8px;padding:1px 9px;border-radius:99px;cursor:pointer;' +
+            'font-family:inherit;font-size:10.5px;font-weight:800;line-height:1.6;white-space:nowrap;' +
+            'background:rgba(143,216,255,.10);border:1px solid rgba(143,216,255,.45);color:#8fd8ff}' +
+          '.ac-pause.on{background:rgba(46,242,208,.14);border-color:#2ef2d0;color:#2ef2d0}' +
+          '.ac-pause:active{transform:translateY(1px)}' +
+
+          /* ── ม่านหยุดเกม ────────────────────────────────────────────
+             z-index 190 = เหนือสัญญาณอันตราย (120) กับชั้น VFX (150) แต่ใต้หน้าต่างระบบ (200)
+             พื้นทึบ .96 ทำงานได้เองโดยไม่ต้องพึ่ง backdrop-filter แล้วค่อยไล่เบลอเพิ่ม
+             ให้เบราว์เซอร์ที่รองรับ — เครื่องที่ไม่รองรับจึงยังปิดโจทย์ได้สนิท (กับดักข้อ 15) */
+          '#acVeil{position:fixed;inset:0;z-index:190;display:none;align-items:center;' +
+            'justify-content:center;padding:18px;background:rgba(6,10,16,.96)}' +
+          '@supports ((-webkit-backdrop-filter:blur(2px)) or (backdrop-filter:blur(2px))){' +
+            '#acVeil{background:rgba(6,10,16,.74);' +
+            '-webkit-backdrop-filter:blur(18px) saturate(.5);backdrop-filter:blur(18px) saturate(.5)}}' +
+          '#acVeil.active{display:flex;animation:acFade .2s ease-out both}' +
+          '@keyframes acFade{from{opacity:0}to{opacity:1}}' +
+          '.ac-box{width:100%;max-width:380px;text-align:center;padding:20px 18px 18px 18px;' +
+            'border-radius:14px;border:2px solid #38b6ff;' +
+            'background:linear-gradient(180deg,rgba(7,26,46,.98) 0%,rgba(4,15,28,.99) 100%);' +
+            'box-shadow:0 0 34px rgba(56,182,255,.4)}' +
+          '.ac-kicker{font-size:9.5px;font-weight:800;letter-spacing:2.4px;color:#38b6ff;margin-bottom:6px}' +
+          '.ac-title{font-size:17px;font-weight:800;color:#8fd8ff;margin-bottom:10px;line-height:1.4}' +
+          '.ac-body{font-size:12.5px;line-height:1.85;color:#c3d3e6}' +
+          '.ac-body b{color:#ffc845}' +
+          '.ac-left{margin-top:11px;font-size:11.5px;font-weight:700;color:#2ef2d0;' +
+            'white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
+          '.ac-btn{margin-top:14px;width:100%;padding:12px;border-radius:10px;cursor:pointer;' +
+            'font-family:inherit;font-size:14px;font-weight:800;color:#04101d;border:none;' +
+            'background:linear-gradient(180deg,#8fd8ff 0%,#38b6ff 100%);' +
+            'box-shadow:0 0 20px rgba(56,182,255,.45)}' +
+          '.ac-btn:active{transform:translateY(1px)}' +
+          '.ac-note{margin-top:9px;font-size:10px;line-height:1.6;color:#6d7b96}' +
+          /* ห่อทีละก้อน กันข้อความไทยยาว ๆ ตัดคำกลางชื่อไอเทมบนจอ 390px */
+          '.ac-note span{display:inline-block;white-space:nowrap}' +
+          '</style>');
+      }
+
+      /* ม่านวางไว้ที่ body ไม่ใช่ใน #gameScreen — จะได้ไม่ถูกกล่องเลื่อนของหน้าเล่นตัดขอบ */
+      if (!document.getElementById('acVeil')) {
+        document.body.insertAdjacentHTML('beforeend',
+          '<div id="acVeil" onclick="if(event.target===this)acResumeClick()">' +
+            '<div class="ac-box">' +
+              '<div class="ac-kicker">SYSTEM · ANTI-CHEAT PAUSE</div>' +
+              '<div class="ac-title" id="acVeilTitle">⏸️ หยุดเกมชั่วคราว</div>' +
+              '<div class="ac-body" id="acVeilBody"></div>' +
+              '<div class="ac-left" id="acVeilLeft"></div>' +
+              '<button type="button" class="ac-btn" onclick="acResumeClick()">▶ เล่นต่อ</button>' +
+              '<div class="ac-note"><span>นาฬิกาหยุดเฉพาะข้อที่กำลังตอบ</span> · ' +
+                '<span>บัฟที่นับเป็นจำนวนข้อ (⚡ ยาเพิ่มสมาธิ) ไม่ถูกกระทบ</span></div>' +
+            '</div>' +
+          '</div>');
+      }
+
+      /* ที่ว่างหัวจอ + ป้ายการ์ดโจทย์ที่จะติดหนึบ — ใส่ครั้งเดียว ไม่มีใคร render ทับ */
+      const gs = document.getElementById('gameScreen');
+      if (gs && !gs.querySelector(':scope > .ac-space')) {
+        gs.insertAdjacentHTML('afterbegin', '<div class="ac-space"></div>');
+      }
+      const word = document.getElementById('gWord');
+      const card = word ? word.closest('.g-card') : null;
+      if (card) card.classList.add('ac-battle');
+
+      /* ปุ่ม ⏸️ วางบนหัวหลอดเวลา — อยู่ในการ์ดที่ติดหนึบ จึงกดได้ตลอดโดยไม่ต้องเลื่อนจอ */
+      const head = card ? card.querySelector('.g-timer-head') : null;
+      if (head && !head.querySelector('#acPause')) {
+        head.insertAdjacentHTML('beforeend',
+          '<button type="button" class="ac-pause" id="acPause" onclick="acTogglePause()">⏸️ พัก</button>');
+      }
+
+      /* เฝ้าดูหน้าต่างระบบทุกบานของทุกชั้นด้วยตัวเดียว — ไม่ต้องไล่ห่อฟังก์ชันเปิด/ปิดทีละบาน
+         (มี 20 กว่าบานและชั้นบน ๆ ยังสร้างเพิ่มตอนรันไทม์) */
+      try {
+        const mo = new MutationObserver(acKick);
+        mo.observe(document.documentElement,
+          { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
+      } catch (e) { acErr(e, 'observer'); }
+
+      document.addEventListener('visibilitychange', function () {
+        if (document.hidden) acOnAway();
+      });
+      window.addEventListener('blur', acOnAway);
+      window.addEventListener('pagehide', acOnAway);
+
+      AC_READY = true;
+      try { acSync(true); } catch (e) { acErr(e, 'install'); }
+    })();
+
   </script>
 </body>
 </html>

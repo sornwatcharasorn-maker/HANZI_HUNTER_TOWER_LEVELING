@@ -12661,6 +12661,11 @@
        จึงไม่มีทางค้างไม่ตรงกับของจริงตอนหน้าต่างถูกปิดด้วยเส้นทางที่ชั้นนี้ไม่รู้จัก */
     let AC_MANUAL = false;      /* กดปุ่ม ⏸️ เอง */
     let AC_FOCUS  = false;      /* ละสายตาจากจอ — ปลดได้ด้วยการกด "เล่นต่อ" เท่านั้น */
+
+    /* เลื่อนจอหนีโซนคำถาม-คำตอบ (ไปดูกระเป๋า/ร้านค้า/สกิล) ก็หยุดเวลาให้เหมือนกัน
+       **ไม่เก็บเป็นตัวแปร** — วัดจากพิกัดจริงทุกครั้งด้วย acQaVisible() กฎเดียวกับหน้าต่างระบบ
+       ต้องเห็นแถวตัวเลือกอย่างน้อยเท่านี้ถึงจะนับว่ายัง "อยู่กับโจทย์" */
+    const AC_QA_MIN = 0.6;
     let AC_READY  = false;      /* ติดตั้งเสร็จหรือยัง (กัน wrapper ทำงานก่อน DOM พร้อม) */
 
     /* สถานะนาฬิกาที่ "ถือค้างไว้" — เป็นของข้อที่กำลังตอบอยู่ ไม่ใช่ของบัญชี จึงไม่ต้องเซฟ */
@@ -12686,8 +12691,78 @@
 
     function acOverlayOpen() { return !!document.querySelector(AC_OVL_SEL); }
 
+    /* การ์ดโจทย์ติดหนึบอยู่หรือเปล่า — จอเตี้ยกว่า 620px ถูกปิด sticky ไว้ (ดูหัวข้อ Viewport Lock)
+       ตอนติดหนึบ ขอบล่างของการ์ดคือ "เพดาน" ของพื้นที่ที่เห็นตัวเลือกได้จริง */
+    function acStickyCard() {
+      const card = document.querySelector('.ac-battle');
+      if (!card) return null;
+      let pos = '';
+      try { pos = getComputedStyle(card).position; } catch (e) {}
+      return pos === 'sticky' ? card : null;
+    }
+
+    function acStickyBottom() {
+      const c = acStickyCard();
+      return c ? c.getBoundingClientRect().bottom : null;
+    }
+
+    /* ยังอยู่กับโจทย์อยู่ไหม — ต้องครบสองข้อ
+       1) เห็นแถวตัวเลือกอย่างน้อย AC_QA_MIN ของความสูง (ใต้การ์ดที่ติดหนึบลงมา)
+       2) เห็นตัวอักษรจีนด้วย — สำคัญเฉพาะจอเตี้ยที่ปิด sticky ไว้ ถ้าไม่เช็กข้อนี้
+          ผู้เล่นจะเลื่อนจนโจทย์หลุดจอแต่ยังเห็นตัวเลือก แล้วเวลายังเดินอยู่โดยไม่มีโจทย์ให้อ่าน
+       ไม่มีตัวเลือกอยู่ (ประตูวาป · ระหว่างเทิร์น) = ไม่ถือว่าเลื่อนหนี */
+    function acQaVisible() {
+      const gs = document.getElementById('gameScreen');
+      const ch = document.getElementById('gChoices');
+      if (!gs || !ch || !gs.classList.contains('active')) return true;
+
+      const r = ch.getBoundingClientRect();
+      if (r.height <= 0) return true;
+
+      const stick = acStickyBottom();
+      const top = Math.max(0, stick === null ? 0 : stick);
+      const bot = window.innerHeight;
+      const vis = Math.min(r.bottom, bot) - Math.max(r.top, top);
+      if (vis < r.height * AC_QA_MIN) return false;
+
+      const w = document.getElementById('gWord');
+      if (w) {
+        const wr = w.getBoundingClientRect();
+        if (wr.height > 0 && (wr.bottom <= 0 || wr.top >= bot)) return false;
+      }
+      return true;
+    }
+
+    /* ขึ้นข้อใหม่ = ดึงจอกลับมาที่โจทย์ให้เอง ไม่งั้นผู้เล่นที่ค้างอยู่ล่างจอจะเจอ
+       ข้อใหม่เริ่มมาในสภาพ "หยุดอยู่" ทันที ซึ่งงงกว่าเดิม
+       **กระโดดทันที ห้ามใช้ scroll แบบนุ่ม** เพราะระหว่างเลื่อน ตัวเลือกจะหลุดจอชั่วขณะ
+       แล้วระบบจะหยุด-เล่นต่อสลับกันให้เห็นเป็นอาการกระตุก */
+    function acFocusQa() {
+      const gs = document.getElementById('gameScreen');
+      const ch = document.getElementById('gChoices');
+      if (!gs || !ch || !gs.classList.contains('active')) return;
+      if (acQaVisible()) return;
+      if (ch.getBoundingClientRect().height <= 0) return;
+
+      const card  = document.querySelector('.ac-battle');
+      const stick = acStickyCard();
+      const gsTop = gs.getBoundingClientRect().top;
+
+      /* **ต้องคิดจากตำแหน่งที่การ์ดจะไปติด ไม่ใช่ตำแหน่งที่การ์ดอยู่ตอนนี้**
+         ตอนเรียกฟังก์ชันนี้ผู้เล่นมักอยู่บนสุด การ์ดจึงยังไม่ติดขอบ ถ้าเอาขอบล่าง
+         ปัจจุบันมาคิด จะได้ระยะเลื่อนแค่ ~16px แล้วตัวเลือกยังอยู่ใต้ขอบจออยู่ดี
+         ตอนติดจริงขอบล่างจะอยู่ที่ "ขอบบนกล่องเลื่อน + ความสูงการ์ด" เสมอ
+         ติดหนึบ → เลื่อนให้ตัวเลือกมาอยู่ใต้การ์ดพอดี
+         ไม่ติดหนึบ (จอเตี้ย) → เลื่อนให้หัวการ์ดโจทย์ชนขอบบน ตัวเลือกจะตามมาเองข้างล่าง */
+      const head   = stick ? (gsTop + stick.getBoundingClientRect().height) : gsTop;
+      const anchor = stick ? ch : (card || ch);
+      gs.scrollTop += anchor.getBoundingClientRect().top - head - 8;
+    }
+
     /* ตัวอ่านกลาง — ทุกจุดถามที่นี่ที่เดียว */
-    function acPaused() { return acInGame() && (AC_MANUAL || AC_FOCUS || acOverlayOpen()); }
+    function acPaused() {
+      return acInGame() && (AC_MANUAL || AC_FOCUS || acOverlayOpen() || !acQaVisible());
+    }
 
     // ── หยุด / เดินต่อ นาฬิกาต่อข้อ ────────────────────────────────
     /* เคลียร์ handle ตรง ๆ ไม่เรียก clearQuestionTimer() เพราะตัวนั้นล้างค่าที่เราต้องเก็บไว้
@@ -12763,26 +12838,34 @@
       if (!AC_READY) return;
       const inGame = acInGame();
       const ovl    = inGame && acOverlayOpen();
-      const on     = inGame && (AC_MANUAL || AC_FOCUS || ovl);
+      const away   = inGame && !acQaVisible();      /* เลื่อนจอหนีโซนคำถาม-คำตอบ */
+      const stop   = AC_MANUAL || AC_FOCUS;         /* ผู้เล่น/ระบบสั่งหยุดแบบเต็มรูปแบบ */
+      const on     = inGame && (stop || ovl || away);
 
       /* ลายเซ็นสถานะ — MutationObserver ถูกปลุกถี่มาก (หลอดเวลาสลับคลาส danger ทุก 100ms)
          ถ้าไม่กันไว้จะไปเขียน DOM ซ้ำ ๆ ฟรีทุกเฟรม */
-      const sig = (on ? '1' : '0') + (ovl ? '1' : '0') + (AC_MANUAL ? 'm' : '') +
-                  (AC_FOCUS ? 'f' : '') + (inGame ? 'g' : '');
+      const sig = (on ? '1' : '0') + (ovl ? '1' : '0') + (away ? 'a' : '') +
+                  (AC_MANUAL ? 'm' : '') + (AC_FOCUS ? 'f' : '') + (inGame ? 'g' : '');
       if (!force && sig === AC_SIG) return;
       AC_SIG = sig;
 
       try { if (on) acPauseTimer(); else acResumeTimer(); } catch (e) { acErr(e, 'acSync/timer'); }
 
       const gs = document.getElementById('gameScreen');
-      if (gs) gs.classList.toggle('ac-mask', on);
+      if (gs) {
+        gs.classList.toggle('ac-mask', on);
+        /* หยุดเพราะเลื่อนหนีล้วน ๆ — เปลี่ยนป้ายบนการ์ดโจทย์ให้บอกวิธีกลับมาเล่นต่อ */
+        gs.classList.toggle('ac-scroll', on && away && !stop && !ovl);
+      }
 
-      /* ม่านดำ + ปุ่มเล่นต่อ โผล่เฉพาะตอนไม่มีหน้าต่างระบบบังอยู่แล้ว
-         (หน้าต่างระบบเป็น position:fixed เต็มจอ z-index 200 ขึ้นไป บังโจทย์ให้อยู่แล้ว
-          และการ์ดโจทย์ข้างหลังก็ถูกเบลอด้วยคลาส ac-mask อีกชั้น) */
+      /* ม่านดำ + ปุ่มเล่นต่อ ขึ้นเฉพาะตอนที่ผู้เล่น/ระบบสั่งหยุดเต็มรูปแบบเท่านั้น
+         - มีหน้าต่างระบบเปิดอยู่ → หน้าต่างนั้นบังจออยู่แล้ว (fixed เต็มจอ z-index 200 ขึ้นไป)
+         - เลื่อนหนีไปดูกระเป๋า/ร้านค้า/สกิล → **ห้ามขึ้นม่านเด็ดขาด** ไม่งั้นจะบังของที่
+           ตั้งใจจะไปดูพอดี ซึ่งเป็นเหตุผลเดียวที่เลื่อนลงมา — หยุดเวลาให้เงียบ ๆ
+           แล้วปล่อยให้ซื้อของ/ใช้ไอเทม/เปิดแผงอื่นได้ตามปกติ */
       const veil = document.getElementById('acVeil');
       if (veil) {
-        const show = on && !ovl;
+        const show = on && !ovl && stop;
         veil.classList.toggle('active', show);
         if (show) acPaintVeil();
       }
@@ -12817,13 +12900,17 @@
       return false;
     }
 
-    function acKick(muts) {
-      if (muts && !acRelevant(muts)) return;
+    function acRaf() {
       if (AC_RAF) return;
       AC_RAF = requestAnimationFrame(function () {
         AC_RAF = 0;
-        try { acSync(); } catch (e) { acErr(e, 'acKick'); }
+        try { acSync(); } catch (e) { acErr(e, 'acRaf'); }
       });
+    }
+
+    function acKick(muts) {
+      if (muts && !acRelevant(muts)) return;
+      acRaf();
     }
 
     function acPaintVeil() {
@@ -12850,6 +12937,8 @@
     function acPaintBtn() {
       const btn = document.getElementById('acPause');
       if (!btn) return;
+      /* อ่านเฉพาะเหตุผลที่ปุ่มนี้ปลดได้จริง — เลื่อนหนี/หน้าต่างเปิดค้าง ปลดด้วยปุ่มนี้ไม่ได้
+         ถ้าเอามารวมด้วย ปุ่มจะขึ้น "เล่นต่อ" ทั้งที่กดแล้วไม่มีอะไรเกิดขึ้น */
       const on = AC_MANUAL || AC_FOCUS;
       btn.classList.toggle('on', on);
       btn.textContent = on ? '▶ เล่นต่อ' : '⏸️ พัก';
@@ -12886,7 +12975,11 @@
     startQuestionTimer = function () {
       AC_HELD = false; AC_LEFT = 0; AC_FRZ = 0; AC_AT = 0; AC_FRZ_ENDS = 0;
       const r = _acStartQuestionTimer.apply(this, arguments);
-      try { if (acPaused()) { acPauseTimer(); acSync(true); } } catch (e) { acErr(e, 'startQuestionTimer'); }
+      try {
+        acFocusQa();                 /* ต้องมาก่อนเช็กหยุด ไม่งั้นข้อใหม่จะเริ่มมาในสภาพหยุดทันที */
+        if (acPaused()) acPauseTimer();
+        acSync(true);
+      } catch (e) { acErr(e, 'startQuestionTimer'); }
       return r;
     };
 
@@ -13007,9 +13100,17 @@
           /* กล่องโจทย์ทั้งใบได้ป้ายกำกับว่าถูกปิดอยู่ กันนักเรียนคิดว่าเกมค้าง */
           '#gameScreen.ac-mask .ac-battle::after{content:"🔒 โจทย์ถูกปิดบังระหว่างหยุดเกม";' +
             'position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:4;' +
-            'white-space:nowrap;font-size:11.5px;font-weight:800;letter-spacing:.4px;color:#8fd8ff;' +
-            'background:rgba(4,11,20,.86);border:1px solid rgba(143,216,255,.5);' +
-            'border-radius:99px;padding:6px 14px;pointer-events:none}' +
+            /* width:max-content จำเป็น — กล่อง absolute ที่ตั้ง left:50% จะ shrink-to-fit
+               จากพื้นที่ที่เหลือ (ครึ่งการ์ด) ข้อความจึงตัดเป็น 3 บรรทัดทั้งที่ยังมีที่ว่าง */
+            'width:max-content;max-width:88%;text-align:center;line-height:1.6;' +
+            'font-size:11.5px;font-weight:800;letter-spacing:.4px;color:#8fd8ff;' +
+            'background:rgba(4,11,20,.9);border:1px solid rgba(143,216,255,.5);' +
+            'border-radius:14px;padding:7px 14px;pointer-events:none}' +
+          /* หยุดเพราะเลื่อนจอหนีโซนคำถามล้วน ๆ — ไม่มีม่านมาบัง ป้ายนี้จึงเป็นตัวเดียว
+             ที่บอกว่าเวลาหยุดให้แล้ว ต้องบอกวิธีกลับมาเล่นต่อด้วย */
+          '#gameScreen.ac-mask.ac-scroll .ac-battle::after{' +
+            'content:"⏸️ หยุดเวลาให้แล้ว — เลื่อนกลับไปที่ตัวเลือกเพื่อเล่นต่อ";' +
+            'color:#2ef2d0;border-color:rgba(46,242,208,.55)}' +
 
           /* ปุ่ม ⏸️ บนหัวหลอดเวลา */
           '.ac-pause{flex:0 0 auto;margin-left:8px;padding:1px 9px;border-radius:99px;cursor:pointer;' +
@@ -13097,6 +13198,13 @@
       });
       window.addEventListener('blur', acOnAway);
       window.addEventListener('pagehide', acOnAway);
+
+      /* หน้าเล่นเป็นกล่องเลื่อนของตัวเอง (Viewport Lock) เหตุการณ์เลื่อนจึงอยู่ที่ #gameScreen
+         ไม่ใช่ที่ window — ผูกที่ window อย่างเดียวจะไม่ได้ยินอะไรเลย
+         passive:true เพราะเราไม่เคย preventDefault และหน่วงด้วย rAF อยู่แล้ว */
+      if (gs) gs.addEventListener('scroll', acRaf, { passive: true });
+      window.addEventListener('resize', acRaf);
+      window.addEventListener('orientationchange', acRaf);
 
       AC_READY = true;
       try { acSync(true); } catch (e) { acErr(e, 'install'); }

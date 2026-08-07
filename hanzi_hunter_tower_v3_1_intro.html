@@ -13020,13 +13020,15 @@
 
           /* ── ม่านหยุดเกม ────────────────────────────────────────────
              z-index 190 = เหนือสัญญาณอันตราย (120) กับชั้น VFX (150) แต่ใต้หน้าต่างระบบ (200)
-             พื้นทึบ .96 ทำงานได้เองโดยไม่ต้องพึ่ง backdrop-filter แล้วค่อยไล่เบลอเพิ่ม
-             ให้เบราว์เซอร์ที่รองรับ — เครื่องที่ไม่รองรับจึงยังปิดโจทย์ได้สนิท (กับดักข้อ 15) */
+
+             **หน้าที่ของม่านคือ "หรี่จอ + กันกด" เท่านั้น ห้ามใส่ backdrop-filter**
+             การเบลอเป็นหน้าที่ของคลาส ac-mask ซึ่งเบลอเฉพาะโจทย์กับตัวเลือก
+             ถ้าม่านเบลอ backdrop ด้วย ทั้งหน้าจอจะพร่าไปหมด (หลอด HP/MP · เรดาร์หอคอย ·
+             กระเป๋า · แถบสกิล) ทั้งที่ของพวกนั้นไม่ได้เฉลยอะไรเลย — และยังกินแรงเครื่อง
+             นักเรียนฟรี ๆ เพราะ backdrop-filter ต้องรีคอมโพสิตทั้งหน้าทุกเฟรม
+             พื้นโปร่ง .5 ยังทำให้กล่อง "เล่นต่อ" เด่นพอ และบอกได้ว่าเกมหยุดอยู่ */
           '#acVeil{position:fixed;inset:0;z-index:190;display:none;align-items:center;' +
-            'justify-content:center;padding:18px;background:rgba(6,10,16,.96)}' +
-          '@supports ((-webkit-backdrop-filter:blur(2px)) or (backdrop-filter:blur(2px))){' +
-            '#acVeil{background:rgba(6,10,16,.74);' +
-            '-webkit-backdrop-filter:blur(18px) saturate(.5);backdrop-filter:blur(18px) saturate(.5)}}' +
+            'justify-content:center;padding:18px;background:rgba(6,10,16,.5)}' +
           '#acVeil.active{display:flex;animation:acFade .2s ease-out both}' +
           '@keyframes acFade{from{opacity:0}to{opacity:1}}' +
           '.ac-box{width:100%;max-width:380px;text-align:center;padding:20px 18px 18px 18px;' +

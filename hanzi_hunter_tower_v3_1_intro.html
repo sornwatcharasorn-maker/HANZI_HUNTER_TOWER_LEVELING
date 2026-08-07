@@ -13210,6 +13210,545 @@
       try { acSync(true); } catch (e) { acErr(e, 'install'); }
     })();
 
+    // ══════════════════════════════════════════════════════════════
+    // ชั้นบนสุด — v4.9 · NOTIFY CONTROL
+    //   (Safe Zone + Mini-Banner + Smart Critical Filter + สวิตช์ 3 ระดับ)
+    // ต่อยอดบน v4.0-v4.8.1 แบบ "ห่อฟังก์ชันเดิม" ไม่แก้ตรรกะของชั้นล่างเลย
+    //   1) แถบปลอดภัยหัวจอ — toast ห้ามลอยทับโจทย์จีน พินอิน คำแปล และตัวเลือก A-D
+    //   2) Mode A — ในหน้าเล่นเกมมี toast ได้ครั้งละ 1 ใบ ทรงคอมแพกต์ จางเองใน 1.7-2.0 วิ
+    //   3) Smart Critical Filter — ระหว่างนาฬิกาต่อข้อเดิน ผ่านเฉพาะหมวดวิกฤต
+    //      ที่เหลือถูกกักคิวไว้ แล้วปล่อยช่วงสั้น ๆ หลังตัดสินข้อเสร็จ
+    //   4) Notification Batching — สกิลพร้อมใช้พร้อมกันหลายตัว รวบเป็นใบเดียว
+    //   5) สวิตช์ 🔔 / ⚠️ / 🔕 จำค่าไว้ใน localStorage
+    // ══════════════════════════════════════════════════════════════
+
+    const NC_VER = '4.9';
+    const NC_KEY = 'yao_notify';        /* ระดับเครื่อง ไม่ผูกบัญชี — เป็นค่าการแสดงผล ไม่ใช่ความคืบหน้า */
+
+    /* ความสูงแถบปลอดภัยหัวจอ (px) — ต้องไม่ต่ำกว่าความสูงจริงของ Mini-Banner
+       ถ้าจะเพิ่มบรรทัดในแบนเนอร์ต้องวัดใหม่แล้วดันเลขนี้ตาม */
+    const NC_BAND      = 42;
+    const NC_LIFE      = 1700;   /* อายุ toast ทั่วไปในหน้าเล่นเกม (สเปก 1.5-2.0 วิ) */
+    const NC_LIFE_CRIT = 2000;   /* หมวดวิกฤตอยู่นานกว่าเล็กน้อย */
+    const NC_MAX_GAME  = 1;      /* Mode A — สูงสุดครั้งละ 1 ใบ */
+    const NC_Q_MAX     = 5;      /* คิวสูงสุด ล้นแล้วทิ้งใบเก่าสุด */
+    const NC_Q_GAP     = 260;    /* ช่องไฟระหว่างใบที่ปล่อยจากคิว */
+    const NC_Q_TICK    = 300;    /* จังหวะตรวจคิว — เดินเฉพาะตอนมีของค้างในคิว (กับดักข้อ 22) */
+    const NC_TIME_LOW  = 3000;   /* เตือนเวลาใกล้หมดที่ 3 วินาทีสุดท้าย */
+
+    const NC_MODES = ['all', 'crit', 'off'];
+    const NC_MODE_UI = {
+      all:  { icon:'🔔', name:'เปิดทั้งหมด',
+              sub:'แสดงทั้งแจ้งเตือนทั่วไปและหมวดวิกฤต (ค่าเริ่มต้น)' },
+      crit: { icon:'⚠️', name:'เฉพาะแจ้งเตือนวิกฤต',
+              sub:'ซ่อน Toast ทั่วไปทั้งหมด เหลือ HP ต่ำ · เวลาใกล้หมด · เกราะ/ชุบชีวิต · คอมโบ' },
+      off:  { icon:'🔕', name:'ปิดทั้งหมด (MINIMAL UI)',
+              sub:'ซ่อน Toast ระบบ 100% — หน้าต่างบังคับกดยืนยันยังขึ้นตามปกติ' }
+    };
+
+    let NC_MODE  = 'all';
+    let NC_READY = false;
+
+    /* คิวแจ้งเตือนทั่วไปที่ถูกกักไว้ระหว่างนาฬิกาเดิน — เป็นของ "รอบการเล่น" ไม่ใช่ของบัญชี */
+    let NC_Q = [], NC_PUMP = 0, NC_LAST_AT = 0;
+
+    /* ธงของ "ข้อที่กำลังตอบอยู่" ไม่ใช่ของบัญชี จึงไม่ต้องเซฟ (กฎเดียวกับ AC_HELD ของ v4.8.1) */
+    let NC_LOW_T = 0, NC_LOW_FIRED = false;
+
+    /* edge-trigger กันแจ้งเตือนซ้ำรัว (กับดักข้อ 3) */
+    let NC_SHIELD_SEEN = 0;
+
+    /* ปิดการแจ้งเตือนไว้ตลอดช่วงที่ startGame ของ v4.0 ยังทำงาน (มันเรียก renderStats เองข้างใน)
+       ไม่งั้นบัญชีที่เซฟเกราะค้างไว้จะเจอ "เกราะเพิ่งตั้งขึ้น" เด้งทุกครั้งที่ล็อกอิน
+       กติกาเดียวกับ CD_BOOT ของ v4.7 */
+    let NC_BOOT = false;
+
+    // ── สารบัญของชั้นนี้ — NOTIFY 01/03-03/03 ────────────────────────
+    /* แยกจาก SYS_NOTIF (ตรึง 25) · Q_NOTIF (6) · CX_NOTIF (4) · AB_NOTIF (9) · CD_NOTIF (9)
+       ยืมแค่กลไกโชว์มาใช้ ไม่ไปกินเลขของใคร
+       หมวด "HP ต่ำวิกฤต" ไม่ต้องสร้างใหม่ — AB_DANGER ของ v4.6 ทำอยู่แล้ว ชั้นนี้แค่ติดป้ายว่าวิกฤต */
+    const NC_NOTIF = {
+      NC_TIMELOW: {
+        tag: 'NOTIFY 01/03', tone: 'danger',
+        title: d => `⏱️ เหลือเวลาอีก ${d.left} วินาที`,
+        body:  d => `รีบเลือกคำตอบ — ปล่อยให้หมดเวลานับเป็นตอบผิด\nเสีย HP <b>${d.dmg}</b> และสตรีคขาดทันที`
+      },
+      NC_GUARD: {
+        tag: 'NOTIFY 02/03', tone: 'good',
+        title: d => d.kind === 'insurance' ? '🛡️ ประกันภัยฮันเตอร์ทำงาน — ชุบชีวิตแล้ว'
+                                           : '🛡️ เกราะอักขระคุ้มกันอยู่',
+        body:  d => d.kind === 'insurance'
+          ? `รอดจากการร่วงกลับต้นโซน · HP <b>${d.hp}/${d.max}</b>\nประกันภัยเหลืออีก <b>${d.left}</b> ชิ้น`
+          : `เกราะรับดาเมจแทน <b>${d.shield}</b> หน่วย\nHP ฮันเตอร์ <b>${d.hp}/${d.max}</b> ยังไม่ถูกแตะ`
+      },
+      NC_MPBATCH: {
+        tag: 'NOTIFY 03/03', tone: 'good',
+        title: d => `⚡ สกิลพร้อมใช้งาน [${d.names}]`,
+        body:  d => `มานาปัจจุบัน <b>${d.mp}/${d.maxMp} MP</b> — พร้อมร่ายพร้อมกัน <b>${d.n}</b> สกิล\nกดที่แถบสกิลเพื่อเลือกใช้`
+      }
+    };
+
+    /* หมวดวิกฤตต่อการรอดชีวิต — เทียบด้วยตัว def ตรง ๆ ไม่ใช่ชื่อคีย์
+       จึงครอบแจ้งเตือนของทุกชั้นได้โดยไม่ต้องไปเติมคีย์ที่ 7 ให้ SYS_NOTIF (ซึ่งตรึงไว้ 6 คีย์) */
+    const NC_CRIT_SYS = [
+      'BTL_COMBO5',        /* 🔥 คอมโบ 5 ข้อรวด */
+      'SKL_READY_WARD',    /* 🛡️ สกิลชุบชีวิตพร้อมใช้ */
+      'SKL_NO_MP',         /* ตอบสนองการกดปุ่มสกิลโดยตรง — ถ้ากักไว้จะดูเหมือนปุ่มเสีย */
+      'GATE_NO_SKIP'       /* ตอบสนองการกดปุ่มโดยตรงเช่นกัน */
+    ];
+    const NC_CRIT_AB = [
+      'AB_QUAKE',          /* 🔥 สตรีคสะเทือนหอคอย */
+      'AB_DANGER'          /* 🔴 HP ต่ำวิกฤต */
+    ];
+
+    const NC_CRIT = [];
+    (function ncBuildCrit() {
+      NC_CRIT_SYS.forEach(function (k) { if (typeof SYS_NOTIF !== 'undefined' && SYS_NOTIF[k]) NC_CRIT.push(SYS_NOTIF[k]); });
+      if (typeof AB_NOTIF !== 'undefined') {
+        NC_CRIT_AB.forEach(function (k) { if (AB_NOTIF[k]) NC_CRIT.push(AB_NOTIF[k]); });
+      }
+      Object.keys(NC_NOTIF).forEach(function (k) { NC_CRIT.push(NC_NOTIF[k]); });
+    })();
+
+    function ncIsCrit(def) { return !!def && NC_CRIT.indexOf(def) !== -1; }
+
+    function ncErr(e, where) {
+      if (typeof gcErrPush !== 'function') return;
+      try { gcErrPush('err', 'NOTIFY: ' + ((e && e.message) || e), where || '', (e && e.stack) || ''); } catch (e2) {}
+    }
+
+    function ncInGame() {
+      const gs = document.getElementById('gameScreen');
+      return !!gs && gs.classList.contains('active');
+    }
+
+    /* นาฬิกาต่อข้อเดินอยู่ไหม — ตอนถูก v4.8.1 หยุดไว้ handle ทั้งคู่เป็น null
+       จึงนับว่า "ว่าง" โดยอัตโนมัติ ซึ่งถูกต้อง เพราะตอนหยุดไม่มีแรงกดดันเรื่องเวลา */
+    function ncBusy() {
+      try { return !!QUESTION_TIMER || !!FREEZE_TIMER; } catch (e) { return false; }
+    }
+
+    // ── โหมดแจ้งเตือน ─────────────────────────────────────────────
+    function ncLoadMode() {
+      try {
+        const v = localStorage.getItem(NC_KEY);
+        if (NC_MODES.indexOf(v) !== -1) NC_MODE = v;
+      } catch (e) {}
+    }
+    function ncSaveMode() {
+      try { localStorage.setItem(NC_KEY, NC_MODE); } catch (e) {}
+    }
+
+    function ncSetMode(m) {
+      if (NC_MODES.indexOf(m) === -1) return;
+      NC_MODE = m;
+      ncSaveMode();
+      if (m !== 'all') { NC_Q = []; ncStopPump(); }
+      ncApplyBand();
+      ncPaintBell();
+      ncPaintSettings();
+    }
+
+    function ncCycleMode() {
+      ncSetMode(NC_MODES[(NC_MODES.indexOf(NC_MODE) + 1) % NC_MODES.length]);
+      const b = document.getElementById('ncBell');
+      if (b) { b.classList.remove('nc-flash'); void b.offsetWidth; b.classList.add('nc-flash'); }
+    }
+
+    /* แถบปลอดภัยหัวจอ — โหมดปิดทั้งหมดคืนพื้นที่ให้เกม เพราะไม่มี toast จะขึ้นอีกแล้ว */
+    function ncApplyBand() {
+      const gs = document.getElementById('gameScreen');
+      if (!gs) return;
+      gs.style.setProperty('--nc-band', (NC_MODE === 'off' ? 0 : NC_BAND) + 'px');
+    }
+
+    function ncPaintBell() {
+      const b = document.getElementById('ncBell');
+      if (!b) return;
+      const u = NC_MODE_UI[NC_MODE];
+      b.textContent = u.icon;
+      b.title = 'แจ้งเตือนระบบ: ' + u.name + ' — แตะเพื่อสลับโหมด';
+      b.setAttribute('aria-label', b.title);
+      b.classList.toggle('nc-b-crit', NC_MODE === 'crit');
+      b.classList.toggle('nc-b-off',  NC_MODE === 'off');
+    }
+
+    function ncPaintSettings() {
+      const box = document.querySelector('#gStatusBody .nc-set');
+      if (!box) return;
+      const btns = box.querySelectorAll('.nc-opt');
+      for (let i = 0; i < btns.length; i++) {
+        btns[i].classList.toggle('on', btns[i].getAttribute('data-nc') === NC_MODE);
+      }
+    }
+
+    function ncSettingsHtml() {
+      return '<div class="g-sec-title">🔔 การแจ้งเตือนระบบ (SYSTEM NOTIFICATION)</div>' +
+        '<div class="nc-set">' +
+          NC_MODES.map(function (m) {
+            const u = NC_MODE_UI[m];
+            return '<button type="button" class="nc-opt' + (NC_MODE === m ? ' on' : '') +
+              '" data-nc="' + m + '" onclick="ncSetMode(\'' + m + '\')">' +
+              '<span class="nc-opt-h">' + u.icon + ' ' + esc(u.name) + '</span>' +
+              '<span class="nc-opt-s">' + esc(u.sub) + '</span></button>';
+          }).join('') +
+        '</div>' +
+        '<div class="nc-note">ระหว่างนาฬิกาต่อข้อเดินอยู่ ระบบจะปล่อยเฉพาะแจ้งเตือนหมวดวิกฤต ' +
+          'ส่วนแจ้งเตือนทั่วไปถูกกักไว้แล้วปล่อยหลังตัดสินข้อเสร็จ · ' +
+          'Toast ทุกใบถูกล็อกไว้ในแถบขอบบนสุด ไม่ทับโจทย์และตัวเลือก</div>';
+    }
+
+    // ── เอนจินแสดงผลของชั้นนี้ ────────────────────────────────────
+    /* "01/25" ท้ายแท็บดรรชนี — แบนเนอร์คอมแพกต์ไม่มีที่พอสำหรับชื่อหมวดเต็ม */
+    function ncTagIndex(tag) {
+      const s = String(tag || '');
+      const m = s.match(/(\d+\s*\/\s*\d+)\s*$/);
+      return m ? m[1] : s;
+    }
+
+    function ncPlain(s) { return String(s == null ? '' : s).replace(/<[^>]*>/g, ''); }
+
+    function ncPaint(def, title, body, crit) {
+      /* นอกหน้าเล่นเกม (หน้าเกท/สมัคร) ไม่มีโจทย์ให้บัง — ใช้ toast เต็มใบของ v4.1 ตามเดิม */
+      if (!ncInGame()) return _ncShowToast(def, title, body);
+
+      const layer = document.getElementById('snLayer');
+      if (!layer) return;
+
+      /* Mode A — ครั้งละ 1 ใบ ใบใหม่ผลักใบเก่าออกทันที
+         **ต้องลบแบบซิงโครนัสเท่านั้น ห้ามเรียก snDismiss ในลูปนี้** (กับดักข้อ 1) */
+      while (layer.children.length >= NC_MAX_GAME) {
+        const oldest = layer.firstElementChild;
+        if (!oldest) break;
+        layer.removeChild(oldest);
+      }
+
+      const el = document.createElement('div');
+      el.className = 'sn sn-mini' + (def.tone ? ' ' + def.tone : '') + (crit ? ' nc-crit' : '');
+      el.innerHTML = '<span class="sn-dot"></span>' +
+                     '<span class="sn-title">' + snMarkup(title) + '</span>' +
+                     '<span class="sn-tag">' + snEsc(ncTagIndex(def.tag)) + '</span>';
+      el.title = ncPlain(title) + (body ? '\n' + ncPlain(body) : '');
+      el.onclick = function () { snDismiss(el); };
+      layer.appendChild(el);
+
+      NC_LAST_AT = Date.now();
+      setTimeout(function () { snDismiss(el); }, crit ? NC_LIFE_CRIT : NC_LIFE);
+    }
+
+    // ── คิวแจ้งเตือนทั่วไป ────────────────────────────────────────
+    function ncStopPump() {
+      if (NC_PUMP) clearInterval(NC_PUMP);
+      NC_PUMP = 0;
+    }
+
+    /* ตัวจับเวลาเดินเฉพาะตอนมีของค้างในคิว แล้วดับตัวเองทันทีที่คิวหมด
+       ไม่ปล่อยให้เดินตลอดเกมแบบที่กับดักข้อ 22 เตือนไว้ */
+    function ncPump() {
+      if (NC_PUMP || !NC_Q.length) return;
+      NC_PUMP = setInterval(function () {
+        try { ncFlush(); } catch (e) { ncErr(e, 'ncPump'); ncStopPump(); }
+      }, NC_Q_TICK);
+    }
+
+    function ncQueue(def, title, body) {
+      /* ใบใหม่ของหมวดเดียวกันแทนที่ใบเก่าเสมอ — คิวเก็บ "สถานะล่าสุด" ไม่ใช่ประวัติ */
+      NC_Q = NC_Q.filter(function (x) { return x.def !== def; });
+      NC_Q.push({ def: def, title: title, body: body });
+      while (NC_Q.length > NC_Q_MAX) NC_Q.shift();
+      ncPump();
+    }
+
+    function ncFlush() {
+      if (!NC_Q.length) { ncStopPump(); return; }
+      if (!ncInGame() || NC_MODE !== 'all') { NC_Q = []; ncStopPump(); return; }
+      if (ncBusy()) return;                                            /* นาฬิกาเดินอยู่ — รอต่อ */
+      if (Date.now() - NC_LAST_AT < NC_LIFE + NC_Q_GAP) return;        /* เว้นช่องไฟให้ใบก่อนหน้าอ่านจบ */
+      const it = NC_Q.shift();
+      ncPaint(it.def, it.title, it.body, false);
+      if (!NC_Q.length) ncStopPump();
+    }
+
+    /* ทางเข้าแจ้งเตือนของชั้นนี้ — ไหลผ่าน snShowToast เหมือนทุกชั้น จึงโดนตัวกรองชุดเดียวกัน */
+    function ncNotify(key, data) {
+      const def = NC_NOTIF[key];
+      if (!def) return;
+      const d = data || {};
+      let title, body;
+      try { title = def.title(d); body = def.body(d); } catch (e) { ncErr(e, 'ncNotify/' + key); return; }
+      snShowToast(def, title, body);
+    }
+
+    // ══ ห่อฟังก์ชันของชั้นล่าง ═══════════════════════════════════════
+    /* จุดกรองมีจุดเดียวคือ snShowToast — toast ของ **ทุกชั้น** (v4.1/v4.2/v4.4/v4.6/v4.7)
+       ไหลมาลงที่นี่หมด จึงไม่ต้องไล่ห่อ sysNotify/qNotify/cxNotify/abNotify/cdNotify ทีละตัว
+       หน้าต่างบังคับกดยืนยัน (snShowGate) ไม่ถูกแตะเลย — ทุกโหมดยังเห็นเหมือนเดิมตามสเปก */
+    const _ncShowToast = snShowToast;
+    snShowToast = function (def, title, body) {
+      if (!NC_READY || !def) return _ncShowToast.apply(this, arguments);
+      try {
+        const crit = ncIsCrit(def);
+        if (NC_MODE === 'off') return;                        /* 🔕 ปิดทั้งหมด */
+        if (NC_MODE === 'crit' && !crit) return;              /* ⚠️ เฉพาะวิกฤต */
+        if (ncInGame() && ncBusy() && !crit) { ncQueue(def, title, body); return; }
+        return ncPaint(def, title, body, crit);
+      } catch (e) {
+        ncErr(e, 'snShowToast');
+        return _ncShowToast.apply(this, arguments);
+      }
+    };
+
+    /* Notification Batching — สกิลที่ "เพิ่งพร้อม" พร้อมกันหลายตัวในรอบเดียว รวบเป็นใบเดียว
+       ดักที่ sysNotify ชั่วคราวระหว่างเรียกของเดิม จึงไม่ต้องคัดลอกตรรกะ edge-trigger
+       (SN_MP_SEEN) ออกมาเขียนซ้ำ — ของเดิมยังเป็นเจ้าของสถานะอยู่เหมือนเดิม */
+    const NC_MP_SET = {};
+    (function () {
+      if (typeof SN_MP_NOTIF === 'undefined') return;
+      Object.keys(SN_MP_NOTIF).forEach(function (sk) { NC_MP_SET[SN_MP_NOTIF[sk]] = sk; });
+    })();
+
+    function ncSkillName(notifKey) {
+      const sk = NC_MP_SET[notifKey];
+      let s = null;
+      if (typeof SKILLS !== 'undefined') {
+        for (let i = 0; i < SKILLS.length; i++) if (SKILLS[i].key === sk) { s = SKILLS[i]; break; }
+      }
+      if (!s) return notifKey;
+      /* ชื่อสกิลเป็น 'ทลายอักษร: ดาบโลหิต' — เอาชื่อเวทท้ายคำ ซึ่งสั้นพอสำหรับแบนเนอร์คอมแพกต์ */
+      const n = String(s.name || '');
+      const i = n.indexOf(':');
+      return (i >= 0 ? n.slice(i + 1) : n).trim();
+    }
+
+    const _ncCheckMpReady = snCheckMpReady;
+    snCheckMpReady = function () {
+      if (!NC_READY) return _ncCheckMpReady.apply(this, arguments);
+      const hits = [];
+      const real = sysNotify;
+      sysNotify = function (key, data, onConfirm) {
+        if (NC_MP_SET[key]) { hits.push({ key: key, data: data || {} }); return; }
+        return real.apply(this, arguments);
+      };
+      try {
+        return _ncCheckMpReady.apply(this, arguments);
+      } finally {
+        sysNotify = real;
+        try {
+          if (hits.length === 1) {
+            real(hits[0].key, hits[0].data);                  /* ใบเดียว = คงดรรชนี 17-20/25 ไว้เหมือนเดิม */
+          } else if (hits.length > 1) {
+            const last = hits[hits.length - 1].data || {};
+            ncNotify('NC_MPBATCH', {
+              names: hits.map(function (h) { return ncSkillName(h.key); }).join(' / '),
+              n: hits.length,
+              mp: last.mp != null ? last.mp : Math.floor(G.mp),
+              maxMp: last.maxMp != null ? last.maxMp : maxMpOf(G)
+            });
+          }
+        } catch (e) { ncErr(e, 'snCheckMpReady'); }
+      }
+    };
+
+    // ── เตือนเวลาใกล้หมด (3 วินาทีสุดท้าย) ─────────────────────────
+    /* ไม่แตะ QUESTION_TICK ของ v4.0 เลย — ตั้งนาฬิกาของตัวเองแบบแก้ค่าเองทุกครั้งที่ตื่น
+       จึงทนต่อการต่อเวลา (⏳) การแช่แข็ง (❄️) และการหยุดของ v4.8.1 ได้ทั้งหมด */
+    function ncDisarmLow() {
+      if (NC_LOW_T) clearTimeout(NC_LOW_T);
+      NC_LOW_T = 0; NC_LOW_FIRED = false;
+    }
+
+    function ncLowTick() {
+      NC_LOW_T = 0;
+      if (NC_LOW_FIRED || !ncInGame()) return;
+
+      const held = (typeof AC_HELD !== 'undefined') && AC_HELD;
+      if (held || (typeof FREEZE_TIMER !== 'undefined' && FREEZE_TIMER)) {
+        NC_LOW_T = setTimeout(ncLowTick, 400);       /* หยุด/แช่แข็งอยู่ — ยังไม่ถึงคิวเตือน */
+        return;
+      }
+      if (!QUESTION_TIMER) return;                    /* ข้อจบไปแล้ว */
+
+      const left = QUESTION_ENDS - Date.now();
+      if (left <= 0) return;
+      if (left > NC_TIME_LOW + 150) {
+        NC_LOW_T = setTimeout(ncLowTick, Math.max(120, left - NC_TIME_LOW));
+        return;
+      }
+      NC_LOW_FIRED = true;
+      let dmg = 0;
+      try { dmg = wrongDamage(); } catch (e) {}
+      ncNotify('NC_TIMELOW', { left: (left / 1000).toFixed(1), dmg: dmg });
+    }
+
+    const _ncStartQuestionTimer = startQuestionTimer;
+    startQuestionTimer = function () {
+      const r = _ncStartQuestionTimer.apply(this, arguments);
+      try { ncDisarmLow(); ncLowTick(); } catch (e) { ncErr(e, 'startQuestionTimer'); }
+      return r;
+    };
+
+    /* ข้อจบจริง (ตอบ/หมดเวลา/ย้ายชั้น) — ทิ้งนาฬิกาเตือนของข้อนั้น แล้วลองปล่อยคิวทันที */
+    const _ncClearQuestionTimer = clearQuestionTimer;
+    clearQuestionTimer = function () {
+      const r = _ncClearQuestionTimer.apply(this, arguments);
+      try { ncDisarmLow(); ncPump(); } catch (e) { ncErr(e, 'clearQuestionTimer'); }
+      return r;
+    };
+
+    // ── HP/เกราะ — edge-trigger ────────────────────────────────────
+    /* HP ต่ำวิกฤตมี AB_DANGER ของ v4.6 ทำอยู่แล้ว ชั้นนี้จึงดูแค่ "เกราะเพิ่งตั้งขึ้น" */
+    function ncWatchVitals() {
+      const g = (typeof G !== 'undefined' && G) ? G : null;
+      if (!g) return;
+      const sh = Math.max(0, Math.round(g.shield || 0));
+      if (sh > NC_SHIELD_SEEN && ncInGame() && !NC_BOOT) {
+        ncNotify('NC_GUARD', { kind:'shield', shield: sh,
+                               hp: Math.max(0, Math.round(g.hp)), max: g.maxHp });
+      }
+      NC_SHIELD_SEEN = sh;
+    }
+
+    const _ncRenderStats = renderStats;
+    renderStats = function () {
+      const r = _ncRenderStats.apply(this, arguments);
+      try { ncWatchVitals(); } catch (e) { ncErr(e, 'renderStats'); }
+      return r;
+    };
+
+    /* 🛡️ ประกันภัยฮันเตอร์กินตัวเองอัตโนมัติใน onHunterDown ของ v4.0 (เขียนแค่บรรทัดผลลัพธ์)
+       ห่อไว้ชั้นนอกสุดจึงเห็นผลรวมหลังทุกชั้นทำงานจบ — v4.7 ที่ยืมของออกไปชั่วคราว
+       ตอนการ์ด 💀 ห้ามฟื้น ก็คืนกลับมาแล้ว ยอดก่อน/หลังจึงเท่ากันและไม่แจ้งผิด */
+    const _ncOnHunterDown = onHunterDown;
+    onHunterDown = function () {
+      const g = (typeof G !== 'undefined' && G) ? G : null;
+      const before = (g && g.items) ? (g.items.insurance || 0) : 0;
+      const r = _ncOnHunterDown.apply(this, arguments);
+      try {
+        const after = (g && g.items) ? (g.items.insurance || 0) : 0;
+        if (after < before) {
+          ncNotify('NC_GUARD', { kind:'insurance', left: after,
+                                 hp: Math.max(0, Math.round(g.hp)), max: g.maxHp });
+        }
+      } catch (e) { ncErr(e, 'onHunterDown'); }
+      return r;
+    };
+
+    // ── แผงตั้งค่า (Settings UI) ──────────────────────────────────
+    const _ncRenderStatus = renderStatus;
+    renderStatus = function () {
+      const r = _ncRenderStatus.apply(this, arguments);
+      try {
+        const b = document.getElementById('gStatusBody');
+        /* renderStatus เขียน innerHTML ทับทั้งก้อนทุกครั้ง แต่ยังกันแทรกซ้ำไว้ตามกับดักข้อ 2 */
+        if (b && !b.querySelector('.nc-set')) b.insertAdjacentHTML('beforeend', ncSettingsHtml());
+      } catch (e) { ncErr(e, 'renderStatus'); }
+      return r;
+    };
+
+    // ── เข้า/ออกเกท ───────────────────────────────────────────────
+    const _ncStartGame = startGame;
+    startGame = function () {
+      NC_BOOT = true;
+      try {
+        return _ncStartGame.apply(this, arguments);
+      } finally {
+        NC_BOOT = false;
+        try {
+          NC_Q = []; ncStopPump(); ncDisarmLow();
+          NC_SHIELD_SEEN = (typeof G !== 'undefined' && G) ? Math.max(0, Math.round(G.shield || 0)) : 0;
+          ncApplyBand(); ncPaintBell();
+        } catch (e) { ncErr(e, 'startGame'); }
+      }
+    };
+
+    const _ncExitGame = exitGame;
+    exitGame = function () {
+      try { NC_Q = []; ncStopPump(); ncDisarmLow(); NC_SHIELD_SEEN = 0; } catch (e) {}
+      return _ncExitGame.apply(this, arguments);
+    };
+
+    /* หมายเหตุ: ชั้นนี้ **ไม่ต้องแตะ acFocusQa ของ v4.8.1 เลย** เพราะแถบปลอดภัยถูกกันด้วยการ
+       ดันกล่องเลื่อนทั้งใบลงมา ไม่ได้ไปดัน sticky top ของการ์ดโจทย์ ตัวเลขที่ v4.8.1
+       คำนวณจาก "ขอบบนกล่องเลื่อน + ความสูงการ์ด" จึงยังตรงเป๊ะเหมือนเดิมทุกประการ */
+
+    // ══ ติดตั้งชั้นนี้ลง DOM ═══════════════════════════════════════════
+    (function ncInstall() {
+
+      if (!document.getElementById('ncStyle')) {
+        document.head.insertAdjacentHTML('beforeend',
+          '<style id="ncStyle">' +
+
+          /* ── 1) แถบปลอดภัยหัวจอ (Safe Zone) ─────────────────────────
+             toast เป็น position:fixed ที่ขอบบนจอ ส่วนหน้าเล่นเป็นกล่องเลื่อนของตัวเอง (v4.8.1)
+             ทางที่ปิดสนิทคือ **ดันกล่องเลื่อนทั้งใบลงมาให้เริ่มต่ำกว่าแถบ แล้วหักความสูงคืนเท่ากัน**
+             ของข้างในจึงถูกตัดขอบที่ขอบบนกล่อง ไม่มีทางโผล่ขึ้นมาในแถบได้เลยไม่ว่าเลื่อนไปตรงไหน
+
+             **สองทางที่ลองแล้วไม่ปิดสนิท อย่าย้อนกลับไปใช้**
+             1. padding-top ของกล่องเลื่อน — เนื้อหาไหลผ่านช่องนั้นให้เห็น ไม่ถูกตัดขอบ
+                (v4.8.1 เจอมาแล้วตอนทำการ์ดโจทย์ติดหนึบ)
+             2. จองที่ด้วย .ac-space ในสายเลื่อน + ดัน sticky top ของการ์ดโจทย์ลงมาเท่าแถบ —
+                กันได้เฉพาะตอนเลื่อนอยู่บนสุด พอเลื่อนลงไปเรื่อย ๆ ของที่อยู่ใต้การ์ด
+                (แถวตัวเลือก A-D) จะไต่ขึ้นมาโผล่ใน "ช่องว่าง 42px เหนือการ์ดที่ติดหนึบ"
+                วัดจริงแล้วรั่วที่ scrollTop 980 ขึ้นไปบนจอ 360x800 และ 390x844
+
+             จองแบบถาวรตลอดที่อยู่ในโหมดเล่น (ไม่ใช่จองเฉพาะตอนมี toast) เพราะการยืด-หด
+             ตามการมาของ toast จะดันเนื้อหาทั้งหน้ากระโดดทุกครั้งที่มีแจ้งเตือน
+             โหมด 🔕 ตั้ง --nc-band เป็น 0 ที่เดียว แล้วทั้งชุดยุบหายไปเอง */
+          '#gameScreen.active{margin-top:var(--nc-band,0px);' +
+            'height:calc(100% - var(--nc-band,0px))}' +
+          /* ชั้นแจ้งเตือนในโหมดเล่น — ชิดขอบบนสุด และแคบลงเล็กน้อยให้พอดีแถบ */
+          'body.game-mode #snLayer{gap:4px;padding-top:max(3px,env(safe-area-inset-top))}' +
+
+          /* ── 2) Mini-Banner (Mode A) ────────────────────────────────
+             ทรงคอมแพกต์บรรทัดเดียว: จุดพัลส์ · หัวข้อ · แท็บดรรชนี
+             สูงจริง ~37px ซึ่งพอดีกับ NC_BAND 42 — ถ้าจะเพิ่มบรรทัดต้องวัดใหม่แล้วดัน NC_BAND ตาม */
+          '.sn.sn-mini{display:flex;align-items:center;gap:8px;padding:7px 11px;border-radius:9px;' +
+            'animation:ncIn .2s ease-out both}' +
+          '.sn.sn-mini .sn-title{flex:1 1 auto;min-width:0;font-size:12px;font-weight:800;' +
+            'line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
+          '.sn.sn-mini .sn-tag{flex:0 0 auto;margin-left:0;font-size:9px;font-weight:800;' +
+            'letter-spacing:.6px;opacity:.72}' +
+          '.sn.sn-mini .sn-dot{flex:0 0 auto}' +
+          '.sn.sn-mini.nc-crit{border-width:1.5px}' +
+          '@keyframes ncIn{from{opacity:0;transform:translateY(-9px)}to{opacity:1;transform:none}}' +
+
+          /* ── 3) ปุ่มกระดิ่งบนหัวหน้าจอเล่น ──────────────────────────
+             ใช้โครง .g-logout เดิมของแถบหัว แล้วทับสีเป็นโทนฟ้าให้เข้าชุดกับปุ่ม 🔊 */
+          '.nc-bell{background:linear-gradient(180deg,#1b2745,#0d131d);' +
+            'border-color:rgba(143,216,255,.35);color:#8fd8ff;min-width:38px;text-align:center}' +
+          '.nc-bell.nc-b-crit{border-color:rgba(255,200,69,.6);color:#ffc845}' +
+          '.nc-bell.nc-b-off{border-color:rgba(138,151,181,.5);color:#8a97b5;opacity:.85}' +
+          '.nc-bell.nc-flash{animation:ncFlash .5s ease-out}' +
+          '@keyframes ncFlash{0%{transform:scale(1)}35%{transform:scale(1.22)}100%{transform:scale(1)}}' +
+
+          /* ── 4) แถวตั้งค่าในแผงสถานะ ────────────────────────────── */
+          '.nc-set{display:flex;flex-direction:column;gap:7px;margin-bottom:8px}' +
+          '.nc-opt{display:flex;flex-direction:column;gap:2px;text-align:left;cursor:pointer;' +
+            'font-family:inherit;padding:9px 11px;border-radius:9px;' +
+            'background:rgba(56,182,255,.06);border:1px solid rgba(56,182,255,.28)}' +
+          '.nc-opt.on{background:rgba(46,242,208,.10);border-color:#2ef2d0}' +
+          '.nc-opt:active{transform:translateY(1px)}' +
+          '.nc-opt-h{font-size:12.5px;font-weight:800;color:#d6f2ff}' +
+          '.nc-opt.on .nc-opt-h{color:#2ef2d0}' +
+          '.nc-opt-s{font-size:10.5px;line-height:1.55;color:#8a97b5}' +
+          '.nc-note{font-size:10.5px;line-height:1.6;color:#6d7b96;margin-bottom:4px}' +
+          '</style>');
+      }
+
+      /* ปุ่มกระดิ่งวางในแถบหัวหน้าจอเล่น (Battle Header) ถัดจากปุ่มเสียง 🔊
+         แทรกแบบ afterend จึงอยู่ระหว่าง 🔊 กับปุ่มออกจากเกท ไม่ไปเปลี่ยนลำดับของเดิม */
+      const mute = document.getElementById('gMute');
+      if (mute && !document.getElementById('ncBell')) {
+        mute.insertAdjacentHTML('afterend',
+          '<button type="button" class="g-logout nc-bell" id="ncBell" onclick="ncCycleMode()">🔔</button>');
+      }
+
+      ncLoadMode();
+      ncApplyBand();
+      ncPaintBell();
+      NC_READY = true;
+    })();
+
   </script>
 </body>
 </html>

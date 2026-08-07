@@ -12495,6 +12495,144 @@
       cdPaintUi();
     })();
 
+
+    // ══════════════════════════════════════════════════════════════════
+    // v4.8 · HARDCORE DAMAGE — สเกลดาเมจตามช่วงชั้น + เพดานความเสียหาย
+    // ══════════════════════════════════════════════════════════════════
+    /* ชั้นนี้ไม่แก้โค้ด v4.0-v4.7 เลย — ห่อฟังก์ชันแบบเดียวกับเจ็ดชั้นก่อนหน้า
+
+       สามเรื่องในชั้นเดียว ทุกเรื่องวิ่งผ่านสูตรเดียวคือ hdDamage()
+
+       1) ดาเมจฐานการตอบผิดเลิกเป็นค่าคงที่ 15 ของ v4.0 แล้ว มาไล่ระดับตามช่วงชั้นแทน
+       2) ชั้นบอสประจำช่วง (ทุก 5 ชั้น = isBossFloor ของ v4.0) คูณ HD_BOSS_MUL
+       3) ตอบไม่ทัน/หมดเวลา คูณ HD_TIME_MUL ทับอีกชั้น
+
+       ตารางที่ได้ (ปัดลงตอนท้ายครั้งเดียว จึงตรงกับสเปกเป๊ะ):
+
+         ช่วง   ชั้น      ตอบผิด   หมดเวลา   บอส      บอส+หมดเวลา
+         1      1-5       20       40        50       100
+         2      6-10      35       70        87       175
+         3      11-15     45       90        112      225
+         4      16-20     55       110       137      275
+
+       แล้วยอด "สุทธิต่อข้อ" ทั้งหมด (รวมตัวคูณของการ์ด v4.7) ถูกหนีบด้วย
+       HD_CAP_NORMAL / HD_CAP_BOSS อีกที ดูหัวข้อเพดานความเสียหายข้างล่าง */
+
+    const HD_VER = '4.8.0';
+
+    /* ── ดาเมจฐานรายช่วงชั้น ────────────────────────────────────────
+       ช่วงละ HD_BAND_SIZE ชั้น เรียงจากช่วงล่างขึ้นบน — ผูกกับ FLOOR_MAX ของ v4.0
+       ไม่มีเลขชั้นฮาร์ดโค้ดไว้ที่ไหน ถ้าหอคอยยาวขึ้นให้เติมสมาชิกใน HD_BASE เท่านั้น */
+    const HD_BASE      = [20, 35, 45, 55];
+    const HD_BAND_SIZE = Math.max(1, Math.round(FLOOR_MAX / HD_BASE.length));   /* = 5 */
+    const HD_BOSS_MUL  = 2.5;    /* ชั้นบอสประจำช่วง (5/10/15/20) */
+    const HD_TIME_MUL  = 2;      /* บทลงโทษตอบไม่ทัน */
+
+    /* ── เพดานความเสียหายสุทธิต่อข้อ ───────────────────────────────
+       นับ "HP ที่หายไปจริงตลอดการตัดสินข้อนั้น" ทั้งก้อน = ฐาน × หมดเวลา × บอส
+       × ตัวคูณการ์ดของ v4.7 (🗡️ ×1.5 · ⚡ ×3 · 🔥 ×3) รวมถึงใบที่หัก HP เป็น
+       เปอร์เซ็นต์ของหลอด (🗡️ ตัดสินเทพเจ้า · ⏳ ทรายมรณะ · 🎲 รูเล็ต) ด้วย
+       มีไว้เพื่อให้การ์ดสายความเสี่ยงยังหยิบมาเล่นได้จริงในชั้นสูง ๆ */
+    const HD_CAP_NORMAL = 120;
+    const HD_CAP_BOSS   = 150;
+
+    /* สวิตช์ของ "ข้อที่กำลังตัดสินอยู่" ไม่ใช่ของบัญชี — ถูกปั๊มไว้ตอนเข้า resolveAnswer
+       แล้วคืนค่าเดิมใน finally เสมอ (กฎเดียวกับ AB_LIVE ของ v4.6)
+       ที่ต้องเป็นธงแทนที่จะเป็นพารามิเตอร์ เพราะ v4.0 เรียก wrongDamage() เองข้างใน
+       และตัวคูณของหมดเวลาต้องอยู่ "ก่อน" การ์ดของ v4.7 มาคูณต่อ ตามลำดับในสเปก */
+    let HD_TIMEOUT = false;
+
+    function hdG()   { return (typeof G !== 'undefined' && G) ? G : null; }
+    function hdErr(e, where) {
+      if (typeof gcErrPush !== 'function') return;
+      try { gcErrPush('err', 'HARDCORE: ' + ((e && e.message) || e), where || '', (e && e.stack) || ''); } catch (e2) {}
+    }
+
+    function hdBandOf(floor) {
+      const f = Math.max(1, Math.min(FLOOR_MAX, Math.floor(floor) || 1));
+      return Math.max(0, Math.min(HD_BASE.length - 1, Math.floor((f - 1) / HD_BAND_SIZE)));
+    }
+    function hdBaseDamage(floor) { return HD_BASE[hdBandOf(floor)]; }
+
+    /* สูตรกลาง — ปัดลงครั้งเดียวตอนท้าย ไม่ปัดระหว่างทาง
+       (บอสชั้น 10 = 35 × 2.5 = 87.5 → 87 · หมดเวลาด้วย = 35 × 2.5 × 2 = 175 ไม่ใช่ 174) */
+    function hdDamage(floor, boss, timedOut) {
+      let d = hdBaseDamage(floor);
+      if (boss)     d *= HD_BOSS_MUL;
+      if (timedOut) d *= HD_TIME_MUL;
+      return Math.max(1, Math.floor(d));
+    }
+    function hdCapFor(boss) { return boss ? HD_CAP_BOSS : HD_CAP_NORMAL; }
+
+    /* ── ห่อฟังก์ชันของชั้นล่าง ─────────────────────────────────────
+       ใส่ที่ wrapper ของสูตรจุดเดียวตามกฎของ v4.4/v4.6/v4.7 — ทุกที่ที่เรียก
+       wrongDamage() (การหัก HP ตอนตอบผิด + แถว VIT ในแผงสถานะ) จึงได้ค่าใหม่พร้อมกัน */
+    const _hdWrongDamage = wrongDamage;
+    wrongDamage = function () {
+      try {
+        const g = hdG();
+        if (!g) return _hdWrongDamage.apply(this, arguments);
+        return hdDamage(g.floor, !g.practiceMode && isBossFloor(g.floor), HD_TIMEOUT);
+      } catch (e) {
+        hdErr(e, 'wrongDamage');
+        return _hdWrongDamage.apply(this, arguments);
+      }
+    };
+
+    /* เพดานความเสียหาย — ต้องทำ "หลัง" ทุกชั้นตัดสินผลของข้อไปแล้ว จึงอยู่ที่ wrapper
+       นอกสุด และต้องรับผิดชอบคิวเทิร์นเองถ้าการคืน HP ไปยกเลิกการร่วง (กับดักข้อ 19) */
+    function hdApplyCap(before, correct) {
+      const g = hdG();
+      if (!g || !before || before.practice || g.practiceMode) return 0;
+
+      const lost = before.hp - g.hp;
+      const cap  = hdCapFor(before.boss);
+      if (!(lost > cap)) return 0;
+
+      const wasDown = g.hp <= 0;
+      g.hp = Math.min(g.maxHp, g.hp + (lost - cap));
+      const back = Math.max(0, g.hp - (before.hp - lost));
+      if (back <= 0) return 0;
+
+      const fb = document.getElementById('gFeedback');
+      if (fb) fb.textContent += ' | 🧱 เพดานความเสียหาย ' + cap + ' HP (กันไว้ ' + back + ')';
+
+      /* ชั้นล่างสั่ง onHunterDown ไปแล้วตอน HP หมด — เพดานเพิ่งดึงกลับมารอด ต้องล้มคิวนั้นเอง */
+      if (wasDown && g.hp > 0) {
+        const card = (typeof cdActive === 'function') ? cdActive() : null;
+        if (!correct && card && card.id === 'scales' && typeof cdDropZone === 'function') {
+          /* ⚖️ ตาชั่งแห่งความตาย: v4.7 ปล่อยให้ onHunterDown พาร่วงตอน HP หมด
+             พอเพดานกันไม่ให้ตาย ต้องลงโทษด้วยการร่วงต้นโซนแทน ไม่งั้นจะรอดฟรี */
+          cdDropZone();
+        } else {
+          scheduleTurn(function () { g.locked = false; renderMonster(); }, 1600);
+        }
+      }
+
+      renderStats();
+      return back;
+    }
+
+    const _hdResolveAnswer = resolveAnswer;
+    resolveAnswer = function (choice, btn, timedOut) {
+      const g = hdG();
+      const m = g ? g.currentMonster : null;
+      const before = g ? {
+        hp: g.hp, practice: !!g.practiceMode,
+        boss: !g.practiceMode && isBossFloor(g.floor)
+      } : null;
+      const correct = !timedOut && !!m && choice === m.answer;
+
+      const prev = HD_TIMEOUT;
+      HD_TIMEOUT = !!timedOut;
+      let r;
+      try { r = _hdResolveAnswer.apply(this, arguments); }
+      finally { HD_TIMEOUT = prev; }
+
+      try { hdApplyCap(before, correct); } catch (e) { hdErr(e, 'resolveAnswer'); }
+      return r;
+    };
+
   </script>
 </body>
 </html>

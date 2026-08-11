@@ -13228,13 +13228,12 @@
     /* ความสูงแถบปลอดภัยหัวจอ (px) — ต้องไม่ต่ำกว่าความสูงจริงของ Mini-Banner
        ถ้าจะเพิ่มบรรทัดในแบนเนอร์ต้องวัดใหม่แล้วดันเลขนี้ตาม */
     const NC_BAND      = 42;
-    const NC_LIFE      = 1700;   /* อายุ toast ทั่วไปในหน้าเล่นเกม (สเปก 1.5-2.0 วิ) */
-    const NC_LIFE_CRIT = 2000;   /* หมวดวิกฤตอยู่นานกว่าเล็กน้อย */
-    const NC_MAX_GAME  = 1;      /* Mode A — สูงสุดครั้งละ 1 ใบ */
-    const NC_Q_MAX     = 5;      /* คิวสูงสุด ล้นแล้วทิ้งใบเก่าสุด */
-    const NC_Q_GAP     = 260;    /* ช่องไฟระหว่างใบที่ปล่อยจากคิว */
-    const NC_Q_TICK    = 300;    /* จังหวะตรวจคิว — เดินเฉพาะตอนมีของค้างในคิว (กับดักข้อ 22) */
+    const NC_LIFE      = 2200;   /* อายุการ์ดทั่วไป (สเปก v4.9.1 = 2.0-2.5 วิ) */
+    const NC_LIFE_CRIT = 2500;   /* หมวดวิกฤตอยู่นานสุดของช่วง */
+    const NC_MAX       = 1;      /* Single Active Replace — บนจอมีได้ครั้งละ 1 ใบเท่านั้น */
     const NC_TIME_LOW  = 3000;   /* เตือนเวลาใกล้หมดที่ 3 วินาทีสุดท้าย */
+    const NC_FIT_GAP   = 6;      /* ระยะเว้นระหว่างขอบล่างการ์ดกับหัวโซนโจทย์ */
+    const NC_FIT_MIN   = 72;     /* หนีบไม่ต่ำกว่านี้ — ต้องเหลือหัวข้อ + รหัสอ้างอิงให้อ่านออก */
 
     const NC_MODES = ['all', 'crit', 'off'];
     const NC_MODE_UI = {
@@ -13249,11 +13248,12 @@
     let NC_MODE  = 'all';
     let NC_READY = false;
 
-    /* คิวแจ้งเตือนทั่วไปที่ถูกกักไว้ระหว่างนาฬิกาเดิน — เป็นของ "รอบการเล่น" ไม่ใช่ของบัญชี */
-    let NC_Q = [], NC_PUMP = 0, NC_LAST_AT = 0;
-
     /* ธงของ "ข้อที่กำลังตอบอยู่" ไม่ใช่ของบัญชี จึงไม่ต้องเซฟ (กฎเดียวกับ AC_HELD ของ v4.8.1) */
     let NC_LOW_T = 0, NC_LOW_FIRED = false;
+
+    /* การ์ดที่แสดงอยู่ตอนนี้ (มีได้ใบเดียวตามกติกา Single Active Replace)
+       เก็บไว้เพื่อคำนวณการหนีบใหม่ตอนผู้เล่นเลื่อนจอระหว่างที่การ์ดยังอยู่ */
+    let NC_LIVE = null, NC_REFIT_RAF = 0;
 
     /* edge-trigger กันแจ้งเตือนซ้ำรัว (กับดักข้อ 3) */
     let NC_SHIELD_SEEN = 0;
@@ -13322,12 +13322,6 @@
       return !!gs && gs.classList.contains('active');
     }
 
-    /* นาฬิกาต่อข้อเดินอยู่ไหม — ตอนถูก v4.8.1 หยุดไว้ handle ทั้งคู่เป็น null
-       จึงนับว่า "ว่าง" โดยอัตโนมัติ ซึ่งถูกต้อง เพราะตอนหยุดไม่มีแรงกดดันเรื่องเวลา */
-    function ncBusy() {
-      try { return !!QUESTION_TIMER || !!FREEZE_TIMER; } catch (e) { return false; }
-    }
-
     // ── โหมดแจ้งเตือน ─────────────────────────────────────────────
     function ncLoadMode() {
       try {
@@ -13343,7 +13337,6 @@
       if (NC_MODES.indexOf(m) === -1) return;
       NC_MODE = m;
       ncSaveMode();
-      if (m !== 'all') { NC_Q = []; ncStopPump(); }
       ncApplyBand();
       ncPaintBell();
       ncPaintSettings();
@@ -13398,75 +13391,89 @@
           'Toast ทุกใบถูกล็อกไว้ในแถบขอบบนสุด ไม่ทับโจทย์และตัวเลือก</div>';
     }
 
-    // ── เอนจินแสดงผลของชั้นนี้ ────────────────────────────────────
-    /* "01/25" ท้ายแท็บดรรชนี — แบนเนอร์คอมแพกต์ไม่มีที่พอสำหรับชื่อหมวดเต็ม */
-    function ncTagIndex(tag) {
-      const s = String(tag || '');
-      const m = s.match(/(\d+\s*\/\s*\d+)\s*$/);
-      return m ? m[1] : s;
+    // ── เอนจินแสดงผลของชั้นนี้ (v4.9.1 · Full-Card Real-Time) ─────
+    /* การ์ดใหญ่เต็มใบ 4-5 บรรทัด — โครง DOM เดียวกับ toast ของ v4.1 เป๊ะ
+       (หัวข้อ SYSTEM + รหัสอ้างอิง · หัวเรื่อง · เนื้อความเต็มที่ def เขียนไว้)
+       จึงได้รายละเอียดครบทุกอย่างที่ SYS_NOTIF ทั้ง 25 รายการเตรียมไว้อยู่แล้ว
+       เช่น ANL_UNLOCK_WORD ที่มีอักษรจีน · พินอิน · คำแปล · หมวดคำ · ตำราอ้างอิง
+       《汉语教程》 A1 · ยอดคำที่ปราบได้ทั้งหมด — ไม่ต้องไปแก้ตัว def เลยสักรายการ
+
+       **Single Active Replace** — บนจอมีได้ครั้งละ 1 ใบ ใบใหม่ล้างใบเก่าทิ้งทันที
+       ทั้งในและนอกหน้าเล่นเกม จึงไม่มีการ์ดกองซ้อนย้อนลงมาบังโซนโจทย์และตัวเลือก A-D */
+    /* การ์ดใหญ่ยาวไม่เท่ากันตามเนื้อความของแต่ละ def — วัดจริงแล้ว 48 ใบจาก 51 ใบ
+       จบเหนือหัวตัวอักษรจีนพอดีอยู่แล้ว เหลือ 3 ใบที่ยาวสุด (CD_PICK_2 · CD_PICK_3 · CD_DROP)
+       ล้นไปคร่อมหัว #gWord ราว 10px และบนจอเตี้ยที่ปิด sticky ไว้จะล้นได้มากกว่านั้น
+       ตัวนี้จึงหนีบความสูงให้จบก่อนถึงโซนโจทย์เสมอ **วัดจากพิกัดจริงทุกครั้ง ไม่ใช้ media query เดา**
+       เพราะความสูงการ์ดขึ้นกับความยาวข้อความของ def ที่สุ่มมายิง
+
+       ส่วนที่ถูกตัดจะจางหายด้วย mask ไม่ใช่ตัดขาดกลางบรรทัด (ใส่ทั้งแบบมี -webkit- และไม่มี
+       ตามกับดักข้อ 15 · เบราว์เซอร์ที่ไม่รู้จัก mask จะได้ขอบตัดตรง ๆ ซึ่งยังอ่านได้ ไม่ใช่จอพัง) */
+    function ncFitCard(el) {
+      /* ล้างของเดิมก่อนวัดเสมอ — ต้องได้ความสูงธรรมชาติ ไม่ใช่ความสูงที่หนีบไว้รอบก่อน
+         และทำให้ฟังก์ชันนี้กลับทิศได้ (เลื่อนจอกลับมามีที่พอ การ์ดต้องคลี่คืนเต็มใบ) */
+      el.style.maxHeight = '';
+      el.classList.remove('nc-clip');
+
+      const ids = ['gWord', 'gPinyin', 'gQuestion', 'gChoices'];
+      let top = Infinity;
+      for (let i = 0; i < ids.length; i++) {
+        const n = document.getElementById(ids[i]);
+        if (!n) continue;
+        const r = n.getBoundingClientRect();
+        if (r.height > 0 && r.bottom > 0) top = Math.min(top, r.top);
+      }
+      if (!isFinite(top)) return;                       /* ไม่มีโจทย์อยู่บนจอ ปล่อยเต็มใบ */
+      const box = el.getBoundingClientRect();
+      const avail = Math.floor(top - box.top - NC_FIT_GAP);
+      if (avail >= box.height) return;                  /* พอดีอยู่แล้ว ไม่ต้องหนีบ */
+      el.style.maxHeight = Math.max(NC_FIT_MIN, avail) + 'px';
+      el.classList.add('nc-clip');
     }
 
-    function ncPlain(s) { return String(s == null ? '' : s).replace(/<[^>]*>/g, ''); }
+    /* ผู้เล่นเลื่อนจอระหว่างที่การ์ดยังอยู่ (2.0-2.5 วิ) โจทย์จะไต่ขึ้นมาใต้การ์ด
+       โดยเฉพาะจอเตี้ยที่ v4.8.1 ปิด sticky ไว้ การ์ดจึงต้องคำนวณการหนีบใหม่ตามการเลื่อน
+       ไม่ใช่หนีบครั้งเดียวตอนแสดงผล · ไม่มีการ์ดอยู่ = จบตั้งแต่บรรทัดแรก แทบไม่มีต้นทุน */
+    function ncRefit() {
+      NC_REFIT_RAF = 0;
+      if (!NC_LIVE) return;
+      if (!NC_LIVE.parentNode || !ncInGame()) { NC_LIVE = null; return; }
+      try { ncFitCard(NC_LIVE); } catch (e) { ncErr(e, 'ncRefit'); NC_LIVE = null; }
+    }
+
+    function ncRefitKick() {
+      if (!NC_LIVE || NC_REFIT_RAF) return;
+      NC_REFIT_RAF = requestAnimationFrame(ncRefit);
+    }
 
     function ncPaint(def, title, body, crit) {
-      /* นอกหน้าเล่นเกม (หน้าเกท/สมัคร) ไม่มีโจทย์ให้บัง — ใช้ toast เต็มใบของ v4.1 ตามเดิม */
-      if (!ncInGame()) return _ncShowToast(def, title, body);
-
       const layer = document.getElementById('snLayer');
       if (!layer) return;
 
-      /* Mode A — ครั้งละ 1 ใบ ใบใหม่ผลักใบเก่าออกทันที
-         **ต้องลบแบบซิงโครนัสเท่านั้น ห้ามเรียก snDismiss ในลูปนี้** (กับดักข้อ 1) */
-      while (layer.children.length >= NC_MAX_GAME) {
+      /* **ต้องลบแบบซิงโครนัสเท่านั้น ห้ามเรียก snDismiss ในลูปนี้** (กับดักข้อ 1)
+         snDismiss ลบโหนดหลังอนิเมชัน 300ms → children.length ไม่ลดในลูป → วนไม่จบ */
+      while (layer.children.length >= NC_MAX) {
         const oldest = layer.firstElementChild;
         if (!oldest) break;
         layer.removeChild(oldest);
       }
+      NC_LIVE = null;
 
       const el = document.createElement('div');
-      el.className = 'sn sn-mini' + (def.tone ? ' ' + def.tone : '') + (crit ? ' nc-crit' : '');
-      el.innerHTML = '<span class="sn-dot"></span>' +
-                     '<span class="sn-title">' + snMarkup(title) + '</span>' +
-                     '<span class="sn-tag">' + snEsc(ncTagIndex(def.tag)) + '</span>';
-      el.title = ncPlain(title) + (body ? '\n' + ncPlain(body) : '');
+      el.className = 'sn nc-card' + (def.tone ? ' ' + def.tone : '') + (crit ? ' nc-crit' : '');
+      el.innerHTML = '<div class="sn-head"><span class="sn-dot"></span>SYSTEM<span class="sn-tag">' +
+        snEsc(def.tag) + '</span></div><div class="sn-title">' + snMarkup(title) +
+        '</div><div class="sn-body">' + snMarkup(body) + '</div>';
       el.onclick = function () { snDismiss(el); };
       layer.appendChild(el);
+      if (ncInGame()) {
+        NC_LIVE = el;
+        try { ncFitCard(el); } catch (e) { ncErr(e, 'ncFitCard'); }
+      }
 
-      NC_LAST_AT = Date.now();
-      setTimeout(function () { snDismiss(el); }, crit ? NC_LIFE_CRIT : NC_LIFE);
-    }
-
-    // ── คิวแจ้งเตือนทั่วไป ────────────────────────────────────────
-    function ncStopPump() {
-      if (NC_PUMP) clearInterval(NC_PUMP);
-      NC_PUMP = 0;
-    }
-
-    /* ตัวจับเวลาเดินเฉพาะตอนมีของค้างในคิว แล้วดับตัวเองทันทีที่คิวหมด
-       ไม่ปล่อยให้เดินตลอดเกมแบบที่กับดักข้อ 22 เตือนไว้ */
-    function ncPump() {
-      if (NC_PUMP || !NC_Q.length) return;
-      NC_PUMP = setInterval(function () {
-        try { ncFlush(); } catch (e) { ncErr(e, 'ncPump'); ncStopPump(); }
-      }, NC_Q_TICK);
-    }
-
-    function ncQueue(def, title, body) {
-      /* ใบใหม่ของหมวดเดียวกันแทนที่ใบเก่าเสมอ — คิวเก็บ "สถานะล่าสุด" ไม่ใช่ประวัติ */
-      NC_Q = NC_Q.filter(function (x) { return x.def !== def; });
-      NC_Q.push({ def: def, title: title, body: body });
-      while (NC_Q.length > NC_Q_MAX) NC_Q.shift();
-      ncPump();
-    }
-
-    function ncFlush() {
-      if (!NC_Q.length) { ncStopPump(); return; }
-      if (!ncInGame() || NC_MODE !== 'all') { NC_Q = []; ncStopPump(); return; }
-      if (ncBusy()) return;                                            /* นาฬิกาเดินอยู่ — รอต่อ */
-      if (Date.now() - NC_LAST_AT < NC_LIFE + NC_Q_GAP) return;        /* เว้นช่องไฟให้ใบก่อนหน้าอ่านจบ */
-      const it = NC_Q.shift();
-      ncPaint(it.def, it.title, it.body, false);
-      if (!NC_Q.length) ncStopPump();
+      setTimeout(function () {
+        if (NC_LIVE === el) NC_LIVE = null;
+        snDismiss(el);
+      }, crit ? NC_LIFE_CRIT : NC_LIFE);
     }
 
     /* ทางเข้าแจ้งเตือนของชั้นนี้ — ไหลผ่าน snShowToast เหมือนทุกชั้น จึงโดนตัวกรองชุดเดียวกัน */
@@ -13482,16 +13489,20 @@
     // ══ ห่อฟังก์ชันของชั้นล่าง ═══════════════════════════════════════
     /* จุดกรองมีจุดเดียวคือ snShowToast — toast ของ **ทุกชั้น** (v4.1/v4.2/v4.4/v4.6/v4.7)
        ไหลมาลงที่นี่หมด จึงไม่ต้องไล่ห่อ sysNotify/qNotify/cxNotify/abNotify/cdNotify ทีละตัว
-       หน้าต่างบังคับกดยืนยัน (snShowGate) ไม่ถูกแตะเลย — ทุกโหมดยังเห็นเหมือนเดิมตามสเปก */
+       หน้าต่างบังคับกดยืนยัน (snShowGate) ไม่ถูกแตะเลย — ทุกโหมดยังเห็นเหมือนเดิมตามสเปก
+
+       **v4.9.1 ยกเลิกการกักคิวทั้งหมด (Disable Silence Queue)** — ทุกเหตุการณ์ยิงการ์ดขึ้น
+       ทันทีแบบ Real-time ไม่ว่านาฬิกาต่อข้อจะเดินอยู่หรือไม่ ผู้เล่นจึงประเมินสถานการณ์
+       ต่อสู้ได้สด ๆ · ที่กันจอรกคือกติกา Single Active Replace ใน ncPaint ไม่ใช่การหน่วงเวลา
+       เหลือแค่สวิตช์ 3 ระดับเป็นตัวคัดว่าจะให้เห็นแค่ไหน */
     const _ncShowToast = snShowToast;
     snShowToast = function (def, title, body) {
       if (!NC_READY || !def) return _ncShowToast.apply(this, arguments);
       try {
-        const crit = ncIsCrit(def);
         if (NC_MODE === 'off') return;                        /* 🔕 ปิดทั้งหมด */
+        const crit = ncIsCrit(def);
         if (NC_MODE === 'crit' && !crit) return;              /* ⚠️ เฉพาะวิกฤต */
-        if (ncInGame() && ncBusy() && !crit) { ncQueue(def, title, body); return; }
-        return ncPaint(def, title, body, crit);
+        return ncPaint(def, title, body, crit);               /* 🔔 ยิงสดทันที */
       } catch (e) {
         ncErr(e, 'snShowToast');
         return _ncShowToast.apply(this, arguments);
@@ -13587,11 +13598,11 @@
       return r;
     };
 
-    /* ข้อจบจริง (ตอบ/หมดเวลา/ย้ายชั้น) — ทิ้งนาฬิกาเตือนของข้อนั้น แล้วลองปล่อยคิวทันที */
+    /* ข้อจบจริง (ตอบ/หมดเวลา/ย้ายชั้น) — ทิ้งนาฬิกาเตือนของข้อนั้น */
     const _ncClearQuestionTimer = clearQuestionTimer;
     clearQuestionTimer = function () {
       const r = _ncClearQuestionTimer.apply(this, arguments);
-      try { ncDisarmLow(); ncPump(); } catch (e) { ncErr(e, 'clearQuestionTimer'); }
+      try { ncDisarmLow(); } catch (e) { ncErr(e, 'clearQuestionTimer'); }
       return r;
     };
 
@@ -13654,7 +13665,7 @@
       } finally {
         NC_BOOT = false;
         try {
-          NC_Q = []; ncStopPump(); ncDisarmLow();
+          ncDisarmLow();
           NC_SHIELD_SEEN = (typeof G !== 'undefined' && G) ? Math.max(0, Math.round(G.shield || 0)) : 0;
           ncApplyBand(); ncPaintBell();
         } catch (e) { ncErr(e, 'startGame'); }
@@ -13663,7 +13674,7 @@
 
     const _ncExitGame = exitGame;
     exitGame = function () {
-      try { NC_Q = []; ncStopPump(); ncDisarmLow(); NC_SHIELD_SEEN = 0; } catch (e) {}
+      try { ncDisarmLow(); NC_SHIELD_SEEN = 0; } catch (e) {}
       return _ncExitGame.apply(this, arguments);
     };
 
@@ -13696,21 +13707,27 @@
              โหมด 🔕 ตั้ง --nc-band เป็น 0 ที่เดียว แล้วทั้งชุดยุบหายไปเอง */
           '#gameScreen.active{margin-top:var(--nc-band,0px);' +
             'height:calc(100% - var(--nc-band,0px))}' +
-          /* ชั้นแจ้งเตือนในโหมดเล่น — ชิดขอบบนสุด และแคบลงเล็กน้อยให้พอดีแถบ */
-          'body.game-mode #snLayer{gap:4px;padding-top:max(3px,env(safe-area-inset-top))}' +
+          /* ชั้นแจ้งเตือนในโหมดเล่น — เริ่มที่แถบปลอดภัยขอบบนสุด
+             ขอบบนการ์ดจึงไม่ไหลขึ้นไปชนแถบสถานะของเครื่อง (รอยบาก/นาฬิกา/แบตเตอรี่) */
+          'body.game-mode #snLayer{gap:6px;padding-top:max(6px,env(safe-area-inset-top))}' +
 
-          /* ── 2) Mini-Banner (Mode A) ────────────────────────────────
-             ทรงคอมแพกต์บรรทัดเดียว: จุดพัลส์ · หัวข้อ · แท็บดรรชนี
-             สูงจริง ~37px ซึ่งพอดีกับ NC_BAND 42 — ถ้าจะเพิ่มบรรทัดต้องวัดใหม่แล้วดัน NC_BAND ตาม */
-          '.sn.sn-mini{display:flex;align-items:center;gap:8px;padding:7px 11px;border-radius:9px;' +
-            'animation:ncIn .2s ease-out both}' +
-          '.sn.sn-mini .sn-title{flex:1 1 auto;min-width:0;font-size:12px;font-weight:800;' +
-            'line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
-          '.sn.sn-mini .sn-tag{flex:0 0 auto;margin-left:0;font-size:9px;font-weight:800;' +
-            'letter-spacing:.6px;opacity:.72}' +
-          '.sn.sn-mini .sn-dot{flex:0 0 auto}' +
-          '.sn.sn-mini.nc-crit{border-width:1.5px}' +
-          '@keyframes ncIn{from{opacity:0;transform:translateY(-9px)}to{opacity:1;transform:none}}' +
+          /* ── 2) การ์ดใหญ่เต็มใบ (v4.9.1 · Full-Card) ─────────────────
+             ใช้โครง .sn ของ v4.1 ทั้งดุ้น (กรอบเรืองแสง · ลาย scanline · จุดพัลส์ · โทนสี)
+             **ห้ามดันขนาดตัวหนังสือขึ้นจากของ v4.1 เด็ดขาด** — ร่างแรกขยับหัวเรื่องเป็น 14px
+             และเนื้อความเป็น 12.5px/1.6 ผลคือการ์ดที่ยาวที่สุด (CD_PICK_2 · ANL_LOW_ACC)
+             สูงจาก ~160px เป็น 178px แล้วขอบล่างเลยไปคร่อมหัวตัวอักษรจีนที่ y=161 พอดี
+             ขนาดของ v4.1 คือค่าที่พอดีกับช่องว่างเหนือโซนโจทย์อยู่แล้ว ปล่อยไว้อย่างนั้น
+             ถ้าจะขยับต้องวัดใหม่ทั้ง 51 ใบเทียบกับขอบบนของ #gWord */
+          '.sn.nc-card{max-height:min(46vh,340px);overflow:hidden;' +
+            'animation:ncIn .22s cubic-bezier(.2,.9,.3,1.25) both}' +
+          /* ใบที่ถูก ncFitCard หนีบ — ให้ท้ายการ์ดจางหายแทนการตัดขาดกลางบรรทัด */
+          '.sn.nc-card.nc-clip{-webkit-mask-image:linear-gradient(180deg,#000 0,' +
+            '#000 calc(100% - 26px),transparent 100%);' +
+            'mask-image:linear-gradient(180deg,#000 0,#000 calc(100% - 26px),transparent 100%)}' +
+          /* หมวดวิกฤตเน้นกรอบหนาขึ้นนิดเดียว ไม่เปลี่ยนสีที่ tone กำหนดไว้แล้ว */
+          '.sn.nc-card.nc-crit{border-width:1.5px}' +
+          '@keyframes ncIn{from{opacity:0;transform:translateY(-14px) scale(.97)}' +
+            'to{opacity:1;transform:none}}' +
 
           /* ── 3) ปุ่มกระดิ่งบนหัวหน้าจอเล่น ──────────────────────────
              ใช้โครง .g-logout เดิมของแถบหัว แล้วทับสีเป็นโทนฟ้าให้เข้าชุดกับปุ่ม 🔊 */
@@ -13742,6 +13759,14 @@
         mute.insertAdjacentHTML('afterend',
           '<button type="button" class="g-logout nc-bell" id="ncBell" onclick="ncCycleMode()">🔔</button>');
       }
+
+      /* หน้าเล่นเป็นกล่องเลื่อนของตัวเอง (Viewport Lock ของ v4.8.1) เหตุการณ์เลื่อนจึงอยู่ที่
+         #gameScreen ไม่ใช่ที่ window — ผูกที่ window อย่างเดียวจะไม่ได้ยินอะไรเลย
+         passive:true เพราะไม่เคย preventDefault และหน่วงด้วย rAF อยู่แล้ว */
+      const gsN = document.getElementById('gameScreen');
+      if (gsN) gsN.addEventListener('scroll', ncRefitKick, { passive: true });
+      window.addEventListener('resize', ncRefitKick);
+      window.addEventListener('orientationchange', ncRefitKick);
 
       ncLoadMode();
       ncApplyBand();

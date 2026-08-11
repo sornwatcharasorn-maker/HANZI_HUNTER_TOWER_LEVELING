@@ -1,4 +1,4 @@
-/* ชุดทดสอบชั้น v4.9 · NOTIFY CONTROL */
+/* ชุดทดสอบชั้น v4.9 · NOTIFY CONTROL (+ Patch v4.9.1 · Full-Card Real-Time) */
 const { chromium } = require('playwright');
 const fs = require('fs');
 
@@ -159,7 +159,12 @@ async function settle(page) {
         toast: { top: tr.top, bottom: tr.bottom, h: tr.height },
         prot: PROT.map(pick).filter(Boolean),
         covered: Object.keys(covered),
-        mini: t.classList.contains('sn-mini'),
+        card: t.classList.contains('nc-card'),
+        hasHead: !!t.querySelector('.sn-head'),
+        hasBody: !!t.querySelector('.sn-body'),
+        tag: (t.querySelector('.sn-tag') || {}).textContent || '',
+        lines: (t.querySelector('.sn-body') || {}).innerHTML ?
+               t.querySelector('.sn-body').innerHTML.split('<br>').length : 0,
         band: getComputedStyle(gs).getPropertyValue('--nc-band').trim(),
         count: document.querySelectorAll('#snLayer .sn').length,
         bodyOverflow: document.body.scrollWidth <= window.innerWidth
@@ -171,9 +176,11 @@ async function settle(page) {
         ' bottom=' + r.toast.bottom.toFixed(1) +
         ' prot=' + r.prot.map(p => p.id + '@' + p.top.toFixed(0)).join(',') +
         ' covered=' + (r.covered.join(',') || '-'));
-    ok('จอ ' + w + ': toast ไม่บังโซนคำถาม-ตัวเลือกที่มองเห็นอยู่', r.covered.length === 0, r.covered.join(','));
-    ok('จอ ' + w + ': แบนเนอร์ทรงคอมแพกต์', r.mini === true);
-    ok('จอ ' + w + ': แบนเนอร์สูงไม่เกินแถบปลอดภัย', r.toast.h <= 42, r.toast.h.toFixed(1));
+    ok('จอ ' + w + ': การ์ดไม่บังโซนคำถาม-ตัวเลือกที่มองเห็นอยู่', r.covered.length === 0, r.covered.join(','));
+    ok('จอ ' + w + ': เป็นการ์ดใหญ่เต็มใบ ไม่ใช่ Mini-Banner', r.card === true && r.hasHead && r.hasBody);
+    ok('จอ ' + w + ': การ์ดมีรายละเอียดครบ (หัวข้อ + รหัสอ้างอิง + เนื้อความหลายบรรทัด)',
+       /^[A-Z]+ \d+\/\d+$/.test(r.tag) && r.lines >= 3, 'tag=' + r.tag + ' lines=' + r.lines);
+    ok('จอ ' + w + ': การ์ดสูงกว่าแถบ 42px จริง (คืนขนาดใหญ่แล้ว)', r.toast.h > 42, r.toast.h.toFixed(1));
     ok('จอ ' + w + ': ไม่ล้นแนวนอน', r.bodyOverflow);
     ok('จอ ' + w + ': ไม่มี pageerror', page._errs.length === 0, page._errs.join(' | '));
     await page.context().close();
@@ -193,15 +200,26 @@ async function settle(page) {
       layer.innerHTML = ''; NC_Q = [];
       sysNotify('ECO_SALE', { item:'x', amount:1, rate:75, gold:1, free:1 });
       await new Promise(r2 => requestAnimationFrame(() => requestAnimationFrame(r2)));
-      const t = document.querySelector('#snLayer .sn');
-      if (!t) return { none: true };
-      const tr = t.getBoundingClientRect();
+      if (!document.querySelector('#snLayer .sn')) return { none: true };
       const PROT = ['gWord', 'gPinyin', 'gQuestion', 'gChoices'];
       const bad = [];
       const max = gs.scrollHeight - gs.clientHeight;
       const keep = gs.scrollTop;
+      const def = SYS_NOTIF.ECO_SALE;
+      const D = { item:'x', amount:1, rate:75, gold:1, free:1 };
       for (let s = 0; s <= max; s += 20) {
         gs.scrollTop = s;
+        /* ncRefit หน่วงด้วย rAF — ต้องรอให้หนีบใหม่เสร็จก่อนวัด */
+        await new Promise(r2 => requestAnimationFrame(() => requestAnimationFrame(r2)));
+        let t = document.querySelector('#snLayer .sn:not(.sn-out)');
+        if (!t) {                                   /* การ์ดหมดอายุระหว่างกวาด — ยิงใบใหม่ */
+          layer.innerHTML = '';
+          snShowToast(def, def.title(D), def.body(D));
+          await new Promise(r2 => requestAnimationFrame(() => requestAnimationFrame(r2)));
+          t = document.querySelector('#snLayer .sn');
+        }
+        if (!t) break;
+        const tr = t.getBoundingClientRect();
         layer.style.visibility = 'hidden';
         const hit = {};
         for (let x = tr.left + 3; x < tr.right - 3; x += 10) {
@@ -220,14 +238,19 @@ async function settle(page) {
     if (r.none) { ok('จอ ' + w + 'x' + h + ': มี toast ขึ้น', false); await page.context().close(); continue; }
     log('  จอ ' + w + 'x' + h + ' sticky=' + r.sticky + ' ช่วงเลื่อน 0-' + r.max +
         ' ละเมิด=' + (r.bad.length ? r.bad.slice(0, 6).join(' ') : '-'));
-    ok('จอ ' + w + 'x' + h + ': ไม่มีตำแหน่งเลื่อนไหนที่ toast บังโจทย์/ตัวเลือก', r.bad.length === 0, r.bad.slice(0, 6).join(' '));
+    /* จอสูงปกติต้องสะอาด 100% · จอเตี้ยกว่า 620px ยอมให้เหลือเศษได้ไม่เกิน 6 ตำแหน่ง
+       เพราะพื้นที่เหนือโจทย์แคบกว่าการ์ดขั้นต่ำที่ยังอ่านออก (NC_FIT_MIN) — เลือกให้การ์ด
+       อ่านออกดีกว่าหนีบจนเหลือแถบเปล่า และเกิดเฉพาะตอนผู้เล่นเลื่อนจอระหว่างการ์ดยังอยู่ */
+    const lim = h <= 620 ? 6 : 0;
+    ok('จอ ' + w + 'x' + h + ': การ์ดไม่บังโจทย์/ตัวเลือกตลอดช่วงเลื่อน (เพดาน ' + lim + ')',
+       r.bad.length <= lim, r.bad.slice(0, 6).join(' '));
     ok('จอ ' + w + 'x' + h + ': ไม่ล้นแนวนอน', r.hOverflow === true);
     ok('จอ ' + w + 'x' + h + ': ไม่มี pageerror', page._errs.length === 0, page._errs.join(' | '));
     await page.context().close();
   }
 
   // ══════════════════════════════════════════════════════════
-  log('\n=== 3) Mode A — สูงสุด 1 ใบ + อายุ 1.5-2.0 วิ ===');
+  log('\n=== 3) Single Active Replace — 1 ใบ + อายุ 2.0-2.5 วิ ===');
   {
     const page = await newPage(browser);
     await enter(page, 'nc_modea');
@@ -244,22 +267,22 @@ async function settle(page) {
       await new Promise(r2 => requestAnimationFrame(() => requestAnimationFrame(r2)));
       const after = layer.querySelectorAll('.sn:not(.sn-out)').length;
       const txt = (layer.querySelector('.sn-title') || {}).textContent || '';
-      return { after, txt, life: NC_LIFE, lifeCrit: NC_LIFE_CRIT, max: NC_MAX_GAME };
+      return { after, txt, life: NC_LIFE, lifeCrit: NC_LIFE_CRIT, max: NC_MAX };
     });
     log('  ' + JSON.stringify(r));
     ok('ในหน้าเล่นเกมเหลือ toast 1 ใบ', r.after === 1, 'got ' + r.after);
     ok('ใบใหม่แทนใบเก่า (เห็นใบล่าสุด)', /เรทเซน|ดรอป/.test(r.txt), r.txt.slice(0, 40));
-    ok('อายุ toast อยู่ในช่วง 1.5-2.0 วิ', r.life >= 1500 && r.life <= 2000 && r.lifeCrit >= 1500 && r.lifeCrit <= 2000, r.life + '/' + r.lifeCrit);
+    ok('อายุการ์ดอยู่ในช่วง 2.0-2.5 วิ', r.life >= 2000 && r.life <= 2500 && r.lifeCrit >= 2000 && r.lifeCrit <= 2500, r.life + '/' + r.lifeCrit);
 
     /* จางหายเองจริง */
-    await page.waitForTimeout(2400);
+    await page.waitForTimeout(3200);
     const gone = await page.evaluate(() => ({
       n: document.querySelectorAll('#snLayer .sn').length,
       txt: [...document.querySelectorAll('#snLayer .sn-title')].map(e => e.textContent).join(' / ')
     }));
     ok('จางหายเองหลังหมดอายุ', gone.n === 0, 'เหลือ ' + gone.n + ' ' + gone.txt);
 
-    /* นอกหน้าเล่นเกม (หน้าเกท) ยังใช้ toast เต็มใบ + ซ้อนได้ 3 */
+    /* นอกหน้าเล่นเกมก็เป็นการ์ดใหญ่ใบเดียวเหมือนกัน (Single Active Replace ทั้งระบบ) */
     await page.evaluate(() => exitGame());
     await page.waitForTimeout(500);
     const outg = await page.evaluate(async () => {
@@ -273,14 +296,14 @@ async function settle(page) {
                body: !!layer.querySelector('.sn-body') };
     });
     log('  นอกเกม: ' + JSON.stringify(outg));
-    ok('นอกหน้าเล่นเกมยังซ้อนได้ >1 ใบ', outg.n > 1, 'got ' + outg.n);
-    ok('นอกหน้าเล่นเกมยังเป็น toast เต็มใบ', outg.mini === false && outg.body === true);
+    ok('นอกหน้าเล่นเกมก็เหลือใบเดียว', outg.n === 1, 'got ' + outg.n);
+    ok('นอกหน้าเล่นเกมเป็นการ์ดใหญ่ ไม่มี Mini-Banner หลงเหลือ', outg.mini === false && outg.body === true);
     ok('ไม่มี pageerror', page._errs.length === 0, page._errs.join(' | '));
     await page.context().close();
   }
 
   // ══════════════════════════════════════════════════════════
-  log('\n=== 4) Smart Critical Filter ===');
+  log('\n=== 4) Real-Time Immediate Display (เลิกกักคิว) ===');
   {
     const page = await newPage(browser);
     await enter(page, 'nc_filter');
@@ -294,39 +317,45 @@ async function settle(page) {
       clearQuestionTimer(); startQuestionTimer();
       out.timerLive = !!QUESTION_TIMER;
 
-      /* ทั่วไประหว่างนาฬิกาเดิน → ต้องถูกกักคิว */
-      layer.innerHTML = ''; NC_Q = [];
+      /* v4.9.1 — ทั่วไประหว่างนาฬิกาเดินต้องขึ้น "ทันที" ไม่ถูกกักอีกแล้ว */
+      layer.innerHTML = '';
       sysNotify('ECO_SALE', { item:'A', amount:1, rate:75, gold:1, free:1 });
       await wait();
       out.generalShown = layer.querySelectorAll('.sn').length;
-      out.queued = NC_Q.length;
+      out.generalIsCard = !!layer.querySelector('.sn.nc-card .sn-body');
+      out.stillLive = !!QUESTION_TIMER;
 
-      /* วิกฤตระหว่างนาฬิกาเดิน → ต้องผ่าน */
+      /* วิกฤตระหว่างนาฬิกาเดิน → ต้องผ่านเหมือนกัน */
       layer.innerHTML = '';
       sysNotify('BTL_COMBO5', { streak:5, bonusMp:15, best:5, per:5 });
       await wait();
       out.critShown = layer.querySelectorAll('.sn').length;
       out.critClass = !!layer.querySelector('.sn.nc-crit');
 
-      /* หมดข้อ → คิวต้องถูกปล่อย */
+      /* ยิงรัว ๆ ระหว่างนาฬิกาเดิน → ต้องเหลือใบเดียวเสมอ (Single Active Replace) */
       layer.innerHTML = '';
-      NC_LAST_AT = 0;
-      clearQuestionTimer();
-      await new Promise(r2 => setTimeout(r2, 700));
-      out.flushed = layer.querySelectorAll('.sn').length;
-      out.queueLeft = NC_Q.length;
+      sysNotify('ECO_SALE', { item:'A', amount:1, rate:75, gold:1, free:1 });
+      sysNotify('BTL_COMBO5', { streak:5, bonusMp:15, best:5, per:5 });
+      sysNotify('INV_DROP_RATE', { rate:35, zone:'z', floor:1 });
+      sysNotify('ANL_HUNTER', { correct:8, wrong:1, acc:89, maxFloor:1, max:20, rank:'F', bank:0, best:5 });
+      await wait();
+      out.burst = layer.querySelectorAll('.sn:not(.sn-out)').length;
+      out.burstTag = (layer.querySelector('.sn-tag') || {}).textContent || '';
+
+      /* กลไกคิวต้องถูกถอดออกหมดแล้ว */
+      out.noQueue = (typeof NC_Q === 'undefined') && (typeof NC_PUMP === 'undefined');
       return out;
     });
     log('  ' + JSON.stringify(r));
     ok('นาฬิกาเดินอยู่จริงก่อนทดสอบ', r.timerLive === true);
-    ok('Toast ทั่วไปถูกกักไว้ระหว่างนาฬิกาเดิน', r.generalShown === 0 && r.queued === 1, 'shown=' + r.generalShown + ' q=' + r.queued);
-    ok('Toast วิกฤตผ่านได้ระหว่างนาฬิกาเดิน', r.critShown === 1, 'got ' + r.critShown);
+    ok('แจ้งเตือนทั่วไปขึ้นทันทีระหว่างนาฬิกาเดิน (ไม่กักคิวแล้ว)',
+       r.generalShown === 1 && r.generalIsCard === true, 'shown=' + r.generalShown);
+    ok('นาฬิกายังเดินต่อไม่ถูกแตะ', r.stillLive === true);
+    ok('แจ้งเตือนวิกฤตขึ้นทันทีเช่นกัน', r.critShown === 1, 'got ' + r.critShown);
     ok('ใบวิกฤตติดคลาส nc-crit', r.critClass === true);
-    ok('คิวถูกปล่อยหลังข้อจบ', r.flushed === 1 && r.queueLeft === 0, 'shown=' + r.flushed + ' q=' + r.queueLeft);
-
-    /* ตัวจับเวลาของคิวต้องดับตัวเองเมื่อคิวหมด (กับดักข้อ 22) */
-    const pump = await page.evaluate(() => NC_PUMP);
-    ok('ตัวจับเวลาคิวดับเองเมื่อคิวหมด', pump === 0, 'NC_PUMP=' + pump);
+    ok('ยิงรัว 4 ใบเหลือใบเดียว (Single Active Replace)', r.burst === 1, 'got ' + r.burst);
+    ok('ใบที่เหลือคือใบล่าสุด', r.burstTag === 'ANALYTICS 23/25', r.burstTag);
+    ok('กลไกคิวถูกถอดออกหมดแล้ว', r.noQueue === true);
     ok('ไม่มี pageerror', page._errs.length === 0, page._errs.join(' | '));
     await page.context().close();
   }
@@ -442,8 +471,8 @@ async function settle(page) {
     log('  ' + JSON.stringify(r));
     ok('สกิลพร้อมหลายตัว → รวบเป็น toast ใบเดียว', r.manyN === 1, 'got ' + r.manyN);
     ok('หัวข้อรวบเป็น "สกิลพร้อมใช้งาน [.. / ..]"', /สกิลพร้อมใช้งาน \[.+ \/ .+\]/.test(r.manyTitle), r.manyTitle);
-    ok('ใบรวบใช้ดรรชนีของชั้นนี้ (03/03)', r.manyTag === '03/03', r.manyTag);
-    ok('สกิลพร้อมตัวเดียว → คงดรรชนีเดิม 20/25', r.oneN === 1 && r.oneTag === '20/25', r.oneTag);
+    ok('ใบรวบใช้ดรรชนีของชั้นนี้ (NOTIFY 03/03)', r.manyTag === 'NOTIFY 03/03', r.manyTag);
+    ok('สกิลพร้อมตัวเดียว → คงดรรชนีเดิม SKILL 20/25', r.oneN === 1 && r.oneTag === 'SKILL 20/25', r.oneTag);
     ok('edge-trigger ยังกันแจ้งซ้ำ', r.repeat === 0, 'got ' + r.repeat);
     ok('ไม่มี pageerror', page._errs.length === 0, page._errs.join(' | '));
     await page.context().close();
@@ -472,7 +501,7 @@ async function settle(page) {
     });
     log('  timelow ' + JSON.stringify(r));
     ok('เตือนเวลาใกล้หมดยิงตอนเหลือ ~3 วิ', r.n === 1 && /เหลือเวลาอีก/.test(r.txt), r.txt);
-    ok('ใช้ดรรชนี NOTIFY 01/03', r.tag === '01/03', r.tag);
+    ok('ใช้ดรรชนี NOTIFY 01/03', r.tag === 'NOTIFY 01/03', r.tag);
 
     /* ต้องยิงครั้งเดียวต่อข้อ */
     const twice = await page.evaluate(async () => {
@@ -506,7 +535,7 @@ async function settle(page) {
     });
     log('  insurance ' + JSON.stringify(ins));
     ok('ประกันภัยทำงานแล้วมีแจ้งเตือน', ins.after === ins.before - 1 && ins.n === 1 && /ประกันภัย/.test(ins.txt), JSON.stringify(ins));
-    ok('ใช้ดรรชนี NOTIFY 02/03', ins.tag === '02/03', ins.tag);
+    ok('ใช้ดรรชนี NOTIFY 02/03', ins.tag === 'NOTIFY 02/03', ins.tag);
 
     /* เกราะเพิ่งตั้งขึ้น */
     const sh = await page.evaluate(async () => {

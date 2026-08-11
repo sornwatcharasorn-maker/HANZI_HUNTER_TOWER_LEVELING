@@ -13774,6 +13774,393 @@
       NC_READY = true;
     })();
 
+
+    // ══════════════════════════════════════════════════
+    // v4.9.2 · DUAL WARP GATE — ประตูวาปก่อนบอส + หลังบอส
+    // (ทำตามคำสั่งอัปเดตระบบ "Patch v4.8.2: Pre-Boss & Post-Boss Dual Warp Gate")
+    // ══════════════════════════════════════════════════
+    /* ชั้นนี้ไม่แก้โค้ด v4.0-v4.9.1 เลยแม้แต่บรรทัดเดียว — ห่อฟังก์ชันแบบเดียวกับสิบชั้นก่อนหน้า
+       ทุกอย่างขึ้นต้นด้วย dw / DW_ · ลบทั้งบล็อกนี้ทิ้งแล้วเกมยังเล่นได้ปกติ
+
+       ชื่อรุ่นในคำสั่งคือ "Patch v4.8.2" แต่ต้องวางไว้ท้ายสุดของไฟล์เพื่อให้ห่อทับชั้น v4.9.1 ได้
+       ป้ายชั้นจึงเป็น v4.9.2 ตามลำดับการห่อจริง ไม่ใช่ตามเลขในคำสั่ง
+
+       สามเรื่องตามสเปก:
+         1. ประตูก่อนบอส (ชั้น 4/9/14/19 → ยืนอยู่ชั้น 5/10/15/20) — 🛒 ร้านค้า + ⚔️ เข้าสู่ห้องบอส
+         2. ประตูหลังบอส (ชั้น 5/10/15/20) — 💰 สรุปทอง/EXP ที่บอสจ่าย + 🛒 ร้านค้า + 🌀 ข้ามสู่โซนถัดไป
+         3. นาฬิกาต่อข้อหยุดสนิทตลอดที่ประตูเปิดอยู่ จนกว่าจะกดปุ่มเข้าชั้นถัดไป
+
+       **ประตูหลังบอสมีอยู่แล้วใน v4.0** (openWarp('floor') ที่ clearFloor สั่งไว้)
+       ชั้นนี้จึงไม่สร้างประตูใหม่ทับ แต่เติมของสามอย่างที่สเปกขอลงบนประตูเดิม
+       ส่วนประตูก่อนบอสเป็นของใหม่ทั้งหมด — v4.0 ไหลจากชั้น 4 เข้าชั้น 5 ทันทีโดยไม่มีจุดพัก
+
+       **ไม่มีทองหรือ EXP ก้อนใหม่ถูกแจกเพิ่มจากชั้นนี้** — "แจก Gold และ EXP Bonus จากบอส"
+       ทำโดยยกยอดที่ clearFloor ของ v4.0 (+ ตัวคูณการ์ดของ v4.7) จ่ายไปแล้วขึ้นมาโชว์เป็นบรรทัดสรุป
+       ถ้าจ่ายซ้ำอีกก้อนจะพังกติกากันเงินเฟ้อที่ v4.2/v4.6/v4.7 ล็อกไว้ทั้งชุด (ทองเคลียร์ชั้นบอส = 500) */
+
+    const DW_VER  = 'v4.9.2';
+    const DW_PRE  = 'preboss';   /* kind ใหม่ของชั้นนี้ — v4.0 รับ kind ที่ไม่รู้จักได้อยู่แล้ว */
+    const DW_POST = 'floor';     /* kind เดิมของ v4.0 = ประตูที่เปิดหลังปราบบอสสำเร็จ */
+    const DW_WAIT = 1500;        /* หน่วงเท่ากับ scheduleTurn ของ clearFloor ใน v4.0 เป๊ะ */
+
+    /* สรุปรางวัลของ "ประตูที่กำลังเปิดอยู่" ไม่ใช่ยอดสะสมของบัญชี — ไม่ต้องเซฟ
+       (กฎเดียวกับ AB_LIVE ของ v4.6 · HD_TIMEOUT ของ v4.8 · AC_HELD ของ v4.8.1) */
+    let DW_WON = null;
+
+    function dwErr(e, where) {
+      if (typeof gcErrPush !== 'function') return;
+      try { gcErrPush('err', 'DUALGATE: ' + ((e && e.message) || e), where || '', (e && e.stack) || ''); } catch (e2) {}
+    }
+
+    function dwG() { return (typeof G !== 'undefined' && G) ? G : null; }
+
+    /* ชั้นก่อนบอส = ชั้นที่ "ชั้นถัดไป" เป็นชั้นบอส — อ่านจาก isBossFloor ของ v4.0 ตรง ๆ
+       **ไม่มีเลข 4/9/14/19 ฮาร์ดโค้ดไว้ที่ไหน** ถ้าคาบบอสของ v4.0 เปลี่ยน ชั้นนี้ขยับตามเอง */
+    function dwIsPreBossFloor(f) { return f >= 1 && f < FLOOR_MAX && isBossFloor(f + 1); }
+
+    /* EXP ที่ได้จริงตลอดการเคลียร์ชั้น — ส่วนต่าง exp ดิบใช้ไม่ได้ เพราะ levelUpCheck ของ v4.0
+       หัก maxExp ออกทุกครั้งที่ขึ้นเลเวล (ได้ EXP เยอะ ๆ แล้วส่วนต่างติดลบได้)
+       จึงบวกเพดานของทุกขั้นที่ข้ามไปคืนเข้ามา โดยไล่เพดานด้วย expForLevel เหมือนที่ v4.0 ทำ */
+    function dwExpGained(g, lvlWas, expWas, maxWas) {
+      let total = (g.exp || 0) - expWas;
+      let cap = maxWas;
+      for (let L = lvlWas; L < (g.level || 1); L++) { total += cap; cap = expForLevel(L + 1); }
+      return Math.max(0, Math.round(total));
+    }
+
+    // ── DOM ที่ชั้นนี้เติมลงในแผงวาปเดิม ────────────────────────────
+    /* renderWarp ถูกเรียกทุกครั้งที่เปิดประตู **ต้องกันแทรกซ้ำเอง** (กับดักข้อ 2)
+       ไม่งั้นกล่องรางวัลกับปุ่มร้านค้าจะงอกเพิ่มทุกครั้งที่ปราบบอส */
+    function dwEnsureDom() {
+      const w = document.getElementById('gWarp');
+      if (!w) return null;
+
+      /* **กล่องรางวัลอยู่เหนือปุ่ม ไม่ใช่ใต้หัวข้อ** — แผงวาปสูงเกินช่องที่เห็นได้บนมือถือ
+         (วัดจริง 633px บนจอ 390x844 เทียบช่องว่างใต้การ์ดสถานะที่ติดหนึบ 451px)
+         dwFocusGate จึงยึดขอบล่างไว้ ของที่อยู่ใกล้ปุ่มที่สุดคือของที่ผู้เล่นเห็นแน่นอน
+         ลำดับที่ได้: ภาพประตู → หัวข้อ → แถวสถานะ → กล่องรางวัล → ปุ่มร้านค้า → ปุ่มไป
+         (อ่านเป็นเรื่องเดียวกันพอดี: ได้อะไรมา → เอาไปใช้ที่ร้าน → ไปต่อ) */
+      const go = w.querySelector('.g-warp-go');
+      if (go && !document.getElementById('dwReward')) {
+        go.insertAdjacentHTML('beforebegin',
+          '<div class="dw-reward" id="dwReward" style="display:none"></div>');
+      }
+      if (go && !document.getElementById('dwShop')) {
+        go.insertAdjacentHTML('beforebegin',
+          '<button type="button" class="dw-shop" id="dwShop" onclick="dwOpenShop()" style="display:none">' +
+          '🛒 เปิดร้านค้า</button>');
+      }
+      return w;
+    }
+
+    /* ปุ่มร้านค้าบนประตู — ไม่ได้ปลดล็อกแรงค์ให้ ถ้ายังไม่ถึง D-RANK ตัว openShop ของ v4.0
+       จะเปิดหน้าต่างอธิบายเงื่อนไขให้เองตามเดิม (กติกาเดียวกับปุ่ม SHOP ในแถวปุ่มล่าง) */
+    function dwOpenShop() {
+      const g = dwG();
+      if (!g || !g.warpOpen) return;
+      try { clearQuestionTimer(); } catch (e) { dwErr(e, 'dwOpenShop'); }
+      openShop();
+    }
+
+    function dwRewardRows(won) {
+      let h = '<div class="dw-rw-head">💰 รางวัลจากการปราบบอสชั้น ' + won.floor + '</div>' +
+        '<div class="dw-rw-row"><span>🪙 ทอง</span><b>+' + won.gold + '</b></div>' +
+        '<div class="dw-rw-row"><span>⭐ EXP</span><b>+' + won.exp + '</b></div>';
+      if (won.lv > 0) {
+        h += '<div class="dw-rw-row lv"><span>🎖️ เลเวลอัป</span><b>+' + won.lv +
+             ' → Lv.' + won.level + '</b></div>';
+      }
+      if (won.shards > 0) {
+        h += '<div class="dw-rw-row lv"><span>💎 เศษคริสตัล</span><b>+' + won.shards + '</b></div>';
+      }
+      return h;
+    }
+
+    /* บรรทัดเตือนดาเมจห้องบอส — จุดประสงค์ของประตูก่อนบอสตามสเปกคือ "เตรียมตัวรับดาเมจบอสใหม่"
+       ตัวเลขอ่านสดจาก hdDamage ของ v4.8 จึงตรงกับที่จะโดนจริงเสมอ ไม่ใช่เลขที่พิมพ์ทับไว้ */
+    function dwBossWarnRow(floor) {
+      if (typeof hdDamage !== 'function') return '';
+      let miss = 0, late = 0;
+      try { miss = hdDamage(floor, true, false); late = hdDamage(floor, true, true); }
+      catch (e) { dwErr(e, 'dwBossWarnRow'); return ''; }
+      return '<div class="g-warp-row warn"><span>⚠️ ดาเมจห้องบอส</span><b>' +
+        '<span class="dw-nw">ตอบผิด −' + miss + ' HP</span> · ' +
+        '<span class="dw-nw">หมดเวลา −' + late + ' HP</span></b></div>';
+    }
+
+    /* ดึงแผงประตูเข้ามาในจอตอนเปิด — จำเป็นตั้งแต่ patch นี้เพราะแผงสูงขึ้น (กล่องรางวัล +
+       ปุ่มร้านค้า) วัดจริงบนจอ 390x844 แล้วปุ่ม "เข้าสู่ห้องบอส" ไปตกที่ y=961 คือ **นอกจอ**
+       ถ้าผู้เล่นค้างอยู่ตำแหน่งเลื่อนเดิม ต้องไถหาปุ่มเองทั้งที่เกมกำลังรอให้กด
+
+       **ต้องกระโดดทันที ห้ามใช้ scroll แบบนุ่ม** (บทเรียนเดียวกับ acFocusQa ของ v4.8.1)
+       และ **ต้องไม่ดันหัวแผงมุดใต้การ์ดสถานะที่ติดหนึบ** จึงหนีบระยะเลื่อนไว้สองด้าน
+       เลื่อนน้อยที่สุดเท่าที่จำเป็น — เห็นครบทั้งใบอยู่แล้วก็ไม่ขยับเลย */
+    function dwFocusGateNow() {
+      const gs = document.getElementById('gameScreen');
+      const w  = document.getElementById('gWarp');
+      if (!gs || !w || !gs.classList.contains('active')) return;
+      if (w.style.display === 'none') return;
+
+      const r = w.getBoundingClientRect();
+      if (r.height <= 0) return;
+
+      /* การ์ดสถานะติดหนึบอยู่บนสุดของกล่องเลื่อน (v4.8.1) จอเตี้ยกว่า 620px ถูกปิด sticky ไว้ */
+      let head = gs.getBoundingClientRect().top;
+      const card = document.querySelector('.ac-battle');
+      if (card) {
+        try { if (getComputedStyle(card).position === 'sticky') head += card.getBoundingClientRect().height; }
+        catch (e) {}
+      }
+      const foot = window.innerHeight;
+
+      /* **แผงสูงเกินช่องที่เห็นได้เป็นเรื่องปกติ ไม่ใช่เคสพิเศษ** — วัดจริงบนจอ 390x844
+         ได้แผง 633px เทียบช่องว่างใต้การ์ดสถานะที่ติดหนึบเพียง 451px (การ์ดสูง 341)
+         พอใส่ไม่หมดต้องเลือกว่าจะตัดหัวหรือตัดท้าย → **ตัดหัวเสมอ** เพราะท้ายคือปุ่มที่ต้องกด
+         ตัดท้ายแล้วผู้เล่นจะเห็นแผงสวย ๆ ที่ไม่มีปุ่ม แล้วนึกว่าเกมค้าง
+         ส่วนหัว (ภาพประตู + หัวข้อ) เลื่อนขึ้นไปดูได้ตามปกติและไม่มีอะไรต้องกดตรงนั้น */
+      const lo = head + 8, hi = foot - 10;
+      let d = 0;
+      if (r.height > hi - lo)      d = r.bottom - hi;                 /* ใส่ไม่หมด → ยึดขอบล่าง */
+      else if (r.top < lo)         d = r.top - lo;                    /* หัวแผงมุดใต้การ์ด → เลื่อนกลับลง */
+      else if (r.bottom > hi)      d = Math.min(r.bottom - hi, r.top - lo);
+      if (d) gs.scrollTop += d;
+    }
+
+    /* ปุ่มบนประตูอยู่ในจอครบทั้งใบหรือยัง — เงื่อนไขเดียวที่ตัดสินว่าต้องเลื่อนอีกไหม */
+    function dwGoInView() {
+      const go = document.querySelector('#gWarp .g-warp-go');
+      if (!go) return true;
+      const b = go.getBoundingClientRect();
+      return b.height > 0 && b.top >= 0 && b.bottom <= window.innerHeight;
+    }
+
+    /* **ต้องวัดซ้ำหลังเลย์เอาต์นิ่ง ไม่ใช่ครั้งเดียวตอนเปิด** — ตอน `openWarp` ของ v4.0 คืนค่า
+       ความสูงหน้ายังขยับต่ออีก (แถบเกราะผนึกของ v4.6 · เรดาร์ของ v4.5 · การ์ดสถานะที่ยืดตัว
+       ในห้องบอส) วัดจริงแล้วของเหนือแผงงอกอีก ~153px หลังจากนั้น ระยะที่คำนวณรอบแรกจึงสั้นไป
+       แล้วปุ่มยังตกนอกจออยู่ดี (รอบแรกเลื่อนได้แค่ 18px จาก 177px ที่ต้องใช้)
+
+       **เงื่อนไขของรอบตามคือ "ปุ่มยังไม่อยู่ในจอ" ไม่ใช่ "ตำแหน่งเลื่อนยังเท่าที่เราตั้งไว้"**
+       ร่างแรกจำ scrollTop ที่ตั้งไว้แล้วยกเลิกรอบตามถ้าค่าเปลี่ยน — ใช้ไม่ได้เลย เพราะ
+       scroll anchoring ของเบราว์เซอร์ขยับ scrollTop ให้เองทุกครั้งที่ของเหนือจอโตขึ้น
+       (ซึ่งคือสิ่งที่เรากำลังรออยู่พอดี) รอบตามจึงถูกยกเลิกทุกครั้งและปุ่มยังตกนอกจอเหมือนเดิม
+       เช็กที่ปุ่มตรง ๆ แทน ได้ผลพลอยได้คือถ้าผู้เล่นเลื่อนเองจนเห็นปุ่มแล้วก็ไม่ไปแย่งนิ้วเขา */
+    function dwFocusGate() {
+      dwFocusGateNow();
+      const again = function () {
+        const g = dwG();
+        if (!g || !g.warpOpen || dwGoInView()) return;
+        dwFocusGateNow();
+      };
+      requestAnimationFrame(function () { requestAnimationFrame(again); });
+      setTimeout(again, 260);
+      setTimeout(again, 700);
+    }
+
+    /* กลับจากประตูเข้าสู่ข้อใหม่ — ต้องดึงจอกลับมาที่โจทย์ "อีกครั้งหลังเลย์เอาต์นิ่งแล้ว"
+       `acFocusQa()` ของ v4.8.1 ถูกเรียกไปแล้วครั้งหนึ่งใน `startQuestionTimer` แต่ตอนนั้น
+       ความสูงหน้ายังไม่นิ่ง (แผงประตู 633px เพิ่งถูกซ่อน · แถบเกราะผนึกของ v4.6 เพิ่งงอกขึ้น
+       ในห้องบอส) ระยะที่คำนวณได้คลาดไปราว 112px แล้ว **จอค้างในสภาพ "หยุดอยู่ — เลื่อนกลับไป
+       ที่ตัวเลือก" โดยไม่มี error ให้เห็นเลย** (อาการเดียวกับกับดักข้อ 23)
+
+       ชั้นนี้เป็นคนย้ายตำแหน่งเลื่อนไปเอง จึงต้องเป็นคนพากลับมาเอง — ไม่ใช่หน้าที่ของ v4.8.1 */
+    function dwRefocusQa() {
+      const run = function () {
+        try {
+          if (typeof acFocusQa === 'function') acFocusQa();
+          if (typeof acSync === 'function') acSync(true);
+        } catch (e) { dwErr(e, 'dwRefocusQa'); }
+      };
+      requestAnimationFrame(function () { requestAnimationFrame(run); });
+      setTimeout(run, 260);
+    }
+
+    function dwPaintGate(kind) {
+      const w = dwEnsureDom();
+      const g = dwG();
+      if (!w || !g) return;
+
+      const pre  = kind === DW_PRE;
+      const post = kind === DW_POST;
+
+      w.classList.toggle('dw-pre', pre);
+      w.classList.toggle('dw-post', post);
+
+      const title = document.getElementById('gWarpTitle');
+      if (title) {
+        if (pre)       title.textContent = '⚔️ ประตูวาป — ห้องบอสอยู่ข้างหน้า';
+        else if (post) title.textContent = '🏆 ประตูวาปแห่งชัยชนะ — ปราบบอสสำเร็จ';
+      }
+
+      /* body ถูก v4.0 เขียนทับด้วย innerHTML ทุกครั้ง การต่อท้ายตรงนี้จึงไม่สะสมซ้ำ */
+      const body = document.getElementById('gWarpBody');
+      if (body && pre) {
+        body.insertAdjacentHTML('beforeend',
+          dwBossWarnRow(g.floor) +
+          '<div class="g-warp-row next"><span>🛒 เตรียมตัว</span><b>' +
+          'เติม HP · ซื้อไอเทมกันตาย แล้วค่อยกดเข้าห้องบอส — เวลาหยุดสนิทระหว่างนี้</b></div>');
+      }
+
+      const shop = document.getElementById('dwShop');
+      if (shop) shop.style.display = (pre || post) ? 'block' : 'none';
+
+      const rw = document.getElementById('dwReward');
+      if (rw) {
+        if (post && DW_WON) { rw.innerHTML = dwRewardRows(DW_WON); rw.style.display = 'block'; }
+        else { rw.innerHTML = ''; rw.style.display = 'none'; }
+      }
+
+      const go = w.querySelector('.g-warp-go');
+      if (go) {
+        if (pre) {
+          go.textContent = '⚔️ เข้าสู่ห้องบอส ชั้น ' + g.floor + ' ▶';
+        } else if (post) {
+          /* หอคอยวนกลับชั้น 1 หลังจบชั้น 20 — ตอนนี้ G.floor เป็นชั้นใหม่แล้ว */
+          go.textContent = (g.floor === 1)
+            ? '🌀 เริ่มรอบใหม่ที่ชั้น 1 ▶'
+            : '🌀 ข้ามสู่โซนถัดไป — ชั้น ' + g.floor + ' ▶';
+        } else {
+          go.textContent = '⚔️ ถัดไป ▶';
+        }
+      }
+    }
+
+    // ── ห่อ v4.0 ───────────────────────────────────────────────────
+    /* ประตูก่อนบอส: เคลียร์ชั้นก่อนบอสสำเร็จ → v4.0 สั่ง scheduleTurn(nextMonster) ค้างไว้แล้ว
+       ชั้นนี้สั่งคิวใหม่ทับ (scheduleTurn เคลียร์ TURN_TIMER เดิมให้อยู่แล้ว จึงทับได้สะอาด)
+       ตามกฎกับดักข้อ 19 — ชั้นบนที่เปลี่ยนปลายทางหลังชั้นล่างตัดสินไปแล้ว ต้องคุมคิวเทิร์นเอง
+
+       ประตูหลังบอส: v4.0 สั่ง openWarp('floor') ไว้เองอยู่แล้ว ชั้นนี้แค่จดยอดรางวัลไว้โชว์
+       **ต้องจดหลังทุกชั้นทำงานจบ** เพราะตัวคูณทอง/EXP ของการ์ด v4.7 (⛓️ 💀 👁️‍🗨️) จ่ายทีหลัง */
+    const _dwClearFloor = clearFloor;
+    clearFloor = function (boss) {
+      const g       = dwG();
+      const cleared = g ? g.floor : 0;
+      const goldWas = g ? (g.gold || 0) : 0;
+      const expWas  = g ? (g.exp || 0) : 0;
+      const maxWas  = g ? (g.maxExp || 100) : 100;
+      const lvlWas  = g ? (g.level || 1) : 1;
+      const shWas   = (g && g.ab) ? (g.ab.shards || 0) : 0;
+
+      const r = _dwClearFloor.apply(this, arguments);
+
+      try {
+        if (g && !g.practiceMode) {
+          if (boss) {
+            DW_WON = {
+              floor: cleared,
+              gold:  Math.max(0, Math.round((g.gold || 0) - goldWas)),
+              exp:   dwExpGained(g, lvlWas, expWas, maxWas),
+              lv:    Math.max(0, (g.level || 1) - lvlWas),
+              level: g.level || 1,
+              shards: Math.max(0, ((g.ab ? (g.ab.shards || 0) : 0) - shWas))
+            };
+          } else if (dwIsPreBossFloor(cleared)) {
+            scheduleTurn(function () { openWarp(DW_PRE); }, DW_WAIT);
+          }
+        }
+      } catch (e) { dwErr(e, 'dwClearFloor'); }
+      return r;
+    };
+
+    /* กฎข้อ 3 ของสเปก: นาฬิกาต่อข้อต้องหยุด 100% ตลอดที่ประตูเปิดอยู่
+       openWarp ของ v4.0 เรียก clearQuestionTimer() ให้แล้ว ตรงนี้เป็นการยืนยันซ้ำหลังทุกชั้น
+       ทำงานจบ (idempotent ทั้ง v4.0 · wrapper ของ v4.8.1 ที่ทิ้ง AC_HELD · v4.9 ที่ปลดธงเตือนเวลา)
+
+       **ต้องเช็ก G.warpOpen ก่อนเสมอ** — โหมดฝึกจุดอ่อนไม่เปิดประตู แต่ openWarp จะเด้งไป
+       nextMonster() ซึ่ง "เริ่มนาฬิกาข้อใหม่" ถ้าล้างโดยไม่เช็ก จะดับนาฬิกาที่เพิ่งตั้งทิ้ง */
+    const _dwOpenWarp = openWarp;
+    openWarp = function (kind) {
+      const r = _dwOpenWarp.apply(this, arguments);
+      try {
+        const g = dwG();
+        if (g && g.warpOpen) { clearQuestionTimer(); dwFocusGate(); }
+      } catch (e) { dwErr(e, 'dwOpenWarp'); }
+      return r;
+    };
+
+    const _dwRenderWarp = renderWarp;
+    renderWarp = function (kind) {
+      const r = _dwRenderWarp.apply(this, arguments);
+      try { dwPaintGate(kind); } catch (e) { dwErr(e, 'dwRenderWarp'); }
+      return r;
+    };
+
+    /* กดปุ่มเข้าชั้นถัดไป = ประตูปิด ยอดรางวัลของประตูใบนั้นหมดหน้าที่
+       (ถ้าไม่ล้าง ประตู 'down' ที่เปิดทีหลังจะหยิบยอดของบอสตัวก่อนมาโชว์ซ้ำ) */
+    const _dwWarpGo = warpGo;
+    warpGo = function () {
+      const g = dwG();
+      const was = !!(g && g.warpOpen);
+      const r = _dwWarpGo.apply(this, arguments);
+      if (was && !(dwG() && G.warpOpen)) {
+        DW_WON = null;
+        try { dwRefocusQa(); } catch (e) { dwErr(e, 'dwWarpGo'); }
+      }
+      return r;
+    };
+
+    /* สลับบัญชีแล้วต้องไม่เหลือยอดของคนก่อนค้างอยู่ */
+    const _dwStartGame = startGame;
+    startGame = function () {
+      DW_WON = null;
+      return _dwStartGame.apply(this, arguments);
+    };
+
+    const _dwExitGame = exitGame;
+    exitGame = function () {
+      DW_WON = null;
+      return _dwExitGame.apply(this, arguments);
+    };
+
+    // ══ ติดตั้งชั้นนี้ลง DOM ═══════════════════════════════════════════
+    (function dwInstall() {
+      if (!document.getElementById('dwStyle')) {
+        document.head.insertAdjacentHTML('beforeend',
+          '<style id="dwStyle">' +
+
+          /* ── กล่องสรุปรางวัลบอส (ประตูหลังบอส) ───────────────────── */
+          '.dw-reward{position:relative;margin:0 0 9px;padding:8px 9px;border-radius:10px;' +
+            'background:linear-gradient(180deg,rgba(255,200,69,.15),rgba(255,200,69,.04));' +
+            'border:1px solid rgba(255,200,69,.45)}' +
+          '.dw-rw-head{font-size:11.5px;font-weight:800;color:#ffc845;' +
+            'text-align:center;margin-bottom:6px}' +
+          '.dw-rw-row{display:flex;justify-content:space-between;gap:8px;padding:5px 8px;' +
+            'border-radius:7px;background:rgba(255,255,255,.05);margin-bottom:4px;' +
+            'font-size:11.5px;font-weight:600;color:#cfe0f2;text-align:left}' +
+          '.dw-rw-row:last-child{margin-bottom:0}' +
+          /* nowrap ทีละก้อน — ข้อความไทยบนจอ 390px ตัดคำกลางคันทิ้งหน่วยไว้บรรทัดล่างได้ */
+          '.dw-rw-row b{color:#ffc845;font-weight:700;white-space:nowrap}' +
+          '.dw-rw-row.lv b{color:#2ef2d0}' +
+
+          /* ── ปุ่มร้านค้าบนประตู (ทั้งก่อนบอสและหลังบอส) ───────────── */
+          '.dw-shop{position:relative;display:block;width:100%;margin-top:10px;padding:11px;' +
+            'border-radius:10px;border:1px solid rgba(255,200,69,.55);' +
+            'background:linear-gradient(180deg,rgba(255,200,69,.18),rgba(255,200,69,.05));' +
+            'color:#ffc845;font-family:\'Noto Sans Thai\',sans-serif;font-size:13px;' +
+            'font-weight:700;cursor:pointer;transition:transform .12s}' +
+          '.dw-shop:active{transform:scale(.98)}' +
+
+          '.dw-nw{white-space:nowrap}' +
+
+          /* ── โทนสีแยกสองประตู — แดง = อันตรายรออยู่ · ทอง = ชนะแล้ว ─── */
+          '.g-warp.dw-pre{border-color:rgba(255,107,122,.5);' +
+            'background:linear-gradient(180deg,rgba(255,107,122,.10),rgba(13,19,29,.6))}' +
+          '.g-warp.dw-pre .g-warp-title{color:#ff9aa4}' +
+          '.g-warp.dw-pre .g-warp-ring{border-color:rgba(255,107,122,.32)}' +
+          '.g-warp.dw-pre .g-warp-go{border-color:rgba(255,107,122,.65);' +
+            'background:linear-gradient(180deg,#ff7a86,#d24455);color:#2a0409}' +
+          '.g-warp.dw-post{border-color:rgba(255,200,69,.5)}' +
+          '.g-warp.dw-post .g-warp-title{color:#ffc845}' +
+          '.g-warp.dw-post .g-warp-ring{border-color:rgba(255,200,69,.32)}' +
+          '</style>');
+      }
+
+      /* แทรกกล่อง/ปุ่มไว้ตั้งแต่ติดตั้ง จะได้ไม่ต้องรอประตูบานแรก
+         (ตัว dwEnsureDom เป็น idempotent อยู่แล้ว เรียกซ้ำกี่รอบก็ได้) */
+      try { dwEnsureDom(); } catch (e) { dwErr(e, 'dwInstall'); }
+    })();
+
+
   </script>
 </body>
 </html>

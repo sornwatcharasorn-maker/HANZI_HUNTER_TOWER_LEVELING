@@ -16440,6 +16440,656 @@
       } catch (e) { csErr(e, 'csInstall'); }
     })();
 
+
+    // ══════════════════════════════════════════════════════════════════
+    //  ชั้นที่สิบหก — v5.3 · FIREBASE GM REALTIME  (Realtime GM Monitor)
+    //  ครูเห็นข้อมูลนักเรียนทั้งห้องขยับสด ๆ วินาทีต่อวินาทีในห้องควบคุม GM
+    //  ฝั่งนักเรียน = ผู้เผยแพร่ (REST PUT · หน่วง 6 วินาที · ไม่เปิดสายค้างไว้)
+    //  ฝั่งครู     = ผู้รับฟัง (EventSource/SSE · เปิดตอนกางแผง ปิดทันทีตอนพับแผง)
+    //  ไม่แก้โค้ด v4.0-v5.2 เลย — ห่อฟังก์ชันเหมือนสิบห้าชั้นก่อนหน้า
+    //  ไม่มี SDK จาก CDN — RTDB REST ล้วน ตามกฎไฟล์เดียวจบ
+    //  ยังไม่ตั้งค่า = ทั้งชั้นนี้เงียบสนิท ไม่มีคำขอออกเน็ตแม้แต่ครั้งเดียว
+    // ══════════════════════════════════════════════════════════════════
+
+    const FB_VER     = 'v5.3';
+    const FB_K_CFG   = 'yao_fbrt';      /* คอนฟิก — ระดับเครื่อง ไม่ผูกบัญชี ไม่ฝังลงซอร์ส */
+    const FB_CFG_DEF = { on: false, url: '', node: 'students', auth: '', pub: true };
+
+    const FB_DEBOUNCE = 6000;           /* สเปกข้อ 1 — หน่วง 6 วินาทีแล้วยุบเป็นคำขอเดียว */
+    const FB_BACKOFF  = [4000, 8000, 16000, 32000, 60000];
+    const FB_RECON    = [1000, 3000, 8000, 20000];
+    const FB_TIMEOUT  = 12000;
+    const FB_WEAK_MAX = 8;              /* คำที่ผิดซ้ำที่ส่งขึ้นไปให้ครูดู */
+    const FB_HOT_MS   = 4000;           /* ไฮไลต์แถวที่เพิ่งขยับ */
+    const FB_TICK_MS  = 5000;           /* รีเฟรชข้อความ "อัปเดตเมื่อ" ระหว่างกางแผง */
+
+    let FB_CFG = null;
+    let FB_T = null, FB_TRY = 0, FB_BUSY = false, FB_DIRTY = false;
+    let FB_ST = 'off', FB_MSG = '', FB_LAST = 0, FB_SENT = 0;
+    let FB_ES = null, FB_MON = false, FB_MST = 'off', FB_RT = null, FB_RTRY = 0;
+    let FB_LIVE = {}, FB_RAF = 0, FB_TICK = null, FB_EVT = 0, FB_UI = '';
+
+    function fbErr(e, w) {
+      try {
+        if (typeof gcErrPush === 'function')
+          gcErrPush('fbrt', (w || '') + ': ' + ((e && e.message) || e), FB_VER, e && e.stack);
+      } catch (x) {}
+    }
+
+    // ── 1. คอนฟิก ─────────────────────────────────────────────────
+    /* URL ฐานข้อมูลอยู่ที่ localStorage ของแต่ละเครื่องเท่านั้น (สเปกข้อ 3)
+       ไม่มีค่าไหนถูกฝังลงไฟล์เกม repo นี้เป็น public การฝัง URL คือการแจกกุญแจให้ทุกคน */
+    function fbCfgLoad() {
+      let o = {};
+      try { o = JSON.parse(localStorage.getItem(FB_K_CFG) || '{}') || {}; } catch (e) {}
+      FB_CFG = Object.assign({}, FB_CFG_DEF, o);
+      FB_CFG.url  = String(FB_CFG.url || '').trim().replace(/\.json.*$/i, '').replace(/\/+$/, '');
+      FB_CFG.node = String(FB_CFG.node || '').trim().replace(/^\/+|\/+$/g, '') || 'students';
+      FB_CFG.auth = String(FB_CFG.auth || '').trim();
+      if (!fbOn()) FB_ST = 'off'; else if (FB_ST === 'off') FB_ST = 'idle';
+      return FB_CFG;
+    }
+
+    function fbCfgSave(o) {
+      try { localStorage.setItem(FB_K_CFG, JSON.stringify(Object.assign({}, FB_CFG || FB_CFG_DEF, o || {}))); } catch (e) {}
+      const wasMon = FB_MON;
+      fbMonClose();
+      fbCfgLoad();
+      if (wasMon) fbMonOpen();
+      return FB_CFG;
+    }
+
+    /* v5.2 ตั้ง provider เป็น firebase ชี้ url เดียวกันและใช้ชื่อโหนดเดียวกันเมื่อไหร่
+       สองชั้นจะเขียนทับกันเอง (คนละรูปแบบข้อมูล) = เซฟเต็มก้อนของ v5.2 หายทั้งห้อง
+       ตรวจแล้วปิดตัวเองไว้ก่อน ดีกว่าปล่อยให้ข้อมูลพัง — แผงตั้งค่าขึ้นคำเตือนสีแดงให้เห็น */
+    function fbClash() {
+      try {
+        if (!FB_CFG || !FB_CFG.url) return false;
+        if (typeof CS_CFG !== 'object' || !CS_CFG || CS_CFG.provider !== 'firebase') return false;
+        return String(CS_CFG.url || '').replace(/\/+$/, '') === FB_CFG.url &&
+               String(CS_CFG.table || '') === FB_CFG.node;
+      } catch (e) { return false; }
+    }
+
+    function fbOn() { return !!(FB_CFG && FB_CFG.on && FB_CFG.url && FB_CFG.node && !fbClash()); }
+
+    function fbUrl(p, q) {
+      const qs = [];
+      if (FB_CFG.auth) qs.push('auth=' + encodeURIComponent(FB_CFG.auth));
+      if (q) qs.push(q);
+      return FB_CFG.url + '/' + encodeURIComponent(FB_CFG.node) + (p || '') + '.json' +
+             (qs.length ? '?' + qs.join('&') : '');
+    }
+
+    async function fbFetch(url, opt) {
+      let ac = null, tm = null;
+      try { ac = new AbortController(); } catch (e) {}
+      const o = Object.assign({ cache: 'no-store' }, opt || {});
+      if (ac) { o.signal = ac.signal; tm = setTimeout(function () { try { ac.abort(); } catch (e) {} }, FB_TIMEOUT); }
+      try {
+        const r = await fetch(url, o), t = await r.text();
+        if (!r.ok) throw new Error('HTTP ' + r.status + ' ' + String(t).slice(0, 120));
+        let d = null; try { d = t ? JSON.parse(t) : null; } catch (e) {}
+        return d;
+      } finally { if (tm) clearTimeout(tm); }
+    }
+
+    // ── 2. ฝั่งนักเรียน — Student Data Publisher ────────────────────
+    /* payload เป็นก้อนเล็กเฉพาะที่จอครูต้องใช้ ไม่ใช่บัญชีทั้งก้อนแบบ doc ของ v5.2
+       จึงไม่ชนกับระบบเซฟของ v5.2 และไม่กินโควตา/แบตของเครื่องนักเรียน */
+    function fbAcc(a) {
+      const t = (a.correct || 0) + (a.wrong || 0);
+      return t ? Math.round((a.correct || 0) / t * 100) : 0;
+    }
+
+    function fbWeak(a) {
+      const ws = a.wordStats || {}, out = [];
+      Object.keys(ws).forEach(function (k) {
+        const w = ws[k];
+        if (w && (w.wrong || 0) >= 2) out.push([+k, w.wrong | 0, w.seen | 0]);
+      });
+      out.sort(function (x, y) { return y[1] - x[1]; });
+      return out.slice(0, FB_WEAK_MAX).map(function (w) {
+        const v = (typeof vocabById === 'function' ? vocabById(w[0]) : null) || [];
+        return { id: w[0], ch: v[1] || '', py: v[2] || '', n: w[1], seen: w[2] };
+      });
+    }
+
+    function fbPayload(user, a) {
+      let rk = '';
+      try { rk = rankOfFloor(a.maxFloor || 1).key; } catch (e) {}
+      return {
+        u: user, name: a.name || user,
+        room: (typeof gcRoomOf === 'function' ? gcRoomOf(a) : (a.classroom || '')),
+        lv: a.level || 1, exp: a.exp || 0, mexp: a.maxExp || 100,
+        hp: a.hp || 0, mhp: a.maxHp || 0, mp: a.mp || 0,
+        floor: a.floor || 1, mfloor: a.maxFloor || 1, rank: rk,
+        gold: a.gold || 0, corr: a.correct || 0, wrong: a.wrong || 0, acc: fbAcc(a),
+        best: a.best || 0, words: (typeof cxCount === 'function' ? cxCount(a) : 0),
+        title: a.equippedTitle || '', frozen: a.frozen === true,
+        weak: fbWeak(a), at: Date.now(),
+        dev: (typeof csDev === 'function' ? csDev() : ''), ver: FB_VER
+      };
+    }
+
+    /* หน่วงอย่างเดียว ไม่มีทางลัดส่งทันทีระหว่างเล่น — สเปกข้อ 1 ระบุไว้เพื่อประหยัดแบต
+       จุดที่ส่งทันทีมีแค่ตอนกำลังจะเสียโอกาสส่ง (ออกจากเกม · สลับแอป · ปิดแท็บ) */
+    function fbTouch() {
+      if (!fbOn() || FB_CFG.pub === false || !CURRENT_USER) return;
+      FB_DIRTY = true;
+      if (!FB_T) FB_T = setTimeout(function () { FB_T = null; fbPush(); }, FB_DEBOUNCE);
+    }
+
+    function fbRetry() {
+      const ms = FB_BACKOFF[Math.min(FB_TRY, FB_BACKOFF.length - 1)];
+      FB_TRY++; FB_DIRTY = true;
+      if (FB_T) clearTimeout(FB_T);
+      FB_T = setTimeout(function () { FB_T = null; fbPush(); }, ms);
+    }
+
+    async function fbPush(user, keepalive) {
+      if (!fbOn() || FB_CFG.pub === false) return false;
+      const u = user || CURRENT_USER;
+      if (!u) return false;
+      if (FB_BUSY) { FB_DIRTY = true; return false; }
+      if (FB_T) { clearTimeout(FB_T); FB_T = null; }
+      let a = null;
+      try { a = loadStore()[u]; } catch (e) { fbErr(e, 'push:store'); }
+      if (!a) { FB_DIRTY = false; return false; }
+      FB_BUSY = true; FB_DIRTY = false; FB_ST = 'sync';
+      const opt = { method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(fbPayload(u, a)) };
+      if (keepalive) opt.keepalive = true;
+      try {
+        await fbFetch(fbUrl('/' + encodeURIComponent(u)), opt);
+        FB_TRY = 0; FB_LAST = Date.now(); FB_SENT++; FB_MSG = ''; FB_ST = 'ok';
+        return true;
+      } catch (e) {
+        FB_MSG = String((e && e.message) || e).slice(0, 160);
+        FB_ST = (navigator.onLine === false) ? 'wait' : 'err';
+        fbErr(e, 'push');
+        fbRetry();
+        return false;
+      } finally { FB_BUSY = false; }
+    }
+
+    // ── 3. ฝั่งครู — GM Live Monitor Subscriber (SSE) ───────────────
+    /* EventSource แนบหัวคำขอเองไม่ได้ แต่ RTDB สตรีมให้เมื่อเห็น Accept: text/event-stream
+       ซึ่งเบราว์เซอร์ใส่ให้อยู่แล้ว จึงต่อได้ตรง ๆ โดยไม่ต้องมี SDK (กฎไฟล์เดียวจบ) */
+    function fbMonOpen() {
+      if (!fbOn()) { FB_MST = 'off'; fbPaint(); return; }
+      if (typeof EventSource !== 'function') {
+        FB_MST = 'err'; FB_MSG = 'เบราว์เซอร์นี้ไม่รองรับ EventSource (SSE)'; fbPaint(); return;
+      }
+      if (FB_ES) return;
+      FB_MON = true; FB_MST = 'wait';
+      try {
+        const es = new EventSource(fbUrl(''));
+        FB_ES = es;
+        es.addEventListener('put',   function (ev) { fbApply('put', ev.data); });
+        es.addEventListener('patch', function (ev) { fbApply('patch', ev.data); });
+        es.addEventListener('keep-alive', function () { FB_MST = 'live'; fbPaintSoon(); });
+        es.addEventListener('cancel', function () {
+          FB_MSG = 'เซิร์ฟเวอร์ยกเลิกการเชื่อมต่อ — ตรวจสิทธิ์อ่าน (.read) ของโหนดนี้ใน RTDB Rules';
+          fbMonStop(); FB_MST = 'err'; fbPaint();
+        });
+        es.addEventListener('auth_revoked', function () {
+          FB_MSG = 'โทเคนหมดอายุ — ใส่ auth ใหม่ในแผงตั้งค่า';
+          fbMonStop(); FB_MST = 'err'; fbPaint();
+        });
+        es.onopen = function () { FB_MST = 'live'; FB_RTRY = 0; FB_MSG = ''; fbPaint(); };
+        es.onerror = function () {
+          /* สายหลุดชั่วคราว EventSource ต่อกลับเอง · ปิดสนิทแล้วต้องสั่งต่อใหม่เอง */
+          if (!FB_ES || FB_ES.readyState === 2) { fbMonStop(); if (FB_MON) fbReconnect(); }
+          else FB_MST = 'wait';
+          fbPaint();
+        };
+      } catch (e) {
+        FB_MST = 'err'; FB_MSG = String((e && e.message) || e).slice(0, 160); fbErr(e, 'monOpen');
+      }
+      fbTickOn();
+      fbPaint();
+    }
+
+    function fbMonStop() {
+      if (FB_ES) { try { FB_ES.close(); } catch (e) {} FB_ES = null; }
+    }
+
+    /* พับแผง = คืนทรัพยากรทันทีตามสเปกข้อ 2 — ตัดสาย ล้างนาฬิกา ล้างข้อมูลที่ถือไว้ */
+    function fbMonClose() {
+      FB_MON = false;
+      fbMonStop();
+      if (FB_RT) { clearTimeout(FB_RT); FB_RT = null; }
+      fbTickOff();
+      if (FB_RAF) { try { cancelAnimationFrame(FB_RAF); } catch (e) {} FB_RAF = 0; }
+      FB_LIVE = {}; FB_RTRY = 0; FB_EVT = 0; FB_MST = 'off';
+      fbPaint();
+    }
+
+    function fbReconnect() {
+      if (!FB_MON || !fbOn() || FB_RT) return;
+      const ms = FB_RECON[Math.min(FB_RTRY, FB_RECON.length - 1)];
+      FB_RTRY++; FB_MST = 'wait'; fbPaint();
+      FB_RT = setTimeout(function () { FB_RT = null; if (FB_MON) fbMonOpen(); }, ms);
+    }
+
+    function fbMonToggle() {
+      if (FB_ES || FB_RT) { fbMonClose(); }
+      else { FB_RTRY = 0; FB_MSG = ''; fbMonOpen(); }
+    }
+
+    /* RTDB ส่ง path มาเป็นตำแหน่งที่เปลี่ยน ไม่ได้ส่งทั้งก้อนทุกครั้ง
+       put = แทนที่ตรงนั้น (null = ลบ) · patch = ผสมเฉพาะคีย์ที่ส่งมา */
+    function fbApply(kind, raw) {
+      let m = null;
+      try { m = JSON.parse(raw); } catch (e) { return; }
+      if (!m || typeof m !== 'object') return;
+      const data = m.data;
+      const seg  = String(m.path == null ? '/' : m.path).split('/').filter(function (s) { return s !== ''; });
+
+      if (!seg.length) {
+        if (kind === 'put') FB_LIVE = (data && typeof data === 'object') ? data : {};
+        else if (data && typeof data === 'object')
+          Object.keys(data).forEach(function (k) {
+            if (data[k] == null) delete FB_LIVE[k]; else FB_LIVE[k] = data[k];
+          });
+      } else if (seg.length === 1) {
+        const u = seg[0];
+        if (kind === 'put') { if (data == null) delete FB_LIVE[u]; else FB_LIVE[u] = data; }
+        else {
+          if (!FB_LIVE[u] || typeof FB_LIVE[u] !== 'object') FB_LIVE[u] = {};
+          if (data && typeof data === 'object')
+            Object.keys(data).forEach(function (k) { FB_LIVE[u][k] = data[k]; });
+        }
+      } else {
+        const u = seg[0], f = seg.slice(1);
+        if (!FB_LIVE[u] || typeof FB_LIVE[u] !== 'object') FB_LIVE[u] = {};
+        let o = FB_LIVE[u];
+        for (let i = 0; i < f.length - 1; i++) {
+          if (!o[f[i]] || typeof o[f[i]] !== 'object') o[f[i]] = {};
+          o = o[f[i]];
+        }
+        const last = f[f.length - 1];
+        if (kind === 'put') { if (data == null) delete o[last]; else o[last] = data; }
+        else if (data && typeof data === 'object') {
+          if (!o[last] || typeof o[last] !== 'object') o[last] = {};
+          Object.keys(data).forEach(function (k) { o[last][k] = data[k]; });
+        } else o[last] = data;
+      }
+
+      FB_MST = 'live'; FB_RTRY = 0; FB_EVT++;
+      fbPaintSoon();
+    }
+
+    // ── 4. ตารางข้อมูลสดในห้องควบคุม GM ───────────────────────────
+    /* แทรกครั้งเดียวเท่านั้น — gmRender ถูกเรียกทุกครั้งที่พิมพ์ค้นหา/สลับการเรียง (กับดักข้อ 2) */
+    function fbEnsureDom() {
+      if (document.getElementById('fbLive')) return true;
+      const anchor = document.getElementById('gcScope') || document.querySelector('#gmPanel .gm-kpis');
+      if (!anchor) return false;
+      anchor.insertAdjacentHTML('afterend',
+        '<div id="fbLive" style="display:none">' +
+          '<div class="fb-bar">' +
+            '<div class="fb-ttl">📡 LIVE MONITOR <b id="fbDot">—</b>' +
+              '<small id="fbSub">—</small></div>' +
+            '<div class="fb-btns">' +
+              '<button class="gm-btn sm" id="fbBtnMon" onclick="fbMonToggle()">⏸️ หยุดรับสัญญาณ</button>' +
+              '<button class="gm-btn sm" onclick="csGmOpen()" title="ตั้งค่า Firebase RTDB">⚙️ ตั้งค่า</button>' +
+            '</div>' +
+          '</div>' +
+          '<div class="fb-wrap"><table class="fb-tb"><thead><tr>' +
+            '<th>🗡️ ฮันเตอร์</th><th>👑 Lv</th><th>⭐ EXP</th><th>🏯 ชั้นสูงสุด</th>' +
+            '<th>🎯 แม่นยำ</th><th>🪙 ทอง</th><th>📖 คำ</th><th>❌ คำที่ผิดซ้ำ</th><th>⏱️ อัปเดต</th>' +
+          '</tr></thead><tbody id="fbBody"></tbody></table></div>' +
+        '</div>');
+      return true;
+    }
+
+    function fbPaintSoon() {
+      if (FB_RAF) return;
+      try { FB_RAF = requestAnimationFrame(function () { FB_RAF = 0; fbPaint(); }); }
+      catch (e) { FB_RAF = 0; fbPaint(); }
+    }
+
+    /* กรองด้วยกลุ่มห้องเรียนของ v4.3 และช่องค้นหาของ v4.0 ให้ตรงกับตาราง GM ที่อยู่ข้างล่าง */
+    function fbRows() {
+      let q = '';
+      try { q = (document.getElementById('gmSearch').value || '').trim().toLowerCase(); } catch (e) {}
+      const room = (typeof GC_ROOM === 'string' ? GC_ROOM : '');
+      return Object.keys(FB_LIVE).map(function (k) {
+        const r = FB_LIVE[k];
+        return (r && typeof r === 'object') ? Object.assign({}, r, { u: r.u || k }) : null;
+      }).filter(function (r) {
+        if (!r) return false;
+        if (room && (r.room || '') !== room) return false;
+        if (q && String(r.u || '').toLowerCase().indexOf(q) < 0 &&
+                 String(r.name || '').toLowerCase().indexOf(q) < 0) return false;
+        return true;
+      }).sort(function (a, b) {
+        return (b.mfloor || 0) - (a.mfloor || 0) || (b.lv || 0) - (a.lv || 0) || (b.at || 0) - (a.at || 0);
+      });
+    }
+
+    const FB_FACE = { off: ['⚫', 'ปิดอยู่'], wait: ['🟡', 'กำลังเชื่อมต่อ'],
+                      live: ['🟢', 'สดวินาทีต่อวินาที'], err: ['🔴', 'สัญญาณขาด'] };
+
+    /* timeAgo ของ v4.0 หยาบที่สุดคือ "เมื่อสักครู่" ซึ่งกลืนช่วงวินาทีทั้งหมดทิ้ง
+       จอเรียลไทม์ต้องเห็นระดับวินาที ไม่งั้นครูแยกไม่ออกว่าใครกำลังเล่นอยู่จริง */
+    function fbAgo(ts) {
+      if (!ts) return '—';
+      const s = Math.max(0, Math.round((Date.now() - ts) / 1000));
+      if (s < 60)   return s + ' วินาทีที่แล้ว';
+      if (s < 3600) return Math.floor(s / 60) + ' นาทีที่แล้ว';
+      if (s < 86400) return Math.floor(s / 3600) + ' ชม.ที่แล้ว';
+      return Math.floor(s / 86400) + ' วันที่แล้ว';
+    }
+
+    function fbPaint() {
+      const box = document.getElementById('fbLive');
+      if (!box) return;
+      if (!fbOn()) { box.style.display = 'none'; return; }
+      box.style.display = '';
+
+      const face = FB_FACE[FB_MST] || FB_FACE.off, rows = fbRows(), now = Date.now();
+      const dot = document.getElementById('fbDot'), sub = document.getElementById('fbSub');
+      if (dot) { dot.textContent = face[0] + ' ' + face[1]; dot.className = 'fb-st fb-' + FB_MST; }
+      if (sub) {
+        sub.textContent = 'โหนด /' + FB_CFG.node + ' · ' + rows.length + ' คนออนไลน์' +
+          (FB_EVT ? ' · รับสัญญาณแล้ว ' + FB_EVT + ' ครั้ง' : '') +
+          (FB_MSG ? ' · ⚠️ ' + FB_MSG : '');
+      }
+      const btn = document.getElementById('fbBtnMon');
+      if (btn) btn.textContent = (FB_ES || FB_RT) ? '⏸️ หยุดรับสัญญาณ' : '▶️ รับสัญญาณต่อ';
+
+      const body = document.getElementById('fbBody');
+      if (!body) return;
+      if (!rows.length) {
+        body.innerHTML = '<tr><td colspan="9" class="fb-none">' +
+          (FB_MST === 'live' ? 'ยังไม่มีฮันเตอร์ส่งสัญญาณเข้ามา — ให้นักเรียนเปิดเกมและตอบสัก 1 ข้อ'
+                             : 'ยังไม่ได้รับสัญญาณ') + '</td></tr>';
+        return;
+      }
+      body.innerHTML = rows.map(function (r) {
+        const acc = r.acc || 0;
+        const col = acc >= 70 ? '#2ef2d0' : acc >= 40 ? '#ffc845' : '#ff6b7a';
+        const hot = (now - (r.at || 0)) < FB_HOT_MS;
+        const weak = (r.weak || []).map(function (w) {
+          return '<span class="fb-w" title="' + esc((w.ch || '') + ' ' + (w.py || '')) + '">' +
+                 esc(w.ch || '?') + '<i>' + (w.n || 0) + '</i></span>';
+        }).join('') || '<span class="fb-none">—</span>';
+        return '<tr class="' + (hot ? 'fb-hot' : '') + (r.frozen ? ' fb-frz' : '') + '">' +
+          '<td style="text-align:left"><span class="gm-name">' + esc(r.name || r.u) + '</span>' +
+            '<span class="gm-sub">@' + esc(r.u) + ' · ' + esc(r.room || '—') +
+            (r.frozen ? ' · ❄️ ระงับสิทธิ์' : '') + '</span></td>' +
+          '<td><b style="color:#ffc845">' + (r.lv || 1) + '</b>' +
+            '<span class="gm-sub">' + esc(r.rank || '?') + '-RANK</span></td>' +
+          '<td>' + (r.exp || 0) + '/' + (r.mexp || 100) + '</td>' +
+          '<td><b>' + (r.mfloor || 1) + '</b> / ' + FLOOR_MAX +
+            '<span class="gm-sub">ยืนอยู่ชั้น ' + (r.floor || 1) + '</span></td>' +
+          '<td><b style="color:' + col + '">' + acc + '%</b>' +
+            '<span class="gm-sub">' + (r.corr || 0) + ' / ' + (r.wrong || 0) + '</span></td>' +
+          '<td>' + (r.gold || 0) + ' 🪙</td>' +
+          '<td>' + (r.words || 0) + '</td>' +
+          '<td class="fb-ws">' + weak + '</td>' +
+          '<td>' + esc(fbAgo(r.at)) + '</td>' +
+        '</tr>';
+      }).join('');
+    }
+
+    function fbTickOn()  { if (!FB_TICK) FB_TICK = setInterval(fbTickRun, FB_TICK_MS); }
+    function fbTickOff() { if (FB_TICK) { clearInterval(FB_TICK); FB_TICK = null; } }
+
+    /* แผง GM ถูกพับด้วยทางที่ชั้นนี้ไม่รู้จักก็ยังต้องคืนทรัพยากรให้ได้ */
+    function fbTickRun() {
+      try {
+        const p = document.getElementById('gmPanel');
+        if (!p || !p.classList.contains('active')) { fbMonClose(); return; }
+        fbPaint();
+      } catch (e) { fbErr(e, 'tick'); }
+    }
+
+    // ── 5. แผงตั้งค่า — ต่อท้ายแผง ☁️ คลาวด์ ของ v5.2 ──────────────
+    /* csGmRender เขียน innerHTML ทับทั้งก้อนทุกครั้ง การต่อท้ายจึงไม่สะสมซ้ำ (กับดักข้อ 2) */
+    function fbCfgSection() {
+      const host = document.getElementById('csGmBody');
+      if (!host || document.getElementById('fbForm')) return;
+      const c = FB_CFG || FB_CFG_DEF;
+      const sel = function (v, t) {
+        return '<option value="' + v + '"' + ((c.on ? '1' : '0') === v ? ' selected' : '') + '>' + t + '</option>';
+      };
+      /* ประกอบด้วยชื่อโหนดดิบ แล้วค่อย esc() รอบเดียวตอนฝังลง HTML — esc() ซ้อนสองชั้นจะได้ &quot; โผล่บนจอ */
+      const rules = '{ "rules": { "' + (c.node || 'students') + '": { ".read": true, ".write": true } } }';
+      host.insertAdjacentHTML('beforeend',
+        '<div class="cs-sec">3 · REALTIME GM MONITOR ' + FB_VER +
+          '<small>Firebase Realtime Database (REST + SSE) · ครูเห็นข้อมูลนักเรียนขยับสดวินาทีต่อวินาที</small></div>' +
+        (fbClash()
+          ? '<div class="fb-warn">⛔ ชนกับ CLOUD SYNC — ข้อ 1 ตั้ง provider เป็น Firebase ชี้ URL เดียวกัน ' +
+            'และใช้ชื่อโหนด <b>' + esc(c.node) + '</b> เหมือนกัน สองระบบจะเขียนทับกันจนเซฟเต็มก้อนหาย ' +
+            'ระบบเรียลไทม์จึงถูกปิดไว้ก่อน — ให้เปลี่ยนชื่อโหนดของข้อใดข้อหนึ่งให้ต่างกัน</div>'
+          : '') +
+        '<div class="cs-form" id="fbForm">' +
+          '<label>โหมด<select id="fbFo">' + sel('0', '— ปิด —') + sel('1', 'Firebase RTDB (Realtime)') + '</select></label>' +
+          '<label>Database URL<input id="fbFu" value="' + esc(c.url) + '" ' +
+            'placeholder="https://&lt;project&gt;-default-rtdb.asia-southeast1.firebasedatabase.app"></label>' +
+          '<label>โหนด<input id="fbFn" value="' + esc(c.node) + '" placeholder="students"></label>' +
+          '<label>auth (ถ้าตั้ง Rules ให้ต้องใช้)<input id="fbFa" value="' + esc(c.auth) + '" placeholder="เว้นว่างได้"></label>' +
+          '<label class="cs-ck"><input type="checkbox" id="fbFp"' + (c.pub !== false ? ' checked' : '') + '> ' +
+            'เผยแพร่ข้อมูลจากเครื่องนี้ (ติ๊กบนเครื่องนักเรียน · ปลดบนเครื่องครูล้วน)</label>' +
+        '</div>' +
+        '<div class="cs-row">' +
+          '<button class="gm-btn jade" onclick="fbFormSave()">💾 บันทึกค่า</button>' +
+          '<button class="gm-btn" onclick="fbFormTest()">🔌 ทดสอบการเชื่อมต่อ</button>' +
+          '<button class="gm-btn" onclick="fbFormPush()">⬆️ ส่งข้อมูลเครื่องนี้เดี๋ยวนี้</button>' +
+          '<button class="gm-btn" onclick="fbFormCode()">🔑 คัดลอกโค้ดตั้งค่า</button>' +
+        '</div>' +
+        '<div class="cs-row"><input class="fb-code" id="fbFc" placeholder="วางโค้ดตั้งค่าจากเครื่องครูแล้วกดใช้ →">' +
+          '<button class="gm-btn" onclick="fbCodeUse()">📥 ใช้โค้ดนี้</button></div>' +
+        (FB_UI ? '<div class="cs-msg">' + esc(FB_UI) + '</div>' : '') +
+        '<div class="cs-kv"><span>สถานะผู้เผยแพร่</span><b>' + esc(fbStText()) + '</b></div>' +
+        '<div class="cs-kv"><span>ส่งสำเร็จแล้ว</span><b>' + FB_SENT + ' ครั้ง · ล่าสุด ' +
+          esc(typeof csWhen === 'function' ? csWhen(FB_LAST) : '—') + '</b></div>' +
+        '<div class="cs-kv"><span>สายรับสัญญาณ (ครู)</span><b>' + (FB_FACE[FB_MST] || FB_FACE.off)[1] + '</b></div>' +
+        '<div class="cs-note">เครื่องนักเรียนส่งด้วย REST <code>PUT /' + esc(c.node) +
+          '/&lt;รหัสฮันเตอร์&gt;.json</code> แบบหน่วง ' + (FB_DEBOUNCE / 1000) + ' วินาที ' +
+          'ไม่เปิดสายค้างไว้เลย จึงไม่กินแบตและไม่กิน connection quota · ' +
+          'เครื่องครูเปิดสาย SSE เฉพาะตอนกางห้องควบคุม GM แล้วตัดทันทีที่พับแผง<br>' +
+          'ค่าทั้งหมดเก็บที่เครื่องนี้เท่านั้น (<code>' + FB_K_CFG + '</code>) ไม่ได้ฝังลงไฟล์เกม — ' +
+          'ตั้งค่าเครื่องนักเรียนได้เร็วด้วยปุ่ม 🔑 คัดลอกโค้ดตั้งค่า แล้วเอาไปวางในช่องข้างล่าง<br>' +
+          'RTDB Rules ที่ต้องเปิด: <code>' + esc(rules) + '</code> — เปิดกว้างระดับ "กันเด็กกดเล่น" ' +
+          'เท่ากับ TEACHER_PIN ที่ฝังในซอร์ส ถ้าต้องการของจริงต้องใช้ Firebase Auth + Rules ผูก uid</div>');
+    }
+
+    function fbStText() {
+      if (!fbOn()) return fbClash() ? 'ปิดอยู่ (ชนกับ CLOUD SYNC)' : 'ปิดอยู่';
+      if (FB_CFG.pub === false) return 'ไม่เผยแพร่จากเครื่องนี้';
+      return ({ idle: 'พร้อมส่ง', ok: 'ส่งแล้ว', sync: 'กำลังส่ง', wait: 'รอสัญญาณ', err: 'ส่งไม่สำเร็จ' })[FB_ST] || 'พร้อมส่ง';
+    }
+
+    function fbRedraw(msg) {
+      FB_UI = msg || '';
+      try { csGmRender(); } catch (e) { fbErr(e, 'redraw'); }
+      fbPaint();
+    }
+
+    function fbFormSave() {
+      const v = function (id) { const el = document.getElementById(id); return el ? el.value : ''; };
+      const ck = function (id) { const el = document.getElementById(id); return !!(el && el.checked); };
+      fbCfgSave({ on: v('fbFo') === '1', url: v('fbFu'), node: v('fbFn'), auth: v('fbFa'), pub: ck('fbFp') });
+      fbRedraw(fbOn() ? '✅ บันทึกแล้ว — ระบบเรียลไทม์เปิดใช้งาน' :
+        (fbClash() ? '⛔ บันทึกแล้ว แต่ชื่อโหนดชนกับ CLOUD SYNC — ระบบยังปิดอยู่' : '💾 บันทึกแล้ว — ปิดระบบเรียลไทม์'));
+    }
+
+    function fbFormTest() {
+      if (!fbOn()) { fbRedraw('⚠️ ยังไม่ได้เปิดโหมด หรือยังไม่ได้ใส่ Database URL'); return; }
+      fbFetch(fbUrl('', 'shallow=true'))
+        .then(function (d) {
+          const n = d && typeof d === 'object' ? Object.keys(d).length : 0;
+          fbRedraw('✅ เชื่อมต่อได้ — โหนด /' + FB_CFG.node + ' มีข้อมูล ' + n + ' รายการ');
+        })
+        .catch(function (e) { fbRedraw('❌ ต่อไม่ได้: ' + ((e && e.message) || e)); });
+    }
+
+    function fbFormPush() {
+      if (!fbOn()) { fbRedraw('⚠️ ยังไม่ได้เปิดโหมดเรียลไทม์'); return; }
+      const u = CURRENT_USER;
+      if (!u) { fbRedraw('⚠️ เครื่องนี้ยังไม่ได้ล็อกอินบัญชีฮันเตอร์'); return; }
+      fbPush(u).then(function (ok) {
+        fbRedraw(ok ? '⬆️ ส่งขึ้นเรียลไทม์แล้ว: ' + u : '❌ ส่งไม่สำเร็จ: ' + FB_MSG);
+      });
+    }
+
+    function fbCode() {
+      try {
+        return btoa(unescape(encodeURIComponent(JSON.stringify(
+          { v: 1, url: FB_CFG.url, node: FB_CFG.node, auth: FB_CFG.auth }))));
+      } catch (e) { fbErr(e, 'code'); return ''; }
+    }
+
+    /* ไฟล์นี้ถูกเปิดจาก file:// เป็นปกติ ซึ่ง navigator.clipboard ไม่มีให้ใช้ (ไม่ใช่ secure context)
+       จึงเติมโค้ดลงช่องให้เห็นเสมอก่อน แล้วค่อยลองคัดลอกอัตโนมัติเป็นของแถม */
+    function fbFormCode() {
+      const s = fbCode();
+      if (!s) { fbRedraw('⚠️ ยังไม่มีค่าให้คัดลอก'); return; }
+      fbRedraw('🔑 โค้ดตั้งค่าอยู่ในช่องด้านล่างแล้ว — เอาไปวางในช่องเดียวกันบนเครื่องนักเรียน');
+      const el = document.getElementById('fbFc');
+      if (!el) return;
+      el.value = s;
+      let ok = false;
+      try { el.focus(); el.select(); ok = document.execCommand('copy'); } catch (e) {}
+      if (!ok && navigator.clipboard && navigator.clipboard.writeText) {
+        try { navigator.clipboard.writeText(s); ok = true; } catch (e) {}
+      }
+      if (ok) {
+        const m = document.querySelector('#csGmBody .cs-msg');
+        if (m) m.textContent = '🔑 คัดลอกโค้ดตั้งค่าแล้ว — เอาไปวางในช่องเดียวกันบนเครื่องนักเรียน';
+      }
+    }
+
+    function fbCodeUse() {
+      const el = document.getElementById('fbFc');
+      const s = el ? String(el.value || '').trim() : '';
+      if (!s) { fbRedraw('⚠️ ยังไม่ได้วางโค้ดตั้งค่า'); return; }
+      let o = null;
+      try { o = JSON.parse(decodeURIComponent(escape(atob(s)))); } catch (e) {}
+      if (!o || !o.url) { fbRedraw('❌ โค้ดตั้งค่าไม่ถูกต้อง'); return; }
+      fbCfgSave({ on: true, url: o.url, node: o.node || 'students', auth: o.auth || '' });
+      fbRedraw(fbOn() ? '📥 ใช้โค้ดตั้งค่าแล้ว — เชื่อมกับฐานข้อมูลเดียวกับเครื่องครูเรียบร้อย'
+                      : '📥 ใช้โค้ดแล้ว แต่ระบบยังปิดอยู่ (ตรวจการชนของชื่อโหนด)');
+    }
+
+    // ── 6. ห่อฟังก์ชันของชั้นล่าง ─────────────────────────────────
+    /* จุดดักฝั่งนักเรียนมีจุดเดียวคือ saveStore ตามที่สเปกข้อ 1 ระบุ — การเขียนบัญชี
+       ของทุกชั้น (ตอบจบข้อ · ผ่านชั้น · ซื้อของ · อัปเลเวล · เควส) ไหลมาลงที่นี่หมด */
+    const _fbSaveStore = saveStore;
+    saveStore = function () {
+      const r = _fbSaveStore.apply(this, arguments);
+      try { fbTouch(); } catch (e) { fbErr(e, 'saveStore'); }
+      return r;
+    };
+
+    const _fbStartGame = startGame;
+    startGame = function () {
+      const r = _fbStartGame.apply(this, arguments);
+      try { fbTouch(); } catch (e) { fbErr(e, 'startGame'); }
+      return r;
+    };
+
+    /* ต้องจำรหัสฮันเตอร์ไว้ก่อน เพราะ exitGame ของ v4.0 ล้าง CURRENT_USER ทิ้งไปแล้ว */
+    const _fbExitGame = exitGame;
+    exitGame = function () {
+      const u = CURRENT_USER;
+      const r = _fbExitGame.apply(this, arguments);
+      try { if (u) fbPush(u); } catch (e) { fbErr(e, 'exitGame'); }
+      return r;
+    };
+
+    /* สเปกข้อ 2 — กางแผงแล้วต่อสาย พับแผงแล้วตัดสายทันที */
+    const _fbOpenGm = openGm;
+    openGm = function () {
+      const r = _fbOpenGm.apply(this, arguments);
+      try { fbEnsureDom(); fbMonOpen(); } catch (e) { fbErr(e, 'openGm'); }
+      return r;
+    };
+
+    const _fbCloseGm = closeGm;
+    closeGm = function () {
+      try { fbMonClose(); } catch (e) { fbErr(e, 'closeGm'); }
+      return _fbCloseGm.apply(this, arguments);
+    };
+
+    const _fbGmRender = gmRender;
+    gmRender = function () {
+      const r = _fbGmRender.apply(this, arguments);
+      try { fbEnsureDom(); fbPaint(); } catch (e) { fbErr(e, 'gmRender'); }
+      return r;
+    };
+
+    /* สเปกข้อ 3 — ปุ่ม ☁️ คลาวด์ บนหัวแผง GM รองรับการสลับ mode เป็น Firebase RTDB */
+    const _fbCsGmRender = (typeof csGmRender === 'function') ? csGmRender : null;
+    if (_fbCsGmRender) {
+      csGmRender = function () {
+        const r = _fbCsGmRender.apply(this, arguments);
+        try { fbCfgSection(); } catch (e) { fbErr(e, 'csGmRender'); }
+        return r;
+      };
+    }
+
+    // ── 7. ติดตั้งชั้นนี้ ─────────────────────────────────────────
+    (function fbInstall() {
+      try {
+        fbCfgLoad();
+
+        if (!document.getElementById('fbStyle')) {
+          document.head.insertAdjacentHTML('beforeend',
+            '<style id="fbStyle">' +
+            '#fbLive{margin:10px 0 4px;border:1px solid rgba(143,216,255,.22);border-radius:12px;' +
+              'background:linear-gradient(180deg,rgba(18,35,58,.55),rgba(11,17,25,.55));padding:9px 10px 4px}' +
+            '.fb-bar{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;margin-bottom:7px}' +
+            '.fb-ttl{font-size:13px;font-weight:800;color:#8fd8ff}' +
+            '.fb-ttl small{display:block;font-size:10px;font-weight:600;color:#8a97b5;margin-top:3px;word-break:break-word}' +
+            '.fb-st{font-size:11px;font-weight:700;margin-left:6px}' +
+            '.fb-st.fb-live{color:#2ef2d0}.fb-st.fb-wait{color:#ffc845}' +
+            '.fb-st.fb-err{color:#ff6b7a}.fb-st.fb-off{color:#6d7b96}' +
+            '.fb-btns{display:flex;gap:6px;flex-wrap:wrap}' +
+            '.fb-wrap{margin-top:6px;background:#16202c;border:1px solid rgba(143,216,255,.28);' +
+              'border-radius:10px;overflow-x:auto}' +
+            '.fb-tb{width:100%;border-collapse:collapse;font-size:11.5px;min-width:700px}' +
+            '.fb-tb th{background:rgba(143,216,255,.10);color:#8fd8ff;font-weight:700;padding:7px;' +
+              'text-align:center;white-space:nowrap;border-bottom:1px solid rgba(143,216,255,.28)}' +
+            '.fb-tb td{padding:6px 7px;text-align:center;color:#e3edf5;white-space:nowrap;' +
+              'border-bottom:1px solid rgba(255,255,255,.06)}' +
+            '.fb-tb tbody tr{transition:background .5s ease}' +
+            '.fb-tb tbody tr.fb-hot{background:rgba(46,242,208,.12)}' +
+            '.fb-tb tbody tr.fb-frz{opacity:.55}' +
+            '.fb-w{display:inline-block;margin:0 3px 2px 0;padding:1px 5px;border-radius:6px;' +
+              'background:rgba(255,107,122,.12);border:1px solid rgba(255,107,122,.3);color:#ffd9dd;font-size:12px}' +
+            '.fb-w i{font-style:normal;color:#ff7b7b;font-size:9px;vertical-align:super;margin-left:2px}' +
+            '.fb-ws{max-width:210px}' +
+            '.fb-none{color:#6d7b96;font-size:11px}' +
+            '.fb-warn{margin:6px 0;padding:8px 10px;border-radius:9px;font-size:11px;line-height:1.6;' +
+              'background:rgba(255,107,122,.12);border:1px solid rgba(255,107,122,.4);color:#ffd9dd}' +
+            '.fb-code{flex:1;min-width:180px;padding:8px;border-radius:8px;background:#0b1119;color:#dfe9ff;' +
+              'border:1px solid rgba(143,216,255,.25);font-size:11px}' +
+            '@media(max-width:520px){.fb-bar{flex-direction:column}}' +
+            '</style>');
+        }
+
+        /* สลับแอป / ปิดแท็บ = ส่งของค้างทันที ไม่งั้นข้อมูลรอบสุดท้ายหายไปกับหน้าเพจ */
+        document.addEventListener('visibilitychange', function () {
+          try { if (document.hidden && FB_DIRTY) fbPush(CURRENT_USER, true); } catch (e) { fbErr(e, 'vis'); }
+        });
+        window.addEventListener('pagehide', function () {
+          try { if (FB_DIRTY) fbPush(CURRENT_USER, true); } catch (e) {}
+          try { fbMonStop(); } catch (e) {}
+        });
+        window.addEventListener('online', function () {
+          try { FB_TRY = 0; FB_MSG = ''; if (FB_DIRTY) fbPush(); if (FB_MON && !FB_ES) fbReconnect(); } catch (e) {}
+        });
+        window.addEventListener('offline', function () { FB_ST = 'wait'; });
+      } catch (e) { fbErr(e, 'fbInstall'); }
+    })();
+
+
   </script>
 </body>
 </html>

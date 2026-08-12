@@ -87,19 +87,35 @@ def stem_of(name):
     return name.split(':')[-1].strip()
 
 
+def opt_int(argv, flag, default):
+    """อ่านค่าตัวเลขจากธง เช่น --q 76 หรือ --q=76"""
+    for i, a in enumerate(argv):
+        if a == flag and i + 1 < len(argv):
+            return int(argv[i + 1])
+        if a.startswith(flag + '='):
+            return int(a.split('=', 1)[1])
+    return default
+
+
 def main(argv):
-    only = set(a for a in argv if not a.startswith('-'))
+    q = opt_int(argv, '--q', None)
+    skip = set()
+    for i, a in enumerate(argv):
+        if a == '--q':
+            skip.add(i)
+            skip.add(i + 1)
+    only = set(a for i, a in enumerate(argv) if not a.startswith('-') and i not in skip)
 
     src = io.open(GAME, encoding='utf-8').read()
     before = len(src.encode('utf-8'))
 
     slots = []                                      # (label, stem, max_w, quality, span ของ data)
     for m in SKILL_RE.finditer(src):
-        slots.append((m.group('key'), stem_of(m.group('name')), SKILL_W, SKILL_Q,
+        slots.append((m.group('key'), stem_of(m.group('name')), SKILL_W, q or SKILL_Q,
                       m.span('data')))
     mw = WARP_RE.search(src)
     if mw:
-        slots.append(('warp', WARP_STEM, WARP_W, WARP_Q, mw.span('data')))
+        slots.append(('warp', WARP_STEM, WARP_W, q or WARP_Q, mw.span('data')))
     if not slots:
         sys.exit('หาฟิลด์ img ของ SKILLS / SN_WARP_ART ไม่เจอ — โครงไฟล์เกมถูกแก้ไปแล้วหรือเปล่า')
     print('พบช่องเสียบภาพ %d ช่อง' % len(slots))

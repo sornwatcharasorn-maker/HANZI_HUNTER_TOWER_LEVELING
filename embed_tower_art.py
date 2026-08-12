@@ -4,7 +4,9 @@
 กฎไฟล์เดียวจบห้ามอ้างไฟล์ภายนอก ภาพจึงต้องถูกย่อ → WebP → base64 → ฝังเป็นค่าคงที่ TR_ART
 สคริปต์นี้ทำให้ครบทั้งกระบวนการ พร้อมเขียนค่า TR_ART_AR ให้อัตโนมัติ
 
-    python3 tools/embed_tower_art.py หอคอย.png
+    python3 embed_tower_art.py TOWER.png            # ฝังที่คุณภาพเริ่มต้น q82
+    python3 embed_tower_art.py TOWER.png --q 76     # บังคับคุณภาพเอง (สัดส่วนภาพไม่เปลี่ยน)
+    python3 embed_tower_art.py TOWER.png --ruler    # ขอไม้บรรทัดไว้วัด TR_ART_Z ใหม่
 
 ค่า TR_ART_Z (จุดยืนของแต่ละโซนบนภาพ) ยังต้องวัดเอง — สคริปต์จะพิมพ์โครงร่างให้
 พร้อมภาพตัวช่วย tools/tower_art_ruler.png ที่ขีดเส้นบอกสัดส่วนความสูงไว้ทุก 5%
@@ -19,7 +21,9 @@ import sys
 from PIL import Image, ImageDraw
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-GAME = os.path.join(os.path.dirname(HERE), 'hanzi_hunter_tower_v3_1_intro.html')
+GAME = os.path.join(HERE, 'hanzi_hunter_tower_v3_1_intro.html')
+if not os.path.exists(GAME):                       # เผื่อวางสคริปต์ไว้ในโฟลเดอร์ย่อย tools/
+    GAME = os.path.join(os.path.dirname(HERE), 'hanzi_hunter_tower_v3_1_intro.html')
 
 TARGET_W = 800      # เพดานความกว้าง — ไม่ขยายภาพเกินขนาดต้นฉบับ (ขยายแล้วได้แต่ความเบลอกับไฟล์ที่ใหญ่ขึ้น)
 QUALITY = 82        # เท่ากับ SN_WARP_ART ที่ใช้อยู่
@@ -29,7 +33,17 @@ BUDGET_KB = 1953    # เพดานไฟล์รวมตาม CLAUDE.md = 
 #   บันไดคุณภาพจึงไม่เคยถูกไล่ลงเลยทั้งที่ไฟล์ทะลุเพดานตามเอกสารไปแล้ว
 
 
-def main(path):
+def opt_int(argv, flag, default):
+    """อ่านค่าตัวเลขจากธง เช่น --q 76 หรือ --q=76"""
+    for i, a in enumerate(argv):
+        if a == flag and i + 1 < len(argv):
+            return int(argv[i + 1])
+        if a.startswith(flag + '='):
+            return int(a.split('=', 1)[1])
+    return default
+
+def main(path, quality=None, ruler_on=False):
+    quality = quality or QUALITY
     im = Image.open(path).convert('RGB')
     w0, h0 = im.size
     w = min(TARGET_W, w0)
@@ -38,27 +52,30 @@ def main(path):
         im = im.resize((w, h), Image.LANCZOS)
 
     buf = io.BytesIO()
-    im.save(buf, 'WEBP', quality=QUALITY, method=6)
+    im.save(buf, 'WEBP', quality=quality, method=6)
     raw = buf.getvalue()
     b64 = base64.b64encode(raw).decode()
     ar = round(h / w, 4)
 
     print('ภาพต้นฉบับ  %dx%d' % (w0, h0))
     print('ใช้ขนาด    %dx%d  (สัดส่วน สูง/กว้าง = %.4f)' % (w, h, ar))
-    print('WebP q%d    %.1f KB  →  base64 %.1f KB' % (QUALITY, len(raw) / 1024, len(b64) / 1024))
+    print('WebP q%d    %.1f KB  →  base64 %.1f KB' % (quality, len(raw) / 1024, len(b64) / 1024))
 
-    # ภาพตัวช่วยวัดสัดส่วน
-    ruler = im.copy()
-    d = ImageDraw.Draw(ruler)
-    for pct in range(0, 101, 5):
+    # ภาพตัวช่วยวัดสัดส่วน — ทำเฉพาะตอนสั่ง --ruler เพราะการฝังใหม่ที่คุณภาพอื่น
+    # ไม่ได้เปลี่ยนสัดส่วนภาพ จึงไม่ต้องวัด TR_ART_Z ใหม่
+    ruler_path = None
+    if ruler_on:
+      ruler = im.copy()
+      d = ImageDraw.Draw(ruler)
+      for pct in range(0, 101, 5):
         y = h * pct / 100
         strong = pct % 25 == 0
         d.line([(0, y), (w, y)], fill=(255, 60, 60) if strong else (255, 220, 0), width=2 if strong else 1)
         d.text((4, max(0, y - 12)), '%d%%' % pct, fill=(255, 255, 255))
-    d.line([(w / 2, 0), (w / 2, h)], fill=(0, 255, 255), width=1)
-    ruler_path = os.path.join(HERE, 'tower_art_ruler.png')
-    ruler.save(ruler_path)
-    print('ไม้บรรทัดวัดสัดส่วน → %s' % ruler_path)
+      d.line([(w / 2, 0), (w / 2, h)], fill=(0, 255, 255), width=1)
+      ruler_path = os.path.join(HERE, 'tower_art_ruler.png')
+      ruler.save(ruler_path)
+      print('ไม้บรรทัดวัดสัดส่วน → %s' % ruler_path)
 
     src = io.open(GAME, encoding='utf-8').read()
     before = len(src.encode('utf-8'))
@@ -77,6 +94,9 @@ def main(path):
         sys.exit('หยุด: ไฟล์รวมทะลุเพดาน %d KB แล้ว ลด TARGET_W หรือ QUALITY ลง' % BUDGET_KB)
 
     io.open(GAME, 'w', encoding='utf-8').write(src)
+    if not ruler_path:
+        print('\nฝังภาพเรียบร้อย — สัดส่วนภาพเท่าเดิม จึงไม่ต้องวัด TR_ART_Z ใหม่')
+        return
     print('\nฝังภาพเรียบร้อย — เหลืออีกขั้นเดียว: กรอก TR_ART_Z')
     print('เปิด %s แล้ววัดว่าแต่ละโซนมีพื้นที่ยืนอยู่ที่ความสูงกี่ %%' % os.path.basename(ruler_path))
     print("""
@@ -96,6 +116,11 @@ def main(path):
 
 
 if __name__ == '__main__':
-    if len(sys.argv) != 2:
+    args = [a for a in sys.argv[1:] if not a.startswith('-')]
+    flags = sys.argv[1:]
+    qv = opt_int(flags, '--q', None)
+    if qv is not None and args and args[-1] == str(qv):
+        args = args[:-1]                            # ค่าที่ตามหลัง --q ไม่ใช่ชื่อไฟล์
+    if len(args) != 1:
         sys.exit(__doc__)
-    main(sys.argv[1])
+    main(args[0], qv, '--ruler' in flags)

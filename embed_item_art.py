@@ -6,6 +6,7 @@
 
     python3 embed_item_art.py                  # ฝังทุกตัวที่หาไฟล์เจอ
     python3 embed_item_art.py potion mystery   # ฝังเฉพาะบางตัว
+    python3 embed_item_art.py --q 76           # บังคับคุณภาพเอง (ข้ามบันได)
     python3 embed_item_art.py --clear          # ถอดภาพทุกตัวกลับไปใช้อีโมจิ
 
 สารบัญชื่อไฟล์อยู่ในตัวไฟล์เกมเอง — ฟิลด์ image ของไอเทมแต่ละตัวใน ITEMS
@@ -208,8 +209,26 @@ def resolve(path):
     return None
 
 
+def opt_int(argv, flag, default):
+    """อ่านค่าตัวเลขจากธง เช่น --q 76 หรือ --q=76"""
+    for i, a in enumerate(argv):
+        if a == flag and i + 1 < len(argv):
+            return int(argv[i + 1])
+        if a.startswith(flag + '='):
+            return int(a.split('=', 1)[1])
+    return default
+
+
 def main(argv):
-    only = set(a for a in argv if not a.startswith('-'))
+    q = opt_int(argv, '--q', None)
+    w = opt_int(argv, '--w', None)
+    skip = set()
+    for i, a in enumerate(argv):
+        if a in ('--q', '--w'):
+            skip.add(i)
+            skip.add(i + 1)
+    only = set(a for i, a in enumerate(argv) if not a.startswith('-') and i not in skip)
+    ladder = [(w or 160, q)] if q else ([(w, qq) for _, qq in LADDER] if w else LADDER)
     clear = '--clear' in argv
 
     src = io.open(GAME, encoding='utf-8').read()
@@ -243,7 +262,7 @@ def main(argv):
         sys.exit('\nไม่มีไฟล์ให้ฝังสักตัว — วางไฟล์ภาพตามชื่อในฟิลด์ image ก่อน')
 
     kept = sum(len(m.group('data')) for m in items) - sum(len(m.group('data')) for m, _ in jobs)
-    for max_w, quality in LADDER:
+    for max_w, quality in ladder:
         enc, total = {}, 0
         for m, real in jobs:
             raw, orig, used, stripped = encode(real, max_w, quality)

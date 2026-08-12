@@ -15737,6 +15737,709 @@
       } catch (e) { auErr(e, 'auInstall'); }
     })();
 
+
+    // ══════════════════════════════════════════════════════════════════
+    //  ชั้นที่สิบห้า — v5.2 · CLOUD SYNC  (Online Save & Data Sync Engine)
+    //  เซฟบัญชีขึ้นคลาวด์เรียลไทม์ · กันข้อมูลหายตอนล้างแคช · สลับเครื่องเล่นต่อได้
+    //  · ป้อนข้อมูลสดให้ห้องควบคุม GM และกระดานผู้นำ
+    //  ไม่แก้โค้ด v4.0-v5.1 เลย — ห่อฟังก์ชันเหมือนสิบสี่ชั้นก่อนหน้า
+    //  ไม่มี SDK จาก CDN — คุยกับคลาวด์ด้วย fetch + REST ล้วน ตามกฎไฟล์เดียวจบ
+    //  ยังไม่ตั้งค่าคลาวด์ = ทั้งชั้นนี้เงียบสนิท เกมทำงานเหมือนเดิมทุกประการ
+    // ══════════════════════════════════════════════════════════════════
+
+    const CS_VER   = 'v5.2';
+    const CS_K_CFG = 'yao_cloud';       /* คอนฟิก — ระดับเครื่อง ไม่ผูกบัญชี */
+    const CS_K_OUT = 'yao_cloud_out';   /* กล่องส่งออก: ของที่ยังส่งไม่สำเร็จ */
+    const CS_K_SES = 'yao_cloud_ses';   /* เซสชันจำอัตโนมัติ */
+    const CS_K_BAK = 'yao_cloud_bak';   /* สำรองก้อนสุดท้ายก่อนถูกคลาวด์ทับ */
+    const CS_K_DEV = 'yao_cloud_dev';   /* รหัสเครื่อง */
+
+    const CS_DEBOUNCE = 6000;
+    const CS_BACKOFF  = [4000, 8000, 16000, 32000, 60000];
+    const CS_TIMEOUT  = 12000;
+    const CS_SES_MS   = 14 * 864e5;     /* จำการล็อกอินไว้ 14 วัน */
+    const CS_ROOM_TTL = 20000;          /* อายุแคชรายชื่อทั้งห้อง */
+    const CS_WEAK_MAX = 12;             /* คำที่ผิดซ้ำที่ส่งขึ้นไปให้ครู */
+    const CS_CFG_DEF  = { provider: '', url: '', key: '', table: 'hunters', auto: true, strict: false };
+
+    let CS_CFG = null, CS_ON = false, CS_READY = false, CS_BUSY = false, CS_DIRTY = false;
+    let CS_T = null, CS_TRY = 0, CS_ST = 'off', CS_MSG = '', CS_LAST = 0;
+    let CS_SRV = 0;           /* ts ของแถวบนคลาวด์ที่เรารู้ล่าสุด */
+    let CS_REV = 0;           /* เลขรุ่นของแถวเรา */
+    let CS_ROOM = { at: 0, room: '', rows: [] };
+    let CS_AUTH = false;      /* กำลังตรวจล็อกอินกับคลาวด์ */
+    let CS_HALT = false;      /* หยุดส่งชั่วคราว (กำลังรับก้อนคลาวด์มาทับ) */
+    let CS_GATE = false;      /* ผู้เล่นกดเข้าเกทเองแล้ว → ห้ามล็อกอินเงียบทับ */
+
+    function csErr(e, w) {
+      try { if (typeof gcErrPush === 'function') gcErrPush('cloud', (w || '') + ': ' + ((e && e.message) || e), 'v5.2', e && e.stack); } catch (x) {}
+    }
+
+    // ── 1. คอนฟิก + ตัวช่วย ───────────────────────────────────────
+    function csCfgLoad() {
+      let o = {};
+      try { o = JSON.parse(localStorage.getItem(CS_K_CFG) || '{}') || {}; } catch (e) {}
+      CS_CFG = Object.assign({}, CS_CFG_DEF, o);
+      CS_CFG.url   = String(CS_CFG.url || '').trim().replace(/\/+$/, '');
+      CS_CFG.table = String(CS_CFG.table || '').trim() || 'hunters';
+      CS_ON = (CS_CFG.provider === 'supabase' || CS_CFG.provider === 'firebase') && !!CS_CFG.url;
+      if (!CS_ON) CS_ST = 'off'; else if (CS_ST === 'off') CS_ST = 'ok';
+      return CS_CFG;
+    }
+
+    function csCfgSave(o) {
+      try { localStorage.setItem(CS_K_CFG, JSON.stringify(Object.assign({}, CS_CFG || CS_CFG_DEF, o || {}))); } catch (e) {}
+      csCfgLoad(); csPaint(); return CS_CFG;
+    }
+
+    function csDev() {
+      let d = ''; try { d = localStorage.getItem(CS_K_DEV) || ''; } catch (e) {}
+      if (!d) { d = 'd' + Math.random().toString(36).slice(2, 9); try { localStorage.setItem(CS_K_DEV, d); } catch (e) {} }
+      return d;
+    }
+
+    /* แฮชรหัสผ่านก่อนขึ้นคลาวด์ กันรหัสโผล่เป็นตัวอักษรบนฐานข้อมูล
+       ไม่ใช่ความปลอดภัยระดับจริงจัง (กติกาเดียวกับ TEACHER_PIN ที่ฝังในซอร์ส) */
+    function csHash(s) {
+      let h = 5381 >>> 0; s = String(s);
+      for (let i = 0; i < s.length; i++) h = (((h << 5) + h) ^ s.charCodeAt(i)) >>> 0;
+      return h.toString(36);
+    }
+    function csPwh(u, pw) { return csHash('yao5:' + u + ':' + pw); }
+    function csWhen(t)    { return t ? new Date(t).toLocaleTimeString('th-TH') : '—'; }
+
+    // ── 2. คำขอ REST — provider ต่างกันแค่ URL กับหัวคำขอ ──────────
+    async function csFetch(url, opt) {
+      let ac = null, tm = null;
+      try { ac = new AbortController(); } catch (e) {}
+      const o = Object.assign({ cache: 'no-store' }, opt || {});
+      if (ac) { o.signal = ac.signal; tm = setTimeout(function () { try { ac.abort(); } catch (e) {} }, CS_TIMEOUT); }
+      try {
+        const r = await fetch(url, o), t = await r.text();
+        if (!r.ok) throw new Error('HTTP ' + r.status + ' ' + String(t).slice(0, 120));
+        let d = null; try { d = t ? JSON.parse(t) : null; } catch (e) {}
+        return d;
+      } finally { if (tm) clearTimeout(tm); }
+    }
+
+    function csSbUrl(q) { return CS_CFG.url + '/rest/v1/' + encodeURIComponent(CS_CFG.table) + (q ? '?' + q : ''); }
+    function csSbHead(pref) {
+      const h = { 'Content-Type': 'application/json' };
+      if (CS_CFG.key) { h.apikey = CS_CFG.key; h.Authorization = 'Bearer ' + CS_CFG.key; }
+      if (pref) h.Prefer = pref;
+      return h;
+    }
+    function csFbUrl(p) {
+      return CS_CFG.url + '/' + encodeURIComponent(CS_CFG.table) + (p || '') + '.json' +
+             (CS_CFG.key ? '?auth=' + encodeURIComponent(CS_CFG.key) : '');
+    }
+
+    async function csGetRow(user) {
+      if (CS_CFG.provider === 'supabase') {
+        const d = await csFetch(csSbUrl('usr=eq.' + encodeURIComponent(user) + '&select=*'), { headers: csSbHead() });
+        return (d && d[0]) || null;
+      }
+      return (await csFetch(csFbUrl('/' + encodeURIComponent(user)))) || null;
+    }
+
+    /* RTDB ดึงทั้งโหนดแล้วกรองเอง — ห้องเรียนหนึ่งห้องข้อมูลไม่ใหญ่ และไม่ต้องตั้ง .indexOn */
+    async function csGetRoomRows(room) {
+      if (CS_CFG.provider === 'supabase') {
+        return (await csFetch(csSbUrl('room=eq.' + encodeURIComponent(room) + '&select=*'), { headers: csSbHead() })) || [];
+      }
+      const all = (await csFetch(csFbUrl(''))) || {};
+      return Object.keys(all).map(k => all[k]).filter(r => r && (r.room || '') === room);
+    }
+
+    /* Timestamp-based Server Wins — เทียบเวลาก่อนเขียนเสมอ
+       supabase: PATCH เงื่อนไข ts=lt.<ของเรา> → คลาวด์ใหม่กว่า = ไม่มีแถวถูกแก้เลย (compare-and-set จริง)
+       firebase: REST ไม่มี CAS จึงอ่านมาเทียบก่อนเขียน เหลือช่องว่างเสี้ยววินาที */
+    async function csPutRow(row) {
+      const u = encodeURIComponent(row.usr);
+      if (CS_CFG.provider === 'supabase') {
+        const d = await csFetch(csSbUrl('usr=eq.' + u + '&ts=lt.' + row.ts),
+          { method: 'PATCH', headers: csSbHead('return=representation'), body: JSON.stringify(row) });
+        if (d && d.length) return { st: 'ok' };
+        const cur = await csGetRow(row.usr);
+        if (cur) return { st: 'conflict', row: cur };
+        await csFetch(csSbUrl(''), { method: 'POST', headers: csSbHead('return=minimal,resolution=merge-duplicates'), body: JSON.stringify(row) });
+        return { st: 'ok' };
+      }
+      const cur = await csGetRow(row.usr);
+      if (cur && (cur.ts || 0) >= row.ts && (cur.dev || '') !== row.dev) return { st: 'conflict', row: cur };
+      await csFetch(csFbUrl('/' + u), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(row) });
+      return { st: 'ok' };
+    }
+
+    // ── 3. แพ็กข้อมูล ─────────────────────────────────────────────
+    /* doc = บัญชีทั้งก้อนไว้กู้คืนแบบเป๊ะ — ตัด pw ออก ขึ้นไปเฉพาะแฮช */
+    function csDoc(a) {
+      const d = {};
+      Object.keys(a).forEach(function (k) { if (k !== 'pw') d[k] = a[k]; });
+      return d;
+    }
+
+    /* an = ข้อมูลวิเคราะห์แบบแบน สำหรับ GM และกระดานผู้นำ อ่านได้โดยไม่ต้องแกะ doc */
+    function csAn(a) {
+      const st = a.stats || {}, tot = (a.correct || 0) + (a.wrong || 0);
+      const ws = a.wordStats || {}, weak = [];
+      Object.keys(ws).forEach(function (k) {
+        const w = ws[k]; if (w && (w.wrong || 0) >= 2) weak.push([+k, w.wrong, w.seen || 0]);
+      });
+      weak.sort(function (x, y) { return y[1] - x[1]; });
+      const qd = (a.quest || {}).done || {}, td = (a.tq || {}).done || {};
+      const ab = a.ab || {}, cd = a.cd || {}, rk = rankOfFloor(a.maxFloor).key;
+      return {
+        lv: a.level || 1, exp: a.exp || 0, hp: a.hp || 0, mhp: a.maxHp || 0, mp: a.mp || 0,
+        gold: a.gold || 0, tgold: a.totalGoldEarned || 0,
+        floor: a.floor || 1, mfloor: a.maxFloor || 1, zone: zoneOf(a.floor || 1).id,
+        boss: a.bossClears || 0, tower: a.towerClears || 0, rank: rk, srank: rk === 'S',
+        corr: a.correct || 0, wrong: a.wrong || 0, acc: tot ? Math.round((a.correct || 0) / tot * 100) : 0,
+        agi: st.agi || 0, str: st.str || 0, vit: st.vit || 0, int: st.int || 0, luk: st.luk || 0,
+        fast: a.fastAnswers || 0, words: (typeof cxCount === 'function' ? cxCount(a) : 0),
+        title: a.equippedTitle || '', room: a.classroom || DEFAULT_ROOM, frozen: a.frozen === true,
+        items: Object.assign({}, a.items || {}), card: (cd.cur && cd.cur.id) || null, drafts: cd.drafts || 0,
+        shards: ab.shards || 0, core: Object.assign({}, ab.core || {}),
+        quest:  { d: (qd.d || []).length, w: (qd.w || []).length, L: (qd.L || []).length },
+        tquest: { d: (td.d || []).length, L: (td.L || []).length },
+        weak: weak.slice(0, CS_WEAK_MAX).map(function (w) {
+          const v = (typeof vocabById === 'function' ? vocabById(w[0]) : null) || [];
+          return { id: w[0], ch: v[1] || '', py: v[2] || '', wrong: w[1], seen: w[2] };
+        }),
+        at: Date.now()
+      };
+    }
+
+    function csRow(user, a) {
+      CS_REV = Math.max(CS_REV, (a.cs && a.cs.rev) || 0) + 1;
+      const ts = Math.max(Date.now(), CS_SRV + 1), dev = csDev();
+      a.cs = { rev: CS_REV, ts: ts, dev: dev };
+      return { usr: user, room: a.classroom || DEFAULT_ROOM, name: a.name || user,
+               pwh: csPwh(user, a.pw || ''), rev: CS_REV, ts: ts, dev: dev,
+               ver: CS_VER, doc: csDoc(a), an: csAn(a) };
+    }
+
+    // ── 4. กล่องส่งออก + ตัวส่งจริง ───────────────────────────────
+    function csOutLoad()  { try { return JSON.parse(localStorage.getItem(CS_K_OUT) || '{}') || {}; } catch (e) { return {}; } }
+    function csOutSave(o) { try { localStorage.setItem(CS_K_OUT, JSON.stringify(o)); } catch (e) {} }
+    function csOutCount() { return Object.keys(csOutLoad()).length; }
+
+    /* เก็บภาพนิ่งลงกล่องส่งออกก่อนยิงเสมอ — ปิดแท็บ/เน็ตหลุดกลางทางก็ไม่หาย
+       เขียน SKEY ตรง ๆ ไม่ผ่าน saveStore เพราะ saveStore ถูกห่อไว้แล้ว จะวนกลับมาหาตัวเอง */
+    function csStage(user) {
+      if (!user) return null;
+      const s = loadStore(), a = s[user];
+      if (!a) return null;
+      const row = csRow(user, a);
+      try { localStorage.setItem(SKEY, JSON.stringify(s)); } catch (e) {}
+      const o = csOutLoad(); o[user] = row; csOutSave(o);
+      CS_DIRTY = false;
+      return row;
+    }
+
+    function csTouch(now) {
+      if (!CS_ON || !CS_READY || CS_HALT || !CURRENT_USER) return;
+      CS_DIRTY = true;
+      if (now) { csFlush(); return; }
+      if (!CS_T) CS_T = setTimeout(function () { CS_T = null; csFlush(); }, CS_DEBOUNCE);
+      csPaint();
+    }
+
+    function csRetry() {
+      const ms = CS_BACKOFF[Math.min(CS_TRY, CS_BACKOFF.length - 1)];
+      CS_TRY++;
+      if (CS_T) clearTimeout(CS_T);
+      CS_T = setTimeout(function () { CS_T = null; csFlush(); }, ms);
+    }
+
+    async function csFlush() {
+      if (!CS_ON || CS_BUSY || CS_HALT) return false;
+      if (CS_T) { clearTimeout(CS_T); CS_T = null; }
+      if (CS_DIRTY && CURRENT_USER) { try { csStage(CURRENT_USER); } catch (e) { csErr(e, 'stage'); } }
+      const out = csOutLoad(), keys = Object.keys(out);
+      if (!keys.length) { CS_ST = 'ok'; csPaint(); return true; }
+      CS_BUSY = true; CS_ST = 'sync'; csPaint();
+      let ok = true;
+      for (let i = 0; i < keys.length; i++) {
+        const k = keys[i];
+        try {
+          const res = await csPutRow(out[k]);
+          const cur = csOutLoad(); delete cur[k]; csOutSave(cur);
+          if (res.st === 'conflict') { csConflict(k, res.row); continue; }
+          CS_SRV = out[k].ts; CS_LAST = Date.now(); CS_MSG = '';
+        } catch (e) { ok = false; CS_MSG = String((e && e.message) || e).slice(0, 160); csErr(e, 'flush'); break; }
+      }
+      CS_BUSY = false;
+      if (ok) { CS_TRY = 0; CS_ST = 'ok'; } else { CS_ST = (navigator.onLine === false) ? 'wait' : 'err'; csRetry(); }
+      csPaint();
+      return ok;
+    }
+
+    // ── 5. รับข้อมูลจากคลาวด์ ─────────────────────────────────────
+    /* pw ใช้ของที่มีอยู่ในเครื่อง เพราะคลาวด์ไม่เคยเก็บ pw (เก็บแต่แฮช) */
+    function csAdopt(user, row, pw, store) {
+      if (!row || !row.doc) return null;
+      const s = store || loadStore(), old = s[user];
+      const a = Object.assign({}, row.doc);
+      a.user = user;
+      a.pw = pw || (old && old.pw) || '';
+      a.cs = { rev: row.rev || 0, ts: row.ts || 0, dev: row.dev || '' };
+      s[user] = migrateAccount(a);
+      if (!store) saveStore(s);
+      return s[user];
+    }
+
+    function csBackup(user) {
+      try {
+        const a = loadStore()[user];
+        if (a) localStorage.setItem(CS_K_BAK, JSON.stringify({ at: Date.now(), user: user, doc: a }));
+      } catch (e) {}
+    }
+
+    /* คลาวด์ใหม่กว่า = อีกเครื่องเล่นทีหลังเรา → ให้ฝั่งเซิร์ฟเวอร์ชนะ กันปั๊มทอง/การ์ด
+       ด้วยการเล่นสองเครื่องแล้วเอาก้อนที่ได้เยอะกว่าไปทับ · สำรองก้อนของเครื่องนี้ไว้ที่
+       yao_cloud_bak ก่อนเสมอ ไม่ได้ทิ้งข้อมูลใครทั้งก้อน */
+    function csConflict(user, srv) {
+      csBackup(user);
+      if (user !== CURRENT_USER) { csAdopt(user, srv); return; }
+      CS_HALT = true;
+      csNotify('CONFLICT', { dev: (srv && srv.dev) || '—', when: (srv && srv.ts) ? new Date(srv.ts).toLocaleString('th-TH') : '—' },
+        function () {
+          try {
+            exitGame();               /* ให้ของเดิมเซฟก้อนเก่าลงเครื่องให้จบก่อน */
+            csAdopt(user, srv);       /* แล้วค่อยเอาก้อนของคลาวด์ทับ */
+            CS_SRV = (srv && srv.ts) || 0; CS_REV = (srv && srv.rev) || 0;
+            CS_HALT = false;
+            startGame(user);
+          } catch (e) { CS_HALT = false; csErr(e, 'conflict'); }
+        });
+    }
+
+    /* ดึงทั้งห้องมาลงเครื่อง → ตาราง GM · กระดานผู้นำ · Export CSV ของ v4.0/v4.3 เห็นข้อมูลสด
+       ทันทีโดยไม่ต้องเขียน UI ใหม่ · ข้ามคนที่กำลังเล่นอยู่บนเครื่องนี้เสมอ */
+    async function csRoomPull(room, force) {
+      if (!CS_ON) return [];
+      const rm = room || (CURRENT_USER && G && G.classroom) || DEFAULT_ROOM;
+      if (!force && CS_ROOM.room === rm && Date.now() - CS_ROOM.at < CS_ROOM_TTL) return CS_ROOM.rows;
+      const rows = await csGetRoomRows(rm);
+      CS_ROOM = { at: Date.now(), room: rm, rows: rows };
+      const s = loadStore();
+      let n = 0;
+      rows.forEach(function (r) {
+        if (!r || !r.usr || r.usr === CURRENT_USER) return;
+        const cur = s[r.usr];
+        if (cur && Math.max((cur.cs && cur.cs.ts) || 0, cur.lastActive || 0) > (r.ts || 0)) return;
+        csAdopt(r.usr, r, null, s); n++;
+      });
+      if (n) {
+        saveStore(s);
+        try { if (document.getElementById('gBoard').classList.contains('active')) renderBoard(); } catch (e) {}
+        try { if (document.getElementById('gmPanel').classList.contains('active')) gmRender(); } catch (e) {}
+      }
+      return rows;
+    }
+
+    function csRoomKick(force) {
+      if (!CS_ON) return;
+      csRoomPull(null, force).catch(function (e) {
+        CS_MSG = String((e && e.message) || e).slice(0, 160); csErr(e, 'roomPull'); csPaint();
+      });
+    }
+
+    // ── 6. ล็อกอิน + จำเซสชัน ─────────────────────────────────────
+    function csSesLoad()      { try { return JSON.parse(localStorage.getItem(CS_K_SES) || 'null'); } catch (e) { return null; } }
+    function csSesSave(u, pw) { try { localStorage.setItem(CS_K_SES, JSON.stringify({ u: u, pw: pw, at: Date.now() })); } catch (e) {} }
+    function csSesClear()     { try { localStorage.removeItem(CS_K_SES); } catch (e) {} }
+
+    /* ตรวจตัวตนกับคลาวด์ก่อน แล้วค่อยปล่อยให้ handleSubmit ของ v4.0 ทำงานตามเดิม
+       คืน true = ไปต่อได้ · false = หยุด (แสดงเหตุผลไว้ที่ช่องข้อความแล้ว) */
+    async function csAuthCloud(mode, id, pw) {
+      let row = null;
+      try { row = await csGetRow(id); }
+      catch (e) {
+        csErr(e, 'auth');
+        if (CS_CFG.strict) { showError('[คลาวด์] 📡 ต่อคลาวด์ไม่ได้ — โหมดออนไลน์บังคับ ลองใหม่เมื่อสัญญาณกลับมา'); return false; }
+        csToast('OFFLINE', {});
+        return true;                             /* เน็ตหลุด → ใช้ข้อมูลในเครื่องไปก่อน */
+      }
+      if (mode === 'register') {
+        if (row) { showError('[คลาวด์] ⚠️ รหัสฮันเตอร์นี้ถูกใช้แล้วบนคลาวด์ — ถ้าเป็นของคุณให้กดเข้าสู่ระบบแทน'); return false; }
+        return true;
+      }
+      if (!row) return true;                     /* ยังไม่เคยขึ้นคลาวด์ → ใช้ของในเครื่องแล้วค่อยส่งขึ้นไป */
+      if (row.pwh && row.pwh !== csPwh(id, pw)) { showError('[คลาวด์] ⚠️ รหัสผ่านลับไม่ตรงกับข้อมูลบนคลาวด์'); return false; }
+      if (row.doc && row.doc.frozen) { showError('[ระบบ] ❄️ สิทธิ์ฮันเตอร์ถูกระงับ — ติดต่อ GM ทันที'); return false; }
+      const loc = loadStore()[id];
+      const locTs = loc ? Math.max((loc.cs && loc.cs.ts) || 0, loc.lastActive || 0) : 0;
+      if (!loc || (row.ts || 0) >= locTs) {       /* คลาวด์ใหม่กว่าหรือเท่ากัน → เซิร์ฟเวอร์ชนะ */
+        if (loc) csBackup(id);
+        csAdopt(id, row, pw);
+        CS_SRV = row.ts || 0; CS_REV = row.rev || 0;
+        csToast('PULLED', { n: (row.an && row.an.mfloor) || 1 });
+      }
+      return true;
+    }
+
+    /* ล็อกอินเงียบตอนเปิดแอป — ยกเลิกทันทีถ้าผู้เล่นกดเข้าเกทเองไปแล้ว
+       จะได้ไม่ลากเขาเข้าบัญชีอื่นกลางคัน */
+    async function csSilent() {
+      if (!CS_ON || CS_CFG.auto === false || CS_GATE) return false;
+      const ses = csSesLoad();
+      if (!ses || !ses.u || Date.now() - (ses.at || 0) > CS_SES_MS) return false;
+      if (document.getElementById('gameScreen').classList.contains('active')) return false;
+      let row = null;
+      try { row = await csGetRow(ses.u); } catch (e) { csErr(e, 'silent'); }
+      if (row && row.pwh && row.pwh !== csPwh(ses.u, ses.pw || '')) { csSesClear(); return false; }
+      if (row) {
+        const loc = loadStore()[ses.u];
+        const locTs = loc ? Math.max((loc.cs && loc.cs.ts) || 0, loc.lastActive || 0) : 0;
+        if (!loc || (row.ts || 0) >= locTs) { if (loc) csBackup(ses.u); csAdopt(ses.u, row, ses.pw); }
+        CS_SRV = row.ts || 0; CS_REV = row.rev || 0;
+      }
+      const a = loadStore()[ses.u];
+      if (!a || a.frozen) { csSesClear(); return false; }
+      if (CS_GATE || document.getElementById('gameScreen').classList.contains('active')) return false;
+      try { startGame(ses.u); csToast('RELOGIN', { u: a.name || ses.u }); return true; }
+      catch (e) { csErr(e, 'silentStart'); return false; }
+    }
+
+    // ── 7. สารบัญแจ้งเตือน — CLOUD 01/05-05/05 (gate ใบเดียวคือ CONFLICT) ──
+    const CS_NOTIF = {
+      PULLED:  { tag: 'CLOUD 01/05', tone: 'good', title: () => '☁️ กู้ข้อมูลจากคลาวด์แล้ว',
+                 body: d => 'ดึงความคืบหน้าล่าสุดลงเครื่องนี้เรียบร้อย\nชั้นสูงสุดที่บันทึกไว้: <b>' + d.n + '</b>' },
+      OFFLINE: { tag: 'CLOUD 02/05', tone: 'warn', title: () => '📡 ออฟไลน์ชั่วคราว',
+                 body: () => 'ต่อคลาวด์ไม่ได้ตอนนี้ ระบบพักข้อมูลไว้ในเครื่องก่อน\nแล้วส่งขึ้นให้เองเมื่อสัญญาณกลับมา — <i>เล่นต่อได้ ข้อมูลไม่หาย</i>' },
+      SYNCED:  { tag: 'CLOUD 03/05', tone: 'good', title: () => '☁️ ซิงก์ข้อมูลสำเร็จ',
+                 body: d => 'ส่งความคืบหน้าขึ้นคลาวด์แล้ว เวลา <b>' + d.t + '</b>' },
+      RELOGIN: { tag: 'CLOUD 04/05', tone: '', title: d => '🔓 ยินดีต้อนรับกลับ ' + d.u,
+                 body: () => 'ระบบจำการเข้าใช้งานไว้ จึงพาเข้าหอคอยให้ทันที\n<i>กด 🚪 ออกจากเกท เมื่อต้องการเลิกจำเครื่องนี้</i>' },
+      CONFLICT:{ tag: 'CLOUD 05/05', tone: 'danger', gate: true, btn: '☁️ ใช้ข้อมูลจากคลาวด์',
+                 title: () => '⚠️ พบข้อมูลที่ใหม่กว่าบนคลาวด์',
+                 body: d => 'บัญชีนี้ถูกเล่นจากอีกเครื่องหลังเครื่องนี้ (<b>' + d.dev + '</b> · ' + d.when + ')\n' +
+                            'ระบบยึดก้อนที่ใหม่กว่าเป็นหลักเพื่อกันความคืบหน้าตีกัน\n<i>ก้อนของเครื่องนี้สำรองไว้แล้ว</i>' }
+    };
+
+    function csNotify(key, data, onConfirm) {
+      const def = CS_NOTIF[key]; if (!def) return;
+      const d = data || {};
+      let t, b;
+      try { t = def.title(d); b = def.body(d); } catch (e) { return; }
+      if (def.gate) { snShowGate(def, t, b, onConfirm); return; }
+      snShowToast(def, t, b);
+    }
+    function csToast(k, d) { try { csNotify(k, d); } catch (e) { csErr(e, 'toast'); } }
+
+    // ── 8. ชิปสถานะบนแถบหัวหน้าจอเล่น ─────────────────────────────
+    const CS_FACE = { off: ['🚫', 'ปิดคลาวด์'], ok: ['☁️', 'ซิงก์แล้ว'], sync: ['🔄', 'กำลังซิงก์'],
+                      wait: ['📡', 'รอสัญญาณ'], err: ['⚠️', 'ส่งไม่สำเร็จ'] };
+
+    function csPaint() {
+      const b = document.getElementById('csChip');
+      if (!b) return;
+      if (!CS_ON) { b.style.display = 'none'; return; }
+      b.style.display = '';
+      const n = csOutCount() + (CS_DIRTY ? 1 : 0), f = CS_FACE[CS_ST] || CS_FACE.ok;
+      b.textContent = f[0] + (n ? String(n) : '');
+      b.className = 'g-logout cs-chip cs-' + CS_ST;
+      b.title = '☁️ คลาวด์ — ' + f[1] + (n ? ' · ค้างส่ง ' + n : '');
+    }
+
+    function csPanel() {
+      const n = csOutCount(), ses = csSesLoad();
+      const kv = function (k, v) { return '<div class="cs-kv"><span>' + k + '</span><b>' + v + '</b></div>'; };
+      snOpenPanel('CLOUD SYNC ' + CS_VER, '☁️ สถานะการเชื่อมต่อคลาวด์',
+        kv('สถานะ', (CS_FACE[CS_ST] || CS_FACE.ok)[1]) + kv('ผู้ให้บริการ', esc(CS_CFG.provider || '—')) +
+        kv('ซิงก์ล่าสุด', csWhen(CS_LAST)) + kv('ค้างส่ง', n + ' รายการ') + kv('จำเครื่องนี้ไว้', ses ? 'ใช่' : 'ไม่') +
+        (CS_MSG ? '<div class="cs-note">⚠️ ' + esc(CS_MSG) + '</div>' : '') +
+        '<div class="cs-note">ข้อมูลถูกส่งขึ้นคลาวด์อัตโนมัติเมื่อตอบจบข้อ เคลียร์ชั้น ทำเควสสำเร็จ ซื้อของ อัปเลเวล ' +
+        'และตอนออกจากเกม · เน็ตหลุดจะพักไว้ในเครื่องแล้วส่งให้เองเมื่อสัญญาณกลับมา</div>' +
+        '<div class="cs-row"><button class="cs-b" onclick="csSyncNow()">🔄 ซิงก์เดี๋ยวนี้</button>' +
+        '<button class="cs-b" onclick="csForget()">🚪 เลิกจำเครื่องนี้</button></div>');
+    }
+
+    function csSyncNow() {
+      if (!CS_ON) return;
+      CS_TRY = 0; CS_DIRTY = true;
+      csFlush().then(function (ok) {
+        if (ok) csToast('SYNCED', { t: new Date().toLocaleTimeString('th-TH') });
+        csPanel();
+      });
+    }
+    function csForget() { csSesClear(); csPanel(); }
+
+    // ── 9. ห้องควบคุม GM — ตั้งค่า + ข้อมูลสดทั้งห้อง ───────────────
+    function csGmOpen()  { csGmRender(); document.getElementById('csGm').classList.add('active'); }
+    function csGmClose() { document.getElementById('csGm').classList.remove('active'); }
+
+    function csGmRender(msg) {
+      const c = CS_CFG, rows = CS_ROOM.rows || [];
+      const opt = function (v, t) { return '<option value="' + v + '"' + (c.provider === v ? ' selected' : '') + '>' + t + '</option>'; };
+      const list = rows.slice().sort(function (x, y) { return ((y.an && y.an.mfloor) || 0) - ((x.an && x.an.mfloor) || 0); })
+        .map(function (r) {
+          const a = r.an || {};
+          return '<tr><td>' + esc(r.name || r.usr) + '<div class="cs-sub">' + esc(r.usr) + '</div></td><td>' +
+            (a.lv || 1) + '</td><td>' + (a.mfloor || 1) + '</td><td>' + (a.acc || 0) + '%</td><td>' +
+            (a.gold || 0) + '</td><td>' + (a.words || 0) + '</td><td class="cs-w">' +
+            ((a.weak || []).slice(0, 4).map(function (w) { return esc(w.ch) + '<i>' + w.wrong + '</i>'; }).join(' ') || '—') +
+            '</td><td>' + csWhen(r.ts) + '</td></tr>';
+        }).join('');
+      document.getElementById('csGmBody').innerHTML =
+        '<div class="cs-sec">1 · ตั้งค่าการเชื่อมต่อ<small>เก็บในเครื่องนี้เท่านั้น ไม่ได้ฝังลงไฟล์เกมที่แจกนักเรียน</small></div>' +
+        '<div class="cs-form">' +
+          '<label>ผู้ให้บริการ<select id="csFp">' + opt('', '— ปิดคลาวด์ (ออฟไลน์) —') +
+            opt('supabase', 'Supabase (REST)') + opt('firebase', 'Firebase RTDB (REST)') + '</select></label>' +
+          '<label>Project URL<input id="csFu" value="' + esc(c.url) + '" placeholder="https://xxxx.supabase.co"></label>' +
+          '<label>API Key<input id="csFk" value="' + esc(c.key) + '" placeholder="anon public key"></label>' +
+          '<label>ตาราง / โหนด<input id="csFt" value="' + esc(c.table) + '"></label>' +
+          '<label class="cs-ck"><input type="checkbox" id="csFa"' + (c.auto !== false ? ' checked' : '') + '> จำการล็อกอินอัตโนมัติ</label>' +
+          '<label class="cs-ck"><input type="checkbox" id="csFs"' + (c.strict ? ' checked' : '') + '> บังคับออนไลน์ (ต่อไม่ได้ = ห้ามล็อกอิน)</label>' +
+        '</div>' +
+        '<div class="cs-row"><button class="gm-btn jade" onclick="csGmSave()">💾 บันทึกค่า</button>' +
+          '<button class="gm-btn" onclick="csGmTest()">🔌 ทดสอบการเชื่อมต่อ</button>' +
+          '<button class="gm-btn" onclick="csGmPullAll()">⬇️ ดึงข้อมูลสดทั้งห้อง</button>' +
+          '<button class="gm-btn" onclick="csGmPushAll()">⬆️ อัปโหลดบัญชีในเครื่อง</button>' +
+          '<button class="gm-btn red" onclick="csGmClose()">✕ ปิด</button></div>' +
+        (msg ? '<div class="cs-msg">' + esc(msg) + '</div>' : '') +
+        '<div class="cs-sec">2 · ข้อมูลสดของห้อง<small>' + esc(CS_ROOM.room || '—') + ' · ' + rows.length +
+          ' คน · ดึงเมื่อ ' + csWhen(CS_ROOM.at) + '</small></div>' +
+        '<div class="gm-table-wrap"><table class="gm-table cs-t"><thead><tr><th>ฮันเตอร์</th><th>Lv</th><th>ชั้น</th><th>แม่นยำ</th>' +
+          '<th>ทอง</th><th>คำ</th><th>คำที่ผิดซ้ำ</th><th>อัปเดต</th></tr></thead><tbody>' +
+        (list || '<tr><td colspan="8">ยังไม่มีข้อมูล — กด ⬇️ ดึงข้อมูลสดทั้งห้อง</td></tr>') + '</tbody></table></div>' +
+        '<div class="cs-note">แถวที่ดึงมาถูกเขียนลงเครื่องนี้ด้วย ตาราง GM · กระดานผู้นำ · Export CSV จึงเห็นชุดเดียวกันทันที ' +
+        '(ข้ามบัญชีที่กำลังเล่นอยู่บนเครื่องนี้เสมอ) · โครงตาราง Supabase: <code>create table hunters (usr text primary key, ' +
+        'room text, name text, pwh text, rev int8, ts int8, dev text, ver text, doc jsonb, an jsonb);</code> แล้วเปิดสิทธิ์ให้ role anon</div>';
+    }
+
+    function csGmSave() {
+      const v = function (id) { return document.getElementById(id).value; };
+      csCfgSave({ provider: v('csFp'), url: v('csFu'), key: v('csFk'), table: v('csFt'),
+                  auto: document.getElementById('csFa').checked, strict: document.getElementById('csFs').checked });
+      csGmRender(CS_ON ? '✅ บันทึกแล้ว — คลาวด์เปิดใช้งาน' : '💾 บันทึกแล้ว — ปิดคลาวด์ (ออฟไลน์ล้วน)');
+    }
+
+    function csGmTest() {
+      if (!CS_ON) { csGmRender('⚠️ ยังไม่ได้เลือกผู้ให้บริการหรือยังไม่ได้ใส่ URL'); return; }
+      csGetRoomRows('__ping__').then(function () { csGmRender('✅ เชื่อมต่อได้ — ตาราง/โหนดพร้อมใช้งาน'); })
+        .catch(function (e) { csGmRender('❌ ต่อไม่ได้: ' + ((e && e.message) || e)); });
+    }
+
+    function csGmPullAll() {
+      csRoomPull((typeof GC_ROOM === 'string' && GC_ROOM) || DEFAULT_ROOM, true)
+        .then(function (r) { csGmRender('⬇️ ดึงมาแล้ว ' + r.length + ' คน'); try { gmRender(); } catch (e) {} })
+        .catch(function (e) { csGmRender('❌ ดึงไม่สำเร็จ: ' + ((e && e.message) || e)); });
+    }
+
+    async function csGmPushAll() {
+      if (!CS_ON) { csGmRender('⚠️ ยังไม่ได้ตั้งค่าคลาวด์'); return; }
+      const s = loadStore(), keys = Object.keys(s);
+      let ok = 0, bad = 0;
+      for (let i = 0; i < keys.length; i++) {
+        try { await csPutRow(csRow(keys[i], s[keys[i]])); ok++; } catch (e) { bad++; csErr(e, 'pushAll'); }
+      }
+      csGmRender('⬆️ อัปโหลดสำเร็จ ' + ok + ' คน' + (bad ? ' · ไม่สำเร็จ ' + bad : ''));
+    }
+
+    // ── 10. ห่อฟังก์ชันของชั้นล่าง ─────────────────────────────────
+    /* จุดดักหลักมีจุดเดียวคือ saveStore — การเขียนบัญชีของทุกชั้น (saveProgress · qSave ·
+       trSaveFloors · abSave · cdSave · tqSave · เครื่องมือในแผง GM) ไหลมาลงที่นี่หมด
+       Auto-Save Trigger ทุกข้อในสเปกจึงครอบได้ด้วย wrapper ตัวเดียว */
+    const _csSaveStore = saveStore;
+    saveStore = function () {
+      const r = _csSaveStore.apply(this, arguments);
+      try { csTouch(false); } catch (e) { csErr(e, 'saveStore'); }
+      return r;
+    };
+
+    const _csMigrate = migrateAccount;
+    migrateAccount = function (a) {
+      const r = _csMigrate.apply(this, arguments);
+      try { if (r && typeof r === 'object' && (!r.cs || typeof r.cs !== 'object')) r.cs = { rev: 0, ts: 0, dev: '' }; } catch (e) {}
+      return r;
+    };
+
+    /* จุดสำคัญของสเปก = ส่งทันทีไม่ต้องรอหน่วง */
+    const _csClearFloor = clearFloor;
+    clearFloor = function () {
+      const r = _csClearFloor.apply(this, arguments);
+      try { csTouch(true); } catch (e) { csErr(e, 'clearFloor'); }
+      return r;
+    };
+
+    const _csOpenWarp = openWarp;
+    openWarp = function () {
+      const r = _csOpenWarp.apply(this, arguments);
+      try { csTouch(true); } catch (e) { csErr(e, 'openWarp'); }
+      return r;
+    };
+
+    const _csBuyItem = buyItem;
+    buyItem = function () {
+      const r = _csBuyItem.apply(this, arguments);
+      try { csTouch(true); } catch (e) { csErr(e, 'buyItem'); }
+      return r;
+    };
+
+    const _csLevelUp = levelUpCheck;
+    levelUpCheck = function () {
+      const lv = (G && G.level) || 0;
+      const r = _csLevelUp.apply(this, arguments);
+      try { if (G && G.level !== lv) csTouch(true); } catch (e) { csErr(e, 'levelUpCheck'); }
+      return r;
+    };
+
+    const _csStartGame = startGame;
+    startGame = function (user) {
+      const r = _csStartGame.apply(this, arguments);
+      try {
+        CS_READY = true;
+        const a = loadStore()[user];
+        if (a) { CS_REV = Math.max(CS_REV, (a.cs && a.cs.rev) || 0); CS_SRV = Math.max(CS_SRV, (a.cs && a.cs.ts) || 0); }
+        if (CS_ON) {
+          if (a && CS_CFG.auto !== false) csSesSave(user, a.pw || '');
+          csTouch(true);
+          csRoomKick(true);
+        }
+        csPaint();
+      } catch (e) { csErr(e, 'startGame'); }
+      return r;
+    };
+
+    /* ต้องเก็บของ "หลัง" ของเดิมทำงานจบ เพราะ exitGame ของ v4.0 เรียก saveProgress() เป็นก้อน
+       สุดท้ายข้างใน · ออกจากเกทเอง = ตั้งใจเลิกใช้เครื่องนี้ → ลืมเซสชันด้วย ยกเว้นตอนกำลัง
+       สลับก้อนข้อมูลจากคลาวด์ (CS_HALT) ซึ่งเรียก exitGame เองเพื่อรีสตาร์ตให้ */
+    const _csExitGame = exitGame;
+    exitGame = function () {
+      const u = CURRENT_USER;
+      const r = _csExitGame.apply(this, arguments);
+      try {
+        if (!CS_HALT) { if (CS_ON && u) { csStage(u); csFlush(); } csSesClear(); }
+        CS_READY = false;
+        csPaint();
+      } catch (e) { csErr(e, 'exitGame'); }
+      return r;
+    };
+
+    /* ตรวจตัวตนกับคลาวด์ก่อน แล้วค่อยเรียกของเดิม — handleSubmit ของ v4.0 ไม่ถูกแก้เลย */
+    const _csHandleSubmit = handleSubmit;
+    handleSubmit = function () {
+      if (!CS_ON || CS_AUTH) return _csHandleSubmit.apply(this, arguments);
+      const reg = (typeof currentMode === 'string' && currentMode === 'register');
+      const id = ((document.getElementById(reg ? 'reg-id' : 'login-id') || {}).value || '').trim();
+      const pw = ((document.getElementById(reg ? 'reg-pw' : 'login-pw') || {}).value || '').trim();
+      if (!id || !pw) return _csHandleSubmit.apply(this, arguments);   /* ให้ของเดิมเป็นคนเตือนช่องว่าง */
+      CS_AUTH = true;
+      showError('[คลาวด์] ⏳ กำลังตรวจสอบข้อมูลกับคลาวด์…');
+      csAuthCloud(reg ? 'register' : 'login', id, pw).then(function (go) {
+        CS_AUTH = false;
+        if (go) { document.getElementById('login-err').textContent = ''; _csHandleSubmit(); }
+      }).catch(function (e) { CS_AUTH = false; csErr(e, 'submit'); _csHandleSubmit(); });
+    };
+
+    const _csEnterGate = enterGate;
+    enterGate = function () { CS_GATE = true; return _csEnterGate.apply(this, arguments); };
+
+    /* กระดานผู้นำ = อันดับสดของทั้งห้องจากคลาวด์ */
+    const _csOpenBoard = openBoard;
+    openBoard = function () {
+      const r = _csOpenBoard.apply(this, arguments);
+      try { csRoomKick(false); } catch (e) { csErr(e, 'openBoard'); }
+      return r;
+    };
+
+    /* #gBoardScope กับ #gcScope ถูกเขียนทับด้วย textContent ทุกครั้งที่ render จึงต่อท้ายได้ไม่สะสม */
+    const _csRenderBoard = renderBoard;
+    renderBoard = function () {
+      const r = _csRenderBoard.apply(this, arguments);
+      try {
+        const el = document.getElementById('gBoardScope');
+        if (el && CS_ON) el.textContent += ' · ☁️ อันดับสด (อัปเดต ' + csWhen(CS_ROOM.at) + ')';
+      } catch (e) { csErr(e, 'renderBoard'); }
+      return r;
+    };
+
+    const _csGmRender = gmRender;
+    gmRender = function () {
+      const r = _csGmRender.apply(this, arguments);
+      try {
+        const sc = document.getElementById('gcScope');
+        if (sc && CS_ON) sc.insertAdjacentHTML('beforeend', '<span style="color:#8fd8ff"> · ☁️ ข้อมูลสดจากคลาวด์ ' +
+          (CS_ROOM.rows || []).length + ' คน (' + csWhen(CS_ROOM.at) + ')</span>');
+      } catch (e) { csErr(e, 'gmRender'); }
+      return r;
+    };
+
+    // ── 11. ติดตั้งชั้นนี้ ─────────────────────────────────────────
+    (function csInstall() {
+      try {
+        csCfgLoad();
+
+        if (!document.getElementById('csStyle')) {
+          document.head.insertAdjacentHTML('beforeend',
+            '<style id="csStyle">' +
+            '.cs-chip{background:linear-gradient(180deg,#12233a,#0b1119)!important;border-color:rgba(143,216,255,.35)!important;color:#8fd8ff!important}' +
+            '.cs-chip.cs-err,.cs-chip.cs-wait{border-color:rgba(255,192,77,.5)!important;color:#ffc04d!important}' +
+            '.cs-kv{display:flex;justify-content:space-between;gap:10px;font-size:12px;padding:5px 0;border-bottom:1px solid rgba(143,216,255,.12)}' +
+            '.cs-kv b{color:#8fd8ff}' +
+            '.cs-note{font-size:10.5px;line-height:1.65;color:#8a97b5;margin-top:8px}' +
+            '.cs-note code{font-size:10px;color:#9fe8c8;word-break:break-all}' +
+            '.cs-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}' +
+            '.cs-b{flex:1;min-width:130px;padding:9px;border-radius:9px;font-size:12px;font-weight:700;cursor:pointer;' +
+              'background:linear-gradient(180deg,#12233a,#0b1119);border:1px solid rgba(143,216,255,.35);color:#8fd8ff}' +
+            '#csGm .g-modal-inner{max-width:880px}' +
+            '.cs-sec{font-size:13px;font-weight:800;color:#ffc845;margin:14px 0 8px}' +
+            '.cs-sec small{display:block;font-size:10.5px;font-weight:600;color:#8a97b5;margin-top:2px}' +
+            '.cs-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px}' +
+            '.cs-form label{font-size:11px;color:#8a97b5;display:flex;flex-direction:column;gap:4px}' +
+            '.cs-form input,.cs-form select{padding:8px;border-radius:8px;background:#0b1119;color:#dfe9ff;' +
+              'border:1px solid rgba(143,216,255,.25);font-size:12px;width:100%;box-sizing:border-box}' +
+            '.cs-form .cs-ck{flex-direction:row;align-items:center;gap:7px}.cs-form .cs-ck input{width:auto}' +
+            '.cs-msg{margin-top:9px;font-size:12px;font-weight:700;color:#9fe8c8}' +
+            '.cs-t{font-size:11.5px;min-width:620px}.cs-t th,.cs-t td{padding:6px 7px;text-align:left}' +
+            '.cs-sub{font-size:10px;color:#6d7b96}' +
+            '.cs-w i{font-style:normal;color:#ff7b7b;font-size:9.5px;vertical-align:super}' +
+            '</style>');
+        }
+
+        /* ชิปสถานะถัดจากปุ่มกระดิ่งของ v4.9.1 ในแถบหัวหน้าจอเล่น (กับดักข้อ 2) */
+        const anchor = document.getElementById('ncBell') || document.getElementById('gMute');
+        if (anchor && !document.getElementById('csChip')) {
+          anchor.insertAdjacentHTML('afterend',
+            '<button type="button" class="g-logout cs-chip" id="csChip" onclick="csPanel()" style="display:none">☁️</button>');
+        }
+
+        /* แผงคลาวด์ของห้องควบคุมใช้โครง .g-modal ของ v4.0 จึงถูก AC_OVL_SEL ของ v4.8.1
+           นับเป็นหน้าต่างระบบให้เอง ไม่ต้องไปเติมชื่อลงในตัวเลือกนั้น */
+        if (!document.getElementById('csGm')) {
+          document.body.insertAdjacentHTML('beforeend',
+            '<div class="g-modal" id="csGm"><div class="g-modal-inner">' +
+              '<div class="g-modal-title">[ระบบ] ☁️ CLOUD SYNC — ศูนย์ข้อมูลออนไลน์</div>' +
+              '<div id="csGmBody"></div></div></div>');
+        }
+
+        const headBtns = document.querySelector('#gmPanel .gm-head-btns');
+        if (headBtns && !document.getElementById('csGmBtn')) {
+          headBtns.insertAdjacentHTML('afterbegin',
+            '<button class="gm-btn" id="csGmBtn" onclick="csGmOpen()" title="ตั้งค่าคลาวด์ · ข้อมูลสดของทั้งห้อง">☁️ คลาวด์</button>');
+        }
+
+        /* สลับแอป / ปิดแท็บ = ส่งของค้างทันที (Auto-Save Trigger ข้อสุดท้ายของสเปก) */
+        document.addEventListener('visibilitychange', function () {
+          try {
+            if (document.hidden) { if (CS_ON && CURRENT_USER) { csStage(CURRENT_USER); csFlush(); } }
+            else csFlush();
+          } catch (e) { csErr(e, 'vis'); }
+        });
+        window.addEventListener('pagehide', function () {
+          try { if (CS_ON && CURRENT_USER) csStage(CURRENT_USER); } catch (e) {}
+        });
+        window.addEventListener('online',  function () { CS_TRY = 0; CS_MSG = ''; csFlush(); });
+        window.addEventListener('offline', function () { CS_ST = 'wait'; csPaint(); });
+
+        csPaint();
+        if (CS_ON) setTimeout(function () { csFlush(); csSilent().catch(function (e) { csErr(e, 'silent'); }); }, 300);
+      } catch (e) { csErr(e, 'csInstall'); }
+    })();
+
   </script>
 </body>
 </html>

@@ -78,6 +78,12 @@ const SEED = () => {
         ok(d.text.split(/\r\n/).length === 4, '  1 หัวตาราง + 3 แถว');
         ok(/รหัสฮันเตอร์/.test(d.text) && /ความแม่นยำ/.test(d.text), '  หัวตารางภาษาไทย');
         ok(d.text.includes('82%') && d.text.includes('1250') && d.text.includes('9/20'), '  ค่าแม่นยำ/ทอง/ชั้นถูกต้อง');
+        ok(/"ห้องเรียน"/.test(d.text), '  มีคอลัมน์ห้องเรียนในหัวตาราง');
+        ok(d.text.includes('"ม.1/1"') && d.text.includes('"ม.2/3"'), '  ค่าห้องเรียนรายคนถูกต้อง');
+        ok(/^"รหัสฮันเตอร์","ชื่อฮันเตอร์","ห้องเรียน","เลเวล"/.test(d.text.replace(/^﻿/, '')),
+           '  ห้องเรียนอยู่คอลัมน์ที่ 3 (ถัดจากชื่อ)');
+        ok(/^[\x20-\x7E]+$/.test(d.name) && /\.csv$/.test(d.name), '  ชื่อไฟล์ ASCII ล้วน + .csv (' + d.name + ')');
+        ok(/^Hanzi_Hunter_Report_/.test(d.name), '  ใช้รูปแบบชื่อ Hanzi_Hunter_Report_');
       }
     }
     // explicit LIVE button, bound by listener (no inline onclick)
@@ -123,7 +129,36 @@ const SEED = () => {
     const d = await grab(page, 'exportGMDataToExcel({})');
     ok(!!d, 'ได้ไฟล์');
     ok(d && d.text.includes('อนันต์') && !d.text.includes('สมชาย'), '  เหลือเฉพาะ ม.2/3');
-    ok(d && /hanzi_hunter_2_3_/.test(d.name), '  ชื่อไฟล์ ASCII ปลอดภัย (' + (d?d.name:'-') + ')');
+    ok(d && /^Hanzi_Hunter_Report_2_3_/.test(d.name), '  ชื่อไฟล์ ASCII ปลอดภัย (' + (d?d.name:'-') + ')');
+    ok(d && /^[\x20-\x7E]+$/.test(d.name), '  ไม่มีอักขระนอก ASCII หลงเหลือในชื่อไฟล์');
+    await ctx.close(); }
+
+  // ── 4.1 live students must win over a teacher's own leftover account ──
+  say('4.1) store มีบัญชีครูค้าง 1 คน แต่ LIVE มีนักเรียน 3 คน → ต้องได้ข้อมูล LIVE');
+  { const { ctx, page } = await open();
+    await page.evaluate(() => { const s=loadStore(); s.teacher=migrateAccount(blankAccount('teacher','p')); s.teacher.name='ครูทดลอง'; saveStore(s); });
+    await page.evaluate(SEED); await page.waitForTimeout(300);
+    ok(await page.evaluate(() => Object.keys(loadStore()).length) === 1, 'store มี 1 คนจริง');
+    const d = await grab(page, 'gmExportCsv()');
+    ok(!!d, 'ได้ไฟล์');
+    ok(d && d.text.includes('สมชาย ใจดี') && d.text.includes('อนันต์'), '  มีนักเรียนจาก LIVE ครบ');
+    ok(d && !d.text.includes('ครูทดลอง'), '  ไม่ใช่ไฟล์ที่มีแต่บัญชีครู');
+    await ctx.close(); }
+
+  // ── 4.2 the v4.3 audit path must not emit a Thai filename (trap 26) ──
+  say('4.2) ทางเดิมของ v4.3 ที่ใส่ชื่อกลุ่มไทยลงชื่อไฟล์ ต้องถูกกรองเป็น ASCII');
+  { const { ctx, page } = await open();
+    await page.evaluate(() => {
+      const s=loadStore();
+      ['s1','s2'].forEach(function (k) { s[k]=migrateAccount(blankAccount(k,'p')); s[k].classroom='ม.2/3'; s[k].name='นร '+k; });
+      saveStore(s); GC_ROOM='ม.2/3';
+    });
+    const d = await grab(page, 'gcExportAudit()');
+    ok(!!d, 'ได้ไฟล์จากทางเดิม');
+    ok(d && /^hanzi_hunter_audit_/.test(d.name), '  ยังเป็นไฟล์ของทางเดิม (' + (d?d.name:'-') + ')');
+    ok(d && /^[\x20-\x7E]+$/.test(d.name), '  ชื่อไฟล์ ASCII ล้วน');
+    ok(d && /\.csv$/.test(d.name), '  นามสกุล .csv ไม่ถูกตัดทิ้ง');
+    ok(await page.evaluate(() => typeof document.createElement('div').tagName === 'string'), '  document.createElement ถูกคืนค่าเดิมแล้ว');
     await ctx.close(); }
 
   // ── 5. no data anywhere → gentle notice, no crash ──
@@ -146,6 +181,7 @@ const SEED = () => {
     ok(!!d, 'ยังได้ไฟล์จาก DOM');
     ok(d && d.text.includes('สมชาย ใจดี') && d.text.includes('somchai'), '  ชื่อ+รหัสจาก DOM ถูก');
     ok(d && d.text.includes('什么'), '  คำที่ผิดซ้ำจาก DOM ถูก');
+    ok(d && d.text.includes('"ม.1/1"') && d.text.includes('"ม.2/3"'), '  ห้องเรียนจาก DOM ถูก');
     await ctx.close(); }
 
   // ── 7. latestStudentData accessor ──

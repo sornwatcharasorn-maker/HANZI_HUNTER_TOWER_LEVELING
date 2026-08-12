@@ -17528,8 +17528,11 @@
 
     const XP_VER = '5.5';
 
-    /* 9 ฟิลด์ตามสเปก (ข้อ 1 แยกเป็นรหัสกับชื่อ เพราะครูต้องใช้รหัสไปจับคู่กับ store) */
-    const XP_HEAD = ['รหัสฮันเตอร์', 'ชื่อฮันเตอร์', 'เลเวล', 'EXP', 'ชั้นสูงสุด',
+    /* 9 ฟิลด์ตามสเปก (ข้อ 1 แยกเป็นรหัสกับชื่อ เพราะครูต้องใช้รหัสไปจับคู่กับ store)
+       + คอลัมน์ "ห้องเรียน" ที่เพิ่มเข้ามาทีหลัง วางไว้ถัดจากชื่อเพื่อให้ครูกดจัดกลุ่ม
+       ใน Excel ได้ทันทีโดยไม่ต้องเลื่อนไปสุดขวา
+       XP_HEAD กับ xpRecToRow ต้องเรียงตรงกันเสมอ — แก้ที่หนึ่งต้องแก้อีกที่ด้วย */
+    const XP_HEAD = ['รหัสฮันเตอร์', 'ชื่อฮันเตอร์', 'ห้องเรียน', 'เลเวล', 'EXP', 'ชั้นสูงสุด',
                      'ความแม่นยำ (%)', 'ทอง', 'คำศัพท์ที่พิชิต', 'คำศัพท์ที่ตอบผิดซ้ำ',
                      'อัปเดตเมื่อ'];
 
@@ -17601,9 +17604,14 @@
           if (!td || td.length < 9) return;          /* แถว "ยังไม่มีสัญญาณ" มี td ใบเดียว */
           const nm = td[0].querySelector('.gm-name');
           const sub = td[0].querySelector('.gm-sub');
+          const subT = String((sub && sub.textContent) || '');
           let id = '';
-          const m = String((sub && sub.textContent) || '').match(/@([^\s·]+)/);
+          const m = subT.match(/@([^\s·]+)/);
           if (m) id = m[1];
+          /* ตาราง LIVE ไม่มีคอลัมน์ห้องเรียนของตัวเอง — v5.3 เขียนไว้ในบรรทัดรอง
+             รูปแบบ "@รหัส · ห้องเรียน[ · ❄️ ระงับสิทธิ์]" จึงหยิบก้อนที่สองมาใช้
+             ถ้า fbPaint สลับลำดับบรรทัดรองเมื่อไหร่ ต้องแก้ตรงนี้ตาม */
+          const room = subT.split('·')[1] ? subT.split('·')[1].trim() : '';
           const weak = Array.prototype.map.call(td[7].querySelectorAll('.fb-w'), function (w) {
             const i = w.querySelector('i');
             const ch = String(w.textContent || '').replace(String((i && i.textContent) || ''), '').trim();
@@ -17612,6 +17620,7 @@
           out.push({
             u: id || String((nm && nm.textContent) || '').trim(),
             name: String((nm && nm.textContent) || '').trim(),
+            room: (room === '—' ? '' : room),
             lv: num(td[1].querySelector('b')) || num(td[1]),
             exp: num(td[2]),
             mfloor: num(td[3].querySelector('b')) || num(td[3]),
@@ -17652,8 +17661,10 @@
       } catch (e) {}
       let words = 0;
       try { words = (typeof cxCount === 'function') ? cxCount(a) : 0; } catch (e) {}
+      let room = '';
+      try { room = (typeof gcRoomOf === 'function') ? gcRoomOf(a) : (a.classroom || ''); } catch (e) {}
       return {
-        u: a.user, name: a.name || a.user, lv: a.level || 1, exp: a.exp || 0,
+        u: a.user, name: a.name || a.user, room: room, lv: a.level || 1, exp: a.exp || 0,
         mfloor: a.maxFloor || 1, acc: acc, gold: a.gold || 0, words: words,
         xpWeak: weak, at: a.lastActive || 0
       };
@@ -17678,8 +17689,16 @@
       return r.xpAt || '-';
     }
 
+    /* ห้องเรียนที่ว่าง = บัญชีที่ยังไม่ถูกจัดกลุ่ม ซึ่ง gcRoomOf ของ v4.3 นับเป็น DEFAULT_ROOM
+       อยู่แล้ว จึงเติมให้ตรงกัน ครูจะได้ไม่เห็นช่องว่างที่แยกไม่ออกว่าหมายถึงอะไร */
+    function xpRoomText(r) {
+      const room = String((r && r.room) || '').trim();
+      if (room) return room;
+      try { return DEFAULT_ROOM || '-'; } catch (e) { return '-'; }
+    }
+
     function xpRecToRow(r) {
-      return [r.u || '-', r.name || r.u || '-', r.lv || 1, r.exp || 0,
+      return [r.u || '-', r.name || r.u || '-', xpRoomText(r), r.lv || 1, r.exp || 0,
               (r.mfloor || 1) + '/' + FLOOR_MAX, (r.acc || 0) + '%', r.gold || 0,
               r.words || 0, xpWeakText(r), xpWhen(r)];
     }
@@ -17730,6 +17749,55 @@
              '_' + p(d.getHours()) + p(d.getMinutes());
     }
 
+    const XP_PREFIX = 'Hanzi_Hunter_Report_';
+
+    function xpName() { return XP_PREFIX + xpRoomTag() + xpStamp() + '.csv'; }
+
+    /* ── ตัวกรองชื่อไฟล์ให้เป็น ASCII ล้วน ────────────────────────────────
+       ใช้กับชื่อที่ "ชั้นล่างตั้งเอง" ด้วย ไม่ใช่แค่ของชั้นนี้ — gcExportAudit ของ v4.3
+       ยัด GC_ROOM ดิบ ๆ ลงชื่อไฟล์ ครูที่ตั้งชื่อกลุ่มเป็นภาษาไทยจึงได้ไฟล์ชื่อ download
+       ที่ไม่มีนามสกุล (กับดักข้อ 26) เก็บนามสกุลไว้ก่อนแล้วค่อยกรองเฉพาะส่วนชื่อ
+       ไม่งั้นจุดของนามสกุลจะถูกกลืนไปกับตัวกรอง */
+    function xpSafeName(name) {
+      let s = String(name == null ? '' : name);
+      let ext = '';
+      const m = s.match(/(\.[A-Za-z0-9]{1,8})$/);
+      if (m) { ext = m[1]; s = s.slice(0, -ext.length); }
+      s = s.replace(/[^A-Za-z0-9._-]+/g, '_').replace(/_{2,}/g, '_').replace(/^[._-]+|[._-]+$/g, '');
+      if (!s) s = XP_PREFIX + xpStamp();
+      if (!ext) ext = '.csv';
+      return s + ext;
+    }
+
+    /* เรียกฟังก์ชันของชั้นล่างโดยบังคับให้ชื่อไฟล์ที่มันตั้งเองผ่านตัวกรอง ASCII ก่อน
+       ทำโดยสวม document.createElement ไว้ชั่วคราวแล้วถอดคืนใน finally เสมอ
+       — ทั้ง gmExportCsv และ gcExportAudit สร้าง <a> แล้วกดจบภายในทิกเดียว
+       ถ้าวันไหนมีตัวไหนกลายเป็น async ต้องเลิกใช้ท่านี้กับตัวนั้น */
+    function xpAsciiScope(fn) {
+      const _ce = document.createElement;
+      try {
+        document.createElement = function (tag) {
+          const el = _ce.apply(document, arguments);
+          if (String(tag).toLowerCase() === 'a') {
+            try {
+              Object.defineProperty(el, 'download', {
+                configurable: true,
+                get: function () { return this.getAttribute('download') || ''; },
+                set: function (v) { this.setAttribute('download', xpSafeName(v)); }
+              });
+            } catch (e) { xpErr(e, 'asciiScope:def'); }
+          }
+          return el;
+        };
+        return fn();
+      } catch (e) {
+        xpErr(e, 'asciiScope');
+        throw e;
+      } finally {
+        document.createElement = _ce;
+      }
+    }
+
     /* ตัวส่งออกหลัก — คืนจำนวนแถวที่ส่งออกจริง (0 = ไม่มีข้อมูล ไม่ได้สร้างไฟล์) */
     function exportGMDataToExcel(opt) {
       try {
@@ -17751,8 +17819,7 @@
           return 0;
         }
 
-        xpDownload(xpCsv(recs.map(xpRecToRow)),
-                   'hanzi_hunter_' + xpRoomTag() + xpStamp() + '.csv');
+        xpDownload(xpCsv(recs.map(xpRecToRow)), xpSafeName(xpName()));
         xpTip('⬇️ ส่งออกแล้ว ' + recs.length + ' คน (' + from + ') — เปิดด้วย Excel ได้ทันที');
         return recs.length;
       } catch (e) {
@@ -17766,19 +17833,32 @@
     /* ── ห่อปุ่มเดิมสองใบ ────────────────────────────────────────────────
        ทางเดิมยังเป็นทางหลักเสมอเมื่อ store มีข้อมูลจริง (ไฟล์ของมันมีคอลัมน์เยอะกว่า)
        ชั้นนี้เข้าไปแทนเฉพาะตอนที่ทางเดิมจะไม่ผลิตไฟล์ออกมาเลย */
+    /* ทางเดิมชนะเมื่อ store "ครอบคลุมพอ ๆ กับที่ครูเห็นบนจอ" เท่านั้น
+       เทียบจำนวนคนสองฝั่งแทนการเช็กแค่ว่า store ว่างหรือไม่ เพราะบนเว็บออนไลน์
+       ครูมักมีบัญชีทดลองของตัวเองค้างอยู่ 1 คน ซึ่งเพียงพอที่จะทำให้ทางเดิมชนะ
+       แล้วครูได้ไฟล์ที่มีแต่ตัวเอง ทั้งที่ตาราง LIVE โชว์นักเรียนอยู่ 2 คน */
+    function xpUseBridge() {
+      try {
+        const live = xpLiveRows().length || xpDomRows().length;
+        return live > xpStoreRows().length;
+      } catch (e) { xpErr(e, 'useBridge'); return false; }
+    }
+
     const _xpGmExportCsv = gmExportCsv;
     gmExportCsv = function () {
-      try { if (!xpStoreRows().length) return exportGMDataToExcel({}); }
+      try { if (xpUseBridge()) return exportGMDataToExcel({}); }
       catch (e) { xpErr(e, 'wrapGmExport'); }
-      return _xpGmExportCsv.apply(this, arguments);
+      const self = this, args = arguments;
+      return xpAsciiScope(function () { return _xpGmExportCsv.apply(self, args); });
     };
 
     const _xpGcExportAudit = (typeof gcExportAudit === 'function') ? gcExportAudit : null;
     if (_xpGcExportAudit) {
       gcExportAudit = function () {
-        try { if (!xpStoreRows().length) return exportGMDataToExcel({}); }
+        try { if (xpUseBridge()) return exportGMDataToExcel({}); }
         catch (e) { xpErr(e, 'wrapAudit'); }
-        return _xpGcExportAudit.apply(this, arguments);
+        const self = this, args = arguments;
+        return xpAsciiScope(function () { return _xpGcExportAudit.apply(self, args); });
       };
     }
 

@@ -14927,6 +14927,816 @@
     })();
 
 
+    // ══════════════════════════════════════════════════════════════
+    // ชั้นบนสุด — v5.1 · DYNAMIC AUDIO ENGINE
+    //   (Sound Manager 2 ช่องสัญญาณ + Audio Pooling + BGM State Manager)
+    // ต่อยอดบน v4.0-v4.9.3 แบบ "ห่อฟังก์ชันเดิม" ไม่แก้ตรรกะของชั้นล่างเลย
+    //   1) Web Audio สังเคราะห์เสียงเองทั้งหมด — ไม่มีไฟล์เสียงแนบ ไฟล์รวมไม่โตขึ้น
+    //   2) แยกช่อง SFX / BGM ออกจากกัน ต่อผ่าน master เดียวกัน มิกซ์ทีเดียวจบ
+    //   3) Audio Pooling — ช่องเสียงหมุนเวียน AU_POOL_MAX ช่อง กดปุ่มรัวก็ไม่ดีเลย์
+    //   4) สวิตช์ 🔊 เดิมของแถบหัว กดครั้งเดียวปิด/เปิดทั้งสองช่อง จำค่าไว้ที่ localStorage
+    //   5) Autoplay Safeguard — ปลดล็อก AudioContext ทันทีที่ผู้เล่นแตะจอครั้งแรก
+    //   6) BGM State Manager + Fade In/Out — โครงพร้อมแล้ว รอเสียบไฟล์เพลงทีหลัง
+    // ══════════════════════════════════════════════════════════════
+
+    const AU_VER = 'v5.1';
+    const AU_KEY = 'yao_audio';   /* ระดับเครื่อง ไม่ผูกบัญชี — กติกาเดียวกับ yao_notify ของ v4.9.1 */
+
+    /* ── ระดับเสียงของแต่ละช่องสัญญาณ (แก้ที่นี่ที่เดียว) ── */
+    const AU_VOL_MASTER = 0.90;
+    const AU_VOL_SFX    = 0.85;
+    const AU_VOL_BGM    = 0.42;
+
+    /* Audio Pooling — จำนวนช่องเสียงที่ดังพร้อมกันได้สูงสุด
+       เต็มแล้วจะ "แย่งช่อง" ตัวที่ใกล้จบที่สุด ไม่ใช่ปล่อยให้กราฟเสียงบานปลาย */
+    const AU_POOL_MAX = 16;
+    const AU_GAP      = 45;    /* ระยะห่างขั้นต่ำของเสียงคีย์เดียวกัน (ms) กันเสียงซ้อนจนแตก */
+
+    const AU_FADE_IN   = 900;  /* BGM เฟดเข้า */
+    const AU_FADE_OUT  = 700;  /* BGM เฟดออกตอนเปลี่ยนสถานะ */
+    const AU_FADE_DUCK = 260;  /* BGM หรี่ลงตอนเกมถูกหยุด (v4.8.1) */
+
+    const AU_TIME_LOW = 3000;  /* SFX_TIME_WARNING_3S — 3 วินาทีสุดท้ายของข้อ */
+    const AU_TIME_GAP = 620;   /* จังหวะเคาะเตือนเวลา */
+    const AU_HP_MS    = 900;   /* จังหวะเต้นของ SFX_LOW_HP_LOOP */
+    const AU_HP_LV    = 2;     /* ระดับอันตรายของ v4.6 ที่เริ่มลูป (2 = แดงวิกฤต) */
+
+    let AU_CTX = null, AU_MASTER = null, AU_SFX_BUS = null, AU_BGM_BUS = null;
+    let AU_NOISE = null;
+    let AU_VOICES = [];                 /* Audio Pool */
+    let AU_LAST = {};                   /* throttle รายคีย์ */
+    let AU_MUTE = false, AU_READY = false, AU_UNLOCKED = false;
+    let AU_PAUSED = false;              /* สถานะ Auto-Pause ของ v4.8.1 ที่จำไว้ล่าสุด */
+    let AU_PLAYED = 0;                  /* ตัวนับไว้ให้เทสต์ยืนยันว่ายิงเสียงจริง */
+
+    /* สถานะของ "รอบการเล่น/ข้อที่กำลังตอบ" ไม่ใช่ของบัญชี จึงไม่ต้องเซฟ
+       (กฎเดียวกับ AB_LIVE ของ v4.6 · HD_TIMEOUT ของ v4.8 · AC_HELD ของ v4.8.1) */
+    let AU_LIVE = false, AU_CRIT = false;
+    let AU_TM_T = 0, AU_HP_T = 0;
+
+    function auErr(e, where) {
+      if (typeof gcErrPush !== 'function') return;
+      try { gcErrPush('err', 'AUDIO: ' + ((e && e.message) || e), where || '', (e && e.stack) || ''); } catch (e2) {}
+    }
+
+    function auG() { return (typeof G !== 'undefined' && G) ? G : null; }
+    function auInGame() {
+      const gs = document.getElementById('gameScreen');
+      return !!gs && gs.classList.contains('active');
+    }
+    function auPaused() {
+      try { return (typeof acPaused === 'function') ? !!acPaused() : false; } catch (e) { return false; }
+    }
+
+    // ══ 1. คลังเสียง — สังเคราะห์ล้วน ไม่มีไฟล์แนบ ═══════════════════
+    /* แต่ละเสียงคือรายการ "พาร์เชียล" ที่เล่นพร้อมกัน หนึ่งพาร์เชียลกินหนึ่งช่องของ Audio Pool
+         w  รูปคลื่น sine / square / saw / tri / noise
+         f  ความถี่เริ่ม · f2 ความถี่ปลาย (ไล่ระดับตลอดช่วง)
+         t  หน่วงจากจุดเริ่มเสียง (วินาที) · d ความยาว · g ความดังยอด · a ระยะขาขึ้น
+         lp / lp2 โลว์พาสเริ่ม-ปลาย · hp ไฮพาส · q ความชันของฟิลเตอร์
+       ชื่อคีย์ใช้รหัสตามสเปกตรง ๆ (SFX_HIT_CRIT ฯลฯ) สารบัญจึงอยู่ที่เดียวคือก้อนนี้ */
+    const AU_SFX_DEF = {
+      SFX_CLICK: { gap: 30, v: [
+        { w:'square', f:520, f2:300, d:0.045, g:0.09, a:0.003 } ] },
+
+      SFX_HIT_CORRECT: { v: [
+        { w:'sine',  f:784,  f2:1245, d:0.12, g:0.26 },
+        { w:'tri',   f:1568, t:0.055, d:0.18, g:0.14 },
+        { w:'noise', hp:2400, d:0.05, g:0.10 } ] },
+
+      SFX_HIT_CRIT: { gap: 80, v: [
+        { w:'saw',    f:240,  f2:1760, d:0.18, g:0.24, lp:5200 },
+        { w:'square', f:1568, f2:2093, t:0.06, d:0.26, g:0.16 },
+        { w:'noise',  hp:1800, d:0.11, g:0.20 },
+        { w:'sine',   f:98,   f2:60,  d:0.30, g:0.22 } ] },
+
+      SFX_TAKE_DAMAGE: { gap: 120, v: [
+        { w:'saw',   f:260, f2:64, d:0.30, g:0.26, lp:1400, lp2:220 },
+        { w:'noise', lp:900, lp2:180, d:0.22, g:0.22 } ] },
+
+      SFX_CARD_FIRE: { gap: 150, v: [
+        { w:'noise', lp:4200, lp2:320, d:0.62, g:0.24, a:0.03 },
+        { w:'saw',   f:120, f2:44, d:0.50, g:0.18, lp:800 },
+        { w:'sine',  f:660, f2:180, t:0.02, d:0.28, g:0.10 } ] },
+
+      SFX_CARD_LIGHTNING: { gap: 150, v: [
+        { w:'noise',  hp:2600, d:0.10, g:0.26, a:0.002 },
+        { w:'square', f:2200, f2:180, d:0.16, g:0.16 },
+        { w:'saw',    f:140, f2:52, t:0.05, d:0.34, g:0.16, lp:1200 } ] },
+
+      SFX_ITEM_POTION: { gap: 120, v: [
+        { w:'sine', f:523,  d:0.10, g:0.20 },
+        { w:'sine', f:784,  t:0.08, d:0.12, g:0.20 },
+        { w:'sine', f:1046, t:0.16, d:0.26, g:0.20 },
+        { w:'tri',  f:1600, f2:2400, t:0.16, d:0.22, g:0.07 } ] },
+
+      SFX_ITEM_USE: { gap: 90, v: [
+        { w:'tri',  f:660,  f2:990, d:0.10, g:0.18 },
+        { w:'sine', f:1320, t:0.06, d:0.14, g:0.10 } ] },
+
+      SFX_SKILL_CAST: { gap: 120, v: [
+        { w:'saw',   f:180, f2:1400, d:0.30, g:0.16, lp:3000 },
+        { w:'noise', hp:1200, d:0.26, g:0.12, a:0.05 },
+        { w:'sine',  f:1046, f2:1568, t:0.10, d:0.28, g:0.12 } ] },
+
+      SFX_CARD_DRAW: { gap: 150, v: [
+        { w:'sine',  f:988,  f2:1319, d:0.22, g:0.16 },
+        { w:'tri',   f:1319, f2:1976, t:0.10, d:0.28, g:0.11 },
+        { w:'noise', hp:3000, d:0.30, g:0.06, a:0.08 } ] },
+
+      SFX_LOW_HP_LOOP: { gap: 300, v: [
+        { w:'sine', f:150, f2:70, d:0.14, g:0.24 },
+        { w:'sine', f:120, f2:58, t:0.20, d:0.18, g:0.18 } ] },
+
+      SFX_TIME_WARNING_3S: { gap: 220, v: [
+        { w:'square', f:1320, d:0.07, g:0.13 },
+        { w:'sine',   f:1760, t:0.005, d:0.09, g:0.08 } ] },
+
+      SFX_QUEST_COMPLETE: { gap: 200, v: [
+        { w:'sine', f:784,  d:0.14, g:0.22 },
+        { w:'sine', f:988,  t:0.10, d:0.16, g:0.22 },
+        { w:'sine', f:1319, t:0.20, d:0.42, g:0.24 },
+        { w:'tri',  f:1976, t:0.20, d:0.40, g:0.08 } ] },
+
+      SFX_LEVEL_UP: { gap: 400, v: [
+        { w:'tri',   f:523,  d:0.12, g:0.20 },
+        { w:'tri',   f:659,  t:0.09, d:0.14, g:0.20 },
+        { w:'tri',   f:784,  t:0.18, d:0.16, g:0.22 },
+        { w:'tri',   f:1046, t:0.27, d:0.55, g:0.26 },
+        { w:'sine',  f:1568, t:0.27, d:0.50, g:0.10 },
+        { w:'noise', hp:4000, t:0.27, d:0.40, g:0.05, a:0.12 } ] },
+
+      SFX_SYSTEM_TOAST: { gap: 160, v: [
+        { w:'sine', f:1046, d:0.07, g:0.10 },
+        { w:'sine', f:1568, t:0.05, d:0.12, g:0.07 } ] },
+
+      SFX_SYSTEM_ALERT: { gap: 200, v: [
+        { w:'square', f:880, d:0.10, g:0.13 },
+        { w:'square', f:660, t:0.10, d:0.16, g:0.13 } ] },
+
+      SFX_GUARD: { gap: 250, v: [
+        { w:'sine',  f:392, d:0.35, g:0.22 },
+        { w:'sine',  f:587, t:0.03, d:0.40, g:0.18 },
+        { w:'tri',   f:784, t:0.10, d:0.45, g:0.10 },
+        { w:'noise', hp:2000, d:0.30, g:0.06, a:0.10 } ] },
+
+      SFX_HUNTER_DOWN: { gap: 500, v: [
+        { w:'saw',  f:330, f2:58, d:0.75, g:0.24, lp:2200, lp2:200 },
+        { w:'sine', f:196, f2:49, t:0.05, d:0.80, g:0.18 } ] },
+
+      SFX_FLOOR_CLEAR: { gap: 250, v: [
+        { w:'sine', f:659,  d:0.14, g:0.20 },
+        { w:'sine', f:988,  t:0.11, d:0.34, g:0.22 },
+        { w:'tri',  f:1319, t:0.11, d:0.30, g:0.08 } ] },
+
+      SFX_BOSS_CLEAR: { gap: 600, v: [
+        { w:'tri',   f:523,  d:0.16, g:0.22 },
+        { w:'tri',   f:784,  t:0.14, d:0.18, g:0.22 },
+        { w:'tri',   f:1046, t:0.28, d:0.20, g:0.24 },
+        { w:'tri',   f:1568, t:0.42, d:0.70, g:0.26 },
+        { w:'sine',  f:2093, t:0.42, d:0.66, g:0.10 },
+        { w:'saw',   f:130,  f2:65, t:0.42, d:0.70, g:0.14, lp:900 },
+        { w:'noise', hp:3500, t:0.42, d:0.60, g:0.06, a:0.15 } ] }
+    };
+
+    // ══ 2. กราฟเสียง + Audio Pooling ═══════════════════════════════
+    /* AU_CTX
+         └─ AU_MASTER ─┬─ AU_SFX_BUS ─ (ช่องเสียงในพูล AU_POOL_MAX ช่อง)
+                       └─ AU_BGM_BUS ─ (MediaElementSource ของเพลงประกอบ)
+       สวิตช์ 🔊 หรี่ที่ AU_MASTER จุดเดียว จึงปิดครบทั้งสองช่องพร้อมกัน */
+    function auCtx() {
+      if (AU_CTX) return AU_CTX;
+      try {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return null;
+        AU_CTX = new AC();
+
+        AU_MASTER = AU_CTX.createGain();
+        AU_MASTER.gain.value = AU_MUTE ? 0.0001 : AU_VOL_MASTER;
+        AU_MASTER.connect(AU_CTX.destination);
+
+        AU_SFX_BUS = AU_CTX.createGain();
+        AU_SFX_BUS.gain.value = AU_VOL_SFX;
+        AU_SFX_BUS.connect(AU_MASTER);
+
+        AU_BGM_BUS = AU_CTX.createGain();
+        AU_BGM_BUS.gain.value = 0.0001;      /* เริ่มที่เงียบเสมอ แล้วค่อยเฟดเข้า */
+        AU_BGM_BUS.connect(AU_MASTER);
+
+        AU_VOICES = [];
+        for (let i = 0; i < AU_POOL_MAX; i++) {
+          const g = AU_CTX.createGain();
+          g.gain.value = 0.0001;
+          g.connect(AU_SFX_BUS);
+          AU_VOICES.push({ g: g, busy: false, until: 0, gen: 0 });
+        }
+
+        /* v4.0 มี AudioContext ของตัวเองไว้ทำเสียงกริ๊งตอนแช่แข็ง — ยกให้ใช้ตัวเดียวกัน
+           ไม่ได้แก้โค้ดของมัน แค่เติมค่าให้ตัวแปรที่มันเช็ก (AUDIO_CTX || new AC()) */
+        try { if (typeof AUDIO_CTX !== 'undefined' && !AUDIO_CTX) AUDIO_CTX = AU_CTX; } catch (e) {}
+      } catch (e) { AU_CTX = null; auErr(e, 'auCtx'); }
+      return AU_CTX;
+    }
+
+    function auNoise() {
+      if (AU_NOISE || !AU_CTX) return AU_NOISE;
+      try {
+        const n = Math.floor(AU_CTX.sampleRate * 0.5);
+        AU_NOISE = AU_CTX.createBuffer(1, n, AU_CTX.sampleRate);
+        const d = AU_NOISE.getChannelData(0);
+        for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+      } catch (e) { AU_NOISE = null; auErr(e, 'auNoise'); }
+      return AU_NOISE;
+    }
+
+    /* หยิบช่องว่างจากพูล — เต็มแล้วแย่งช่องที่ใกล้จบที่สุด (voice stealing)
+       จึงไม่มีทางสร้างโหนดพอกจนเครื่องนักเรียนสะดุด ต่อให้กดปุ่มรัวแค่ไหน
+       gen คือรุ่นของการยืมช่อง — เสียงตัวเก่าที่ถูกแย่งช่องไปจะจบทีหลังแล้วเรียก auFree
+       ถ้าไม่เทียบรุ่นไว้ มันจะไปปลดช่องที่เสียงตัวใหม่กำลังใช้อยู่ */
+    function auVoice() {
+      let oldest = null;
+      for (let i = 0; i < AU_VOICES.length; i++) {
+        const v = AU_VOICES[i];
+        if (!v.busy) { v.busy = true; v.gen++; return v; }
+        if (!oldest || v.until < oldest.until) oldest = v;
+      }
+      if (oldest) oldest.gen++;
+      return oldest;
+    }
+    function auFree(v, gen) { if (v && (gen == null || v.gen === gen)) v.busy = false; }
+
+    function auOne(p, t0, scale) {
+      const ctx = AU_CTX;
+      const slot = auVoice();
+      if (!ctx || !slot) return;
+
+      const st  = t0 + (p.t || 0);
+      const d   = p.d || 0.2;
+      const pk  = Math.max(0.0002, (p.g == null ? 0.2 : p.g) * (scale == null ? 1 : scale));
+      const a   = (p.a == null ? 0.006 : p.a);
+      const g   = slot.g;
+      const gen = slot.gen;
+
+      g.gain.cancelScheduledValues(st);
+      g.gain.setValueAtTime(0.0001, st);
+      g.gain.exponentialRampToValueAtTime(pk, st + Math.min(a, d * 0.5));
+      g.gain.exponentialRampToValueAtTime(0.0001, st + d);
+
+      let src, filt = null;
+      if (p.w === 'noise') {
+        const buf = auNoise();
+        if (!buf) { auFree(slot, gen); return; }
+        src = ctx.createBufferSource();
+        src.buffer = buf;
+        src.loop = true;
+      } else {
+        src = ctx.createOscillator();
+        src.type = p.w === 'saw' ? 'sawtooth' : p.w === 'tri' ? 'triangle' : (p.w || 'sine');
+        src.frequency.setValueAtTime(Math.max(20, p.f || 440), st);
+        if (p.f2) src.frequency.exponentialRampToValueAtTime(Math.max(20, p.f2), st + d);
+      }
+
+      if (p.lp || p.hp) {
+        filt = ctx.createBiquadFilter();
+        filt.type = p.hp ? 'highpass' : 'lowpass';
+        filt.frequency.setValueAtTime(Math.max(40, p.hp || p.lp), st);
+        if (p.lp2) filt.frequency.exponentialRampToValueAtTime(Math.max(40, p.lp2), st + d);
+        if (p.q) filt.Q.value = p.q;
+        src.connect(filt); filt.connect(g);
+      } else {
+        src.connect(g);
+      }
+
+      slot.until = st + d;
+      src.start(st);
+      src.stop(st + d + 0.02);
+      src.onended = function () {
+        try { src.disconnect(); if (filt) filt.disconnect(); } catch (e) {}
+        auFree(slot, gen);
+      };
+    }
+
+    /* จุดยิงเสียงจุดเดียวของทั้งเกม — ทุก wrapper เรียกผ่านตัวนี้เท่านั้น
+       เสียงพังห้ามลามไปทำเกมพัง จึงหุ้ม try/catch ไว้ทั้งก้อนแล้วคืน false เงียบ ๆ */
+    function auPlay(key, vol) {
+      if (AU_MUTE) return false;
+      const def = AU_SFX_DEF[key];
+      if (!def) return false;
+      const now = Date.now();
+      const gap = (def.gap == null ? AU_GAP : def.gap);
+      if (AU_LAST[key] && now - AU_LAST[key] < gap) return false;
+      try {
+        const ctx = auCtx();
+        if (!ctx) return false;
+        if (ctx.state === 'suspended') { try { ctx.resume(); } catch (e) {} }
+        AU_LAST[key] = now;
+        const t0 = ctx.currentTime + 0.002;
+        for (let i = 0; i < def.v.length; i++) auOne(def.v[i], t0, vol);
+        AU_PLAYED++;
+        return true;
+      } catch (e) { auErr(e, 'auPlay/' + key); return false; }
+    }
+
+    // ══ 3. Autoplay Safeguard — ปลดล็อกตอนแตะจอครั้งแรก ═════════════
+    /* เบราว์เซอร์มือถือสร้าง AudioContext มาในสถานะ suspended จนกว่าจะมี user gesture
+       ไม่ถอด listener ทิ้งหลังปลดล็อกครั้งแรก เพราะ iOS สั่ง suspend ซ้ำได้ตอนสลับแอป
+       (ตัวเช็กราคาถูกมาก — อ่าน state แล้วออกทันทีถ้าปกติดีอยู่แล้ว) */
+    function auUnlock() {
+      const ctx = auCtx();
+      if (!ctx) return;
+      if (ctx.state === 'suspended') {
+        try { ctx.resume().then(function () { AU_UNLOCKED = true; }, function () {}); } catch (e) {}
+      } else AU_UNLOCKED = true;
+    }
+
+    // ══ 4. สวิตช์ 🔊 — กดครั้งเดียวปิด/เปิดทั้งสองช่อง ═══════════════
+    function auMuted() { return AU_MUTE; }
+
+    function auLoadMute() {
+      try {
+        const v = localStorage.getItem(AU_KEY);
+        if (v === 'off') AU_MUTE = true;
+        else if (v === 'on') AU_MUTE = false;
+      } catch (e) {}
+    }
+    function auSaveMute() { try { localStorage.setItem(AU_KEY, AU_MUTE ? 'off' : 'on'); } catch (e) {} }
+
+    /* fromGame = true คือถูกเรียกต่อจาก toggleMute() ของ v4.0 ซึ่งพลิก G.muted ไปแล้ว
+       จึงไม่ต้องเขียนกลับ (กันวนกันเอง) — ทางอื่นทั้งหมดต้องซิงก์ G.muted ให้ด้วย
+       เพราะเสียงกริ๊งของ v4.0 (chime) เช็ก G.muted ตัวเดียว ไม่ได้ผ่าน master ของเรา */
+    function auSetMute(v, fromGame) {
+      AU_MUTE = !!v;
+      auSaveMute();
+      try {
+        if (AU_CTX && AU_MASTER) {
+          const t = AU_CTX.currentTime;
+          AU_MASTER.gain.cancelScheduledValues(t);
+          AU_MASTER.gain.setValueAtTime(Math.max(0.0001, AU_MASTER.gain.value), t);
+          AU_MASTER.gain.linearRampToValueAtTime(AU_MUTE ? 0.0001 : AU_VOL_MASTER, t + 0.12);
+        }
+      } catch (e) { auErr(e, 'auSetMute'); }
+
+      if (AU_MUTE) { auLoopsOff(); auBgmHalt(); }
+      else { auBgmSync(true); auDangerSync(); auArmTime(); }
+
+      if (!fromGame) { const g = auG(); if (g) g.muted = AU_MUTE; }
+      auPaintBtn();
+      return AU_MUTE;
+    }
+
+    /* ทางเข้าสาธารณะ — ปุ่ม 🔊 บนแถบหัวยังเรียก toggleMute() ของ v4.0 ตามเดิม
+       (เราห่อมันไว้อีกที) ตัวนี้ไว้ให้โค้ดอื่น/เทสต์เรียกได้โดยไม่ต้องมี G พร้อม */
+    function auToggleMute() {
+      if (typeof toggleMute === 'function' && auG()) { toggleMute(); return AU_MUTE; }
+      return auSetMute(!AU_MUTE);
+    }
+
+    function auPaintBtn() {
+      const b = document.getElementById('gMute');
+      if (!b) return;
+      b.textContent = AU_MUTE ? '🔇' : '🔊';
+      b.title = AU_MUTE
+        ? 'เสียงปิดอยู่ (เอฟเฟกต์ + เพลงประกอบ) — แตะเพื่อเปิด'
+        : 'เสียงเปิดอยู่ (เอฟเฟกต์ + เพลงประกอบ) — แตะเพื่อปิด';
+      b.setAttribute('aria-label', b.title);
+    }
+
+    // ══ 5. เสียงแจ้งเตือนแบบลูป ════════════════════════════════════
+    /* ทั้งสองตัวต้องเงียบทันทีที่เกมเข้าสถานะ Auto-Pause ของ v4.8.1 (ข้อกำหนดข้อ 4)
+       และตัวลูปเองก็เช็กซ้ำทุกครั้งที่ตื่น ไม่พึ่งแต่ตัวสั่งหยุดจากข้างนอกอย่างเดียว */
+    function auDangerLv() {
+      try { return (typeof abDangerLevel === 'function') ? abDangerLevel() : 0; } catch (e) { return 0; }
+    }
+
+    function auHpTick() {
+      if (!auInGame() || AU_MUTE || auPaused() || auDangerLv() < AU_HP_LV) {
+        clearInterval(AU_HP_T); AU_HP_T = 0; return;
+      }
+      auPlay('SFX_LOW_HP_LOOP');
+    }
+
+    function auDangerSync() {
+      const want = auInGame() && !AU_MUTE && !auPaused() && auDangerLv() >= AU_HP_LV;
+      if (want && !AU_HP_T) {
+        auPlay('SFX_LOW_HP_LOOP');
+        AU_HP_T = setInterval(auHpTick, AU_HP_MS);
+      } else if (!want && AU_HP_T) {
+        clearInterval(AU_HP_T); AU_HP_T = 0;
+      }
+    }
+
+    /* เตือนเวลาใกล้หมด — ตั้งนาฬิกาของตัวเองแบบแก้ค่าเองทุกครั้งที่ตื่น (ท่าเดียวกับ ncLowTick
+       ของ v4.9.1) จึงทนต่อการต่อเวลา ⏳ การแช่แข็ง ❄️ และการหยุดของ v4.8.1 ได้ทั้งหมด
+       ไม่แตะ QUESTION_TICK ของ v4.0 เลยแม้แต่บรรทัดเดียว */
+    function auDisarmTime() { if (AU_TM_T) clearTimeout(AU_TM_T); AU_TM_T = 0; }
+    function auArmTime()    { auDisarmTime(); auTimeTick(); }
+
+    function auTimeTick() {
+      AU_TM_T = 0;
+      if (!auInGame() || AU_MUTE) return;
+
+      const held = (typeof AC_HELD !== 'undefined') && AC_HELD;
+      const frz  = (typeof FREEZE_TIMER !== 'undefined') && FREEZE_TIMER;
+      if (held || frz || auPaused()) { AU_TM_T = setTimeout(auTimeTick, 400); return; }
+
+      if (typeof QUESTION_TIMER === 'undefined' || !QUESTION_TIMER) return;   /* ข้อจบไปแล้ว */
+      const left = QUESTION_ENDS - Date.now();
+      if (left <= 0) return;
+      if (left > AU_TIME_LOW + 120) {
+        AU_TM_T = setTimeout(auTimeTick, Math.max(120, left - AU_TIME_LOW));
+        return;
+      }
+      auPlay('SFX_TIME_WARNING_3S');
+      AU_TM_T = setTimeout(auTimeTick, AU_TIME_GAP);
+    }
+
+    function auLoopsOff() {
+      auDisarmTime();
+      if (AU_HP_T) { clearInterval(AU_HP_T); AU_HP_T = 0; }
+    }
+
+    /* ตัวประสานของข้อกำหนดข้อ 4 — เรียกจาก wrapper ของ acSync ตัวเดียว
+       เข้าสถานะหยุด: ลูปแจ้งเตือนเงียบ + BGM หรี่/พัก · ออกจากหยุด: ต่อกลับให้ครบ */
+    function auPauseSync() {
+      const on = auPaused();
+      if (on === AU_PAUSED) return;
+      AU_PAUSED = on;
+      if (on) { auLoopsOff(); auBgmDuck(true); }
+      else    { auBgmDuck(false); auDangerSync(); auArmTime(); }
+    }
+
+    // ══ 6. BGM State Manager (โครงพร้อม รอเสียบไฟล์เพลง) ═══════════
+    /* กฎไฟล์เดียวจบห้ามอ้าง path ภายนอก เพลงจึงต้องมาเป็น data URI เหมือนรูปทุกใบ
+       ตอนนี้ทุกช่องยังว่าง — auBgmPlay() จะจำสถานะไว้แล้วคืน false เงียบ ๆ
+       ระบบทั้งชุด (เลือกสถานะ · เฟด · หรี่ตอนหยุด · ปิดตามสวิตช์ 🔊) ทำงานครบแล้ว
+       วันไหนมีเพลงจริง แค่เติม data URI ลงตารางนี้ตารางเดียวก็ดังทันที
+       **ระวังเพดานไฟล์รวม 2MB** — ไฟล์ตอนนี้ ~1.93MB เพลงต้องบีบให้พอดีช่องที่เหลือ */
+    const AU_BGM_SRC = {
+      BGM_TITLE:         '',   /* หน้าแรก / หน้าเลือกชั้น / นอกหอคอย */
+      BGM_BATTLE_NORMAL: '',   /* ชั้นมอนสเตอร์ทั่วไป 1-4 · 6-9 · 11-14 · 16-19 */
+      BGM_BATTLE_BOSS:   '',   /* ชั้นบอส 5 · 10 · 15 · 20 */
+      BGM_VICTORY:       ''    /* ช่วงชนะผ่านโซน (ยืนอยู่ที่ประตูวาปหลังบอส) */
+    };
+    const AU_BGM_LOOP = { BGM_TITLE:true, BGM_BATTLE_NORMAL:true, BGM_BATTLE_BOSS:true, BGM_VICTORY:false };
+
+    let AU_BGM_STATE = '', AU_BGM_EL = null, AU_BGM_NODE = null, AU_BGM_DUCKED = false;
+
+    function auBgmState() { return AU_BGM_STATE; }
+
+    function auBgmFade(to, ms) {
+      if (!AU_CTX || !AU_BGM_BUS) return;
+      try {
+        const t = AU_CTX.currentTime;
+        AU_BGM_BUS.gain.cancelScheduledValues(t);
+        AU_BGM_BUS.gain.setValueAtTime(Math.max(0.0001, AU_BGM_BUS.gain.value), t);
+        AU_BGM_BUS.gain.linearRampToValueAtTime(Math.max(0.0001, to), t + Math.max(0.02, (ms || 400) / 1000));
+      } catch (e) { auErr(e, 'auBgmFade'); }
+    }
+
+    /* หยุดสนิท — ใช้ตอนกดปิดเสียงหรือออกจากเกม (ต่างจาก duck ที่แค่พักไว้ชั่วคราว) */
+    function auBgmHalt() {
+      auBgmFade(0, AU_FADE_DUCK);
+      const el = AU_BGM_EL;
+      if (!el) return;
+      setTimeout(function () { try { if (AU_BGM_EL === el) el.pause(); } catch (e) {} }, AU_FADE_DUCK + 40);
+    }
+
+    /* หรี่ + พักเพลงตอนเกมถูกหยุด แล้วต่อกลับตอนเล่นต่อ (ข้อกำหนดข้อ 4) */
+    function auBgmDuck(on) {
+      AU_BGM_DUCKED = !!on;
+      if (on) { auBgmHalt(); return; }
+      if (AU_MUTE || !AU_BGM_EL || !AU_BGM_STATE) return;
+      try { AU_BGM_EL.play().catch(function () {}); } catch (e) {}
+      auBgmFade(AU_VOL_BGM, AU_FADE_IN);
+    }
+
+    function auBgmStop(ms) {
+      auBgmFade(0, ms == null ? AU_FADE_OUT : ms);
+      const el = AU_BGM_EL;
+      AU_BGM_EL = null; AU_BGM_NODE = null;
+      if (!el) return;
+      setTimeout(function () { try { el.pause(); el.src = ''; } catch (e) {} }, (ms == null ? AU_FADE_OUT : ms) + 60);
+    }
+
+    function auBgmPlay(state) {
+      if (!AU_BGM_SRC.hasOwnProperty(state)) return false;
+      if (AU_BGM_STATE === state && AU_BGM_EL) return true;
+
+      const src = AU_BGM_SRC[state] || '';
+      AU_BGM_STATE = state;
+
+      if (!src) { auBgmStop(AU_FADE_OUT); return false; }   /* ยังไม่มีเพลงในช่องนี้ — เงียบไว้ */
+      if (AU_MUTE || AU_BGM_DUCKED) return false;
+
+      try {
+        const ctx = auCtx();
+        if (!ctx) return false;
+        auBgmStop(AU_FADE_OUT);
+        const el = new Audio();
+        el.src = src;
+        el.loop = !!AU_BGM_LOOP[state];
+        el.preload = 'auto';
+        AU_BGM_EL = el;
+        AU_BGM_NODE = ctx.createMediaElementSource(el);
+        AU_BGM_NODE.connect(AU_BGM_BUS);
+        auBgmFade(0, 1);
+        el.play().catch(function () {});
+        auBgmFade(AU_VOL_BGM, AU_FADE_IN);
+        return true;
+      } catch (e) { auErr(e, 'auBgmPlay'); return false; }
+    }
+
+    /* สถานะที่ "ควรจะเป็น" ตามหน้าจอตอนนี้ — คำนวณสดทุกครั้ง ไม่เก็บธงซ้อน */
+    function auBgmWant() {
+      const g = auG();
+      if (!auInGame() || !g) return 'BGM_TITLE';
+      if (g.warpOpen && typeof DW_WON !== 'undefined' && DW_WON) return 'BGM_VICTORY';
+      if (!g.practiceMode && typeof isBossFloor === 'function' && isBossFloor(g.floor)) return 'BGM_BATTLE_BOSS';
+      return 'BGM_BATTLE_NORMAL';
+    }
+
+    function auBgmSync(force) {
+      const want = auBgmWant();
+      if (!force && want === AU_BGM_STATE) return;
+      auBgmPlay(want);
+    }
+
+    // ══ 7. Trigger Mapping — ห่อฟังก์ชันของชั้นล่าง ═════════════════
+
+    /* สวิตช์เสียง: v4.0 พลิก G.muted แล้วเขียนลงบัญชี เราตามไปพลิก master + จำลงเครื่อง */
+    const _auToggleMute = toggleMute;
+    toggleMute = function () {
+      const r = _auToggleMute.apply(this, arguments);
+      try { const g = auG(); auSetMute(!!(g && g.muted), true); } catch (e) { auErr(e, 'toggleMute'); }
+      return r;
+    };
+
+    const _auStartGame = startGame;
+    startGame = function () {
+      const r = _auStartGame.apply(this, arguments);
+      try {
+        /* ค่าที่จำไว้ในเครื่องเป็นตัวตัดสิน ไม่ใช่ a.muted ของบัญชี — เพราะลำโพงเป็นของเครื่อง
+           ไม่ใช่ของคน (กติกาเดียวกับโหมดแจ้งเตือน yao_notify ของ v4.9.1) */
+        const g = auG();
+        if (g) g.muted = AU_MUTE;
+        auPaintBtn();
+        AU_PAUSED = auPaused();
+        auBgmSync(true);
+        auDangerSync();
+      } catch (e) { auErr(e, 'startGame'); }
+      return r;
+    };
+
+    const _auExitGame = exitGame;
+    exitGame = function () {
+      try { auLoopsOff(); auBgmStop(AU_FADE_OUT); AU_BGM_STATE = ''; } catch (e) { auErr(e, 'exitGame'); }
+      return _auExitGame.apply(this, arguments);
+    };
+
+    /* ── BATTLE ──────────────────────────────────────────────────
+       คริติคอลถูกตัดสินอยู่ในตัว resolveAnswer ของ v4.0 ซึ่งอ่านจากข้างนอกไม่ได้
+       จุดสังเกตที่มีอยู่จริงคือบรรทัดผลลัพธ์ตอน renderMonsterHp() ถูกเรียก —
+       ตอนนั้น v4.0 เพิ่งเขียน "⚡ CRITICAL!" ลง #gFeedback และยังไม่ถูกข้อความ
+       "อสูรอักขระถูกปราบ" เขียนทับ จึงอ่านได้ทั้งเคสล้มและไม่ล้ม
+       (อ่านเฉพาะตอน AU_LIVE เท่านั้น — renderMonsterHp ถูกเรียกจากที่อื่นด้วย) */
+    const _auRenderMonsterHp = renderMonsterHp;
+    renderMonsterHp = function () {
+      const r = _auRenderMonsterHp.apply(this, arguments);
+      try {
+        if (AU_LIVE) {
+          const fb = document.getElementById('gFeedback');
+          if (fb && fb.textContent.indexOf('CRITICAL') !== -1) AU_CRIT = true;
+        }
+      } catch (e) { auErr(e, 'renderMonsterHp'); }
+      return r;
+    };
+
+    const _auResolveAnswer = resolveAnswer;
+    resolveAnswer = function (choice, btn, timedOut) {
+      const g = auG();
+      const m = g && g.currentMonster;
+      const hpBefore = g ? g.hp : 0;
+      const correct  = !!(m && !timedOut && choice === m.answer);
+      const wasLive  = AU_LIVE, wasCrit = AU_CRIT;
+      AU_LIVE = true; AU_CRIT = false;
+
+      let r;
+      try {
+        r = _auResolveAnswer.apply(this, arguments);
+      } finally {
+        const crit = AU_CRIT;
+        AU_LIVE = wasLive; AU_CRIT = wasCrit;
+        try {
+          const card = (typeof cdActive === 'function') ? cdActive() : null;
+          if (correct) {
+            auPlay(crit ? 'SFX_HIT_CRIT' : 'SFX_HIT_CORRECT');
+            if (card && card.id === 'inferno') auPlay('SFX_CARD_FIRE');   /* 🔥 ดาเมจ ×3 ของใบเปลวเพลิง */
+          }
+          if (g && g.hp < hpBefore) {
+            auPlay('SFX_TAKE_DAMAGE');
+            if (card && card.id === 'curse') auPlay('SFX_CARD_LIGHTNING'); /* ⚡ ค่าตอบแทนของใบคำสาป */
+          }
+          auDangerSync();
+        } catch (e) { auErr(e, 'resolveAnswer'); }
+      }
+      return r;
+    };
+
+    /* ── ITEMS / SKILLS ──────────────────────────────────────────
+       ทั้งคู่มีทางออกก่อนหักของ/หัก MP หลายทาง (HP เต็ม · ยังไม่มีนาฬิกา · ตัวเลือกเหลือ 2)
+       จึงต้องวัด "ของที่หายไปจริง" เหมือนที่ v4.6/v4.7 ทำ ไม่ใช่ยิงเสียงตั้งแต่กดปุ่ม */
+    const _auUseItem = useItem;
+    useItem = function (kind) {
+      const g = auG();
+      const before = (g && g.items && g.items[kind]) || 0;
+      const r = _auUseItem.apply(this, arguments);
+      try {
+        const after = (g && g.items && g.items[kind]) || 0;
+        if (after < before) auPlay(kind === 'potion' ? 'SFX_ITEM_POTION' : 'SFX_ITEM_USE');
+      } catch (e) { auErr(e, 'useItem'); }
+      return r;
+    };
+
+    const _auUseSkill = useSkill;
+    useSkill = function (key) {
+      const g = auG();
+      const before = g ? g.mp : 0;
+      const r = _auUseSkill.apply(this, arguments);
+      try {
+        if (g && g.mp < before) auPlay('SFX_SKILL_CAST');
+      } catch (e) { auErr(e, 'useSkill'); }
+      return r;
+    };
+
+    /* ── CARDS ───────────────────────────────────────────────────
+       เสียงประจำใบยิงตอนเลือกการ์ด แล้วยิงซ้ำตอนใบนั้นออกฤทธิ์จริงในสนาม
+       (🔥 เผาเกราะผนึกของ v4.6 · 🔥/⚡ ตอนตัดสินข้อ — ดู wrapper ของ resolveAnswer) */
+    if (typeof cdPick === 'function') {
+      const _auCdPick = cdPick;
+      cdPick = function (i) {
+        const card = (typeof CD_OFFER !== 'undefined' && CD_OFFER) ? CD_OFFER[i] : null;
+        const r = _auCdPick.apply(this, arguments);
+        try {
+          const id = card && card.id;
+          auPlay(id === 'inferno' ? 'SFX_CARD_FIRE' : id === 'curse' ? 'SFX_CARD_LIGHTNING' : 'SFX_CARD_DRAW');
+        } catch (e) { auErr(e, 'cdPick'); }
+        return r;
+      };
+    }
+
+    if (typeof cdInfernoSealStrike === 'function') {
+      const _auInferno = cdInfernoSealStrike;
+      cdInfernoSealStrike = function () {
+        const before = (typeof AB_SEAL !== 'undefined' && AB_SEAL) ? !!AB_SEAL.infernoBurned : true;
+        const r = _auInferno.apply(this, arguments);
+        try {
+          const after = (typeof AB_SEAL !== 'undefined' && AB_SEAL) ? !!AB_SEAL.infernoBurned : true;
+          if (!before && after) auPlay('SFX_CARD_FIRE');
+        } catch (e) { auErr(e, 'cdInfernoSealStrike'); }
+        return r;
+      };
+    }
+
+    /* ── SYSTEM ──────────────────────────────────────────────────
+       toast สีฟ้าของ *ทุกชั้น* ไหลมาลงที่ snShowToast หมด (v4.1 · v4.2 · v4.4 · v4.6 ·
+       v4.7 · v4.9.1 · v4.9.3) จึงห่อจุดเดียวครบ — แต่ต้องยิงเสียงเฉพาะตอน "ขึ้นจอจริง"
+       เพราะ wrapper ของ v4.9.1 อาจปัดตกทั้งใบตามโหมด 🔕 / ⚠️ ที่ผู้เล่นตั้งไว้ */
+    const _auShowToast = snShowToast;
+    snShowToast = function (def, title, body) {
+      const layer = document.getElementById('snLayer');
+      const last  = layer ? layer.lastElementChild : null;
+      const r = _auShowToast.apply(this, arguments);
+      try {
+        const now = layer ? layer.lastElementChild : null;
+        if (now && now !== last) {
+          const tone = def && def.tone;
+          auPlay(tone === 'good' ? 'SFX_QUEST_COMPLETE'
+               : (tone === 'warn' || tone === 'danger') ? 'SFX_SYSTEM_ALERT'
+               : 'SFX_SYSTEM_TOAST');
+        }
+      } catch (e) { auErr(e, 'snShowToast'); }
+      return r;
+    };
+
+    const _auLevelUpCheck = levelUpCheck;
+    levelUpCheck = function () {
+      const g = auG();
+      const before = g ? g.level : 0;
+      const r = _auLevelUpCheck.apply(this, arguments);
+      try { if (g && g.level > before) auPlay('SFX_LEVEL_UP'); } catch (e) { auErr(e, 'levelUpCheck'); }
+      return r;
+    };
+
+    const _auOnHunterDown = onHunterDown;
+    onHunterDown = function () {
+      const g = auG();
+      const ins = (g && g.items && g.items.insurance) || 0;
+      const r = _auOnHunterDown.apply(this, arguments);
+      try {
+        const after = (g && g.items && g.items.insurance) || 0;
+        auPlay(after < ins ? 'SFX_GUARD' : 'SFX_HUNTER_DOWN');
+        auLoopsOff();
+        auDangerSync();
+      } catch (e) { auErr(e, 'onHunterDown'); }
+      return r;
+    };
+
+    const _auClearFloor = clearFloor;
+    clearFloor = function (boss) {
+      const r = _auClearFloor.apply(this, arguments);
+      try { auPlay(boss ? 'SFX_BOSS_CLEAR' : 'SFX_FLOOR_CLEAR'); auBgmSync(); } catch (e) { auErr(e, 'clearFloor'); }
+      return r;
+    };
+
+    /* ── นาฬิกาต่อข้อ + สถานะเวที ─────────────────────────────── */
+    const _auStartQuestionTimer = startQuestionTimer;
+    startQuestionTimer = function () {
+      const r = _auStartQuestionTimer.apply(this, arguments);
+      try { auArmTime(); } catch (e) { auErr(e, 'startQuestionTimer'); }
+      return r;
+    };
+
+    const _auClearQuestionTimer = clearQuestionTimer;
+    clearQuestionTimer = function () {
+      try { auDisarmTime(); } catch (e) { auErr(e, 'clearQuestionTimer'); }
+      return _auClearQuestionTimer.apply(this, arguments);
+    };
+
+    const _auNextMonster = nextMonster;
+    nextMonster = function () {
+      const r = _auNextMonster.apply(this, arguments);
+      try { auBgmSync(); auDangerSync(); } catch (e) { auErr(e, 'nextMonster'); }
+      return r;
+    };
+
+    const _auOpenWarp = openWarp;
+    openWarp = function () {
+      const r = _auOpenWarp.apply(this, arguments);
+      try { auLoopsOff(); auBgmSync(); } catch (e) { auErr(e, 'openWarp'); }
+      return r;
+    };
+
+    const _auWarpGo = warpGo;
+    warpGo = function () {
+      const r = _auWarpGo.apply(this, arguments);
+      try { auBgmSync(); } catch (e) { auErr(e, 'warpGo'); }
+      return r;
+    };
+
+    /* HP วิกฤตเปลี่ยนได้จากหลายทาง (ตอบผิด · ยาฟื้นพลัง · การ์ด · แผง GM)
+       ทุกทางจบที่ renderStats ของ v4.0 เสมอ จึงเฝ้าจุดเดียวพอ — ตัวเช็กราคาถูกมาก */
+    const _auRenderStats = renderStats;
+    renderStats = function () {
+      const r = _auRenderStats.apply(this, arguments);
+      try { auDangerSync(); } catch (e) { auErr(e, 'renderStats'); }
+      return r;
+    };
+
+    /* ข้อกำหนดข้อ 4 — เกาะไปกับตัวประสานสถานะหยุดของ v4.8.1 ตัวเดียว
+       ไม่ต้องไล่ดักเหตุการณ์ (สลับแท็บ · เปิดหน้าต่างระบบ · เลื่อนหนีโจทย์ · กด ⏸️) ทีละทาง */
+    if (typeof acSync === 'function') {
+      const _auAcSync = acSync;
+      acSync = function () {
+        const r = _auAcSync.apply(this, arguments);
+        try { auPauseSync(); } catch (e) { auErr(e, 'acSync'); }
+        return r;
+      };
+    }
+
+    // ══ 8. ติดตั้งชั้นนี้ ═══════════════════════════════════════════
+    (function auInstall() {
+      try {
+        auLoadMute();
+        const g = auG();
+        if (g) g.muted = AU_MUTE;
+        auPaintBtn();
+
+        /* ปลดล็อก AudioContext + เสียงคลิกทั่วเกม จากลิสเนอร์ตัวเดียวที่ระดับเอกสาร
+           ใช้ capture:true จึงได้ยินก่อนเสมอ แม้ปุ่มนั้นจะ stopPropagation
+           passive:true เพราะไม่เคย preventDefault */
+        document.addEventListener('pointerdown', auUnlock, { capture: true, passive: true });
+        document.addEventListener('touchstart',  auUnlock, { capture: true, passive: true });
+        document.addEventListener('keydown',     auUnlock, { capture: true });
+
+        document.addEventListener('click', function (e) {
+          try {
+            auUnlock();
+            const t = e.target;
+            if (!t || !t.closest) return;
+            if (!t.closest('button, .g-choice, .cd-card, .g-slot, .nc-opt, .tr-hit')) return;
+            auPlay('SFX_CLICK');
+          } catch (err) { auErr(err, 'clickSfx'); }
+        }, true);
+
+        /* กลับมาที่แท็บแล้วบางเบราว์เซอร์ทิ้ง context ไว้ในสถานะ suspended */
+        document.addEventListener('visibilitychange', function () {
+          if (!document.hidden) auUnlock();
+        });
+
+        AU_READY = true;
+      } catch (e) { auErr(e, 'auInstall'); }
+    })();
+
   </script>
 </body>
 </html>

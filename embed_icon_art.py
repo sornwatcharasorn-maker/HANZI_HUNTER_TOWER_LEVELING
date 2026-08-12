@@ -28,7 +28,10 @@ GAME = os.path.join(HERE, 'hanzi_hunter_tower_v3_1_intro.html')
 if not os.path.exists(GAME):                       # เผื่อวางสคริปต์ไว้ในโฟลเดอร์ย่อย
     GAME = os.path.join(os.path.dirname(HERE), 'hanzi_hunter_tower_v3_1_intro.html')
 
-BUDGET_KB = 2048    # เพดานไฟล์รวมตาม CLAUDE.md — นักเรียนโหลดผ่านเน็ตมือถือ
+BUDGET_KB = 1953    # เพดานไฟล์รวมตาม CLAUDE.md = 2,000,000 ไบต์ (~2MB แบบทศนิยม) — นักเรียนโหลดผ่านเน็ตมือถือ
+
+#   เดิมตั้งไว้ 2048 ซึ่งเป็น 2 MiB = 2,097,152 ไบต์ — หลวมกว่ากฎที่เขียนใน CLAUDE.md อยู่ ~97KB
+#   บันไดคุณภาพจึงไม่เคยถูกไล่ลงเลยทั้งที่ไฟล์ทะลุเพดานตามเอกสารไปแล้ว
 
 # ไอคอนสกิลแสดงที่ 26x26 CSS px (.g-skill-icon img) · 96px จึงคมพอถึง DPR 3.7
 # ภาพประตูวาปกว้างเต็มแผง (.wp-art img { width:100% }) จึงให้กว้างได้ถึง 720px

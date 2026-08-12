@@ -4,8 +4,9 @@
 กฎไฟล์เดียวจบห้ามอ้างไฟล์ภายนอก ภาพการ์ดจึงต้องถูกย่อ → WebP → base64 → ฝังเป็นค่าคงที่
 เหมือน SKILLS[].img / SN_WARP_ART / TR_ART ที่ทำไว้แล้ว
 
-    python3 embed_card_art.py                 # ฝังทุกใบที่หาไฟล์เจอ
+    python3 embed_card_art.py                 # ฝังทุกใบที่หาไฟล์เจอ (ไล่บันไดคุณภาพให้พอดีเพดาน)
     python3 embed_card_art.py ward edge       # ฝังเฉพาะบางใบ
+    python3 embed_card_art.py --q 72          # บังคับคุณภาพเอง (ข้ามบันได) · --w 260 บังคับความกว้าง
     python3 embed_card_art.py --clear         # ถอดภาพทุกใบกลับไปใช้อีโมจิ
 
 สารบัญชื่อไฟล์อยู่ในตัวไฟล์เกมเอง — ฟิลด์ image ของการ์ดแต่ละใบใน CD_CARDS
@@ -27,7 +28,10 @@ GAME = os.path.join(HERE, 'hanzi_hunter_tower_v3_1_intro.html')
 if not os.path.exists(GAME):                       # เผื่อวางสคริปต์ไว้ในโฟลเดอร์ย่อย
     GAME = os.path.join(os.path.dirname(HERE), 'hanzi_hunter_tower_v3_1_intro.html')
 
-BUDGET_KB = 2048    # เพดานไฟล์รวมตาม CLAUDE.md — นักเรียนโหลดผ่านเน็ตมือถือ
+BUDGET_KB = 1953    # เพดานไฟล์รวมตาม CLAUDE.md = 2,000,000 ไบต์ (~2MB แบบทศนิยม) — นักเรียนโหลดผ่านเน็ตมือถือ
+
+#   เดิมตั้งไว้ 2048 ซึ่งเป็น 2 MiB = 2,097,152 ไบต์ — หลวมกว่ากฎที่เขียนใน CLAUDE.md อยู่ ~97KB
+#   บันไดคุณภาพจึงไม่เคยถูกไล่ลงเลยทั้งที่ไฟล์ทะลุเพดานตามเอกสารไปแล้ว
 
 # ภาพถูกใช้ 2 ขนาด: ตราข้างชื่อการ์ด 28px และภาพพื้นหลังราวครึ่งใบการ์ด (~230px บนจอใหญ่สุด)
 # 300px จึงเหลือเฟือแล้ว · ถ้ารวมกันทะลุเพดาน สคริปต์จะไล่ลดตามบันไดนี้ให้เอง
@@ -89,9 +93,29 @@ def resolve(path):
     return None
 
 
+def opt_int(argv, flag, default):
+    """อ่านค่าตัวเลขจากธง --q / --w (รองรับทั้ง '--q 72' และ '--q=72')"""
+    for i, a in enumerate(argv):
+        if a == flag and i + 1 < len(argv):
+            return int(argv[i + 1])
+        if a.startswith(flag + '='):
+            return int(a.split('=', 1)[1])
+    return default
+
+
 def main(argv):
-    only = set(a for a in argv if not a.startswith('-'))
     clear = '--clear' in argv
+    q = opt_int(argv, '--q', None)
+    w = opt_int(argv, '--w', None)
+    # ตัดธงกับค่าที่ตามหลังธงออก ที่เหลือคือรายชื่อ id ที่สั่งฝังเฉพาะบางใบ
+    skip = set()
+    for i, a in enumerate(argv):
+        if a in ('--q', '--w'):
+            skip.add(i)
+            skip.add(i + 1)
+    only = set(a for i, a in enumerate(argv)
+               if not a.startswith('-') and i not in skip)
+    ladder = [(w or 300, q)] if q else ([(w, qq) for _, qq in LADDER] if w else LADDER)
 
     src = io.open(GAME, encoding='utf-8').read()
     before = len(src.encode('utf-8'))
@@ -124,7 +148,7 @@ def main(argv):
         sys.exit('\nไม่มีไฟล์ให้ฝังสักใบ — วางไฟล์ภาพตามชื่อในฟิลด์ image ก่อน')
 
     kept = sum(len(m.group('data')) for m in cards) - sum(len(m.group('data')) for m, _ in jobs)
-    for max_w, quality in LADDER:
+    for max_w, quality in ladder:
         enc, total = {}, 0
         for m, real in jobs:
             raw, orig, used = encode(real, max_w, quality)
@@ -138,6 +162,8 @@ def main(argv):
             break
     else:
         sys.exit('หยุด: ต่อให้บีบสุดบันไดแล้วไฟล์รวมก็ยังทะลุเพดาน %d KB' % BUDGET_KB)
+    if q and projected > BUDGET_KB:
+        sys.exit('หยุด: คุณภาพที่สั่งมาเองทำให้ไฟล์รวมทะลุเพดาน %d KB' % BUDGET_KB)
 
     for m, real in jobs:
         b64, raw, orig, used = enc[m.group('id')]

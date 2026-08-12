@@ -14161,6 +14161,772 @@
     })();
 
 
+    // ══════════════════════════════════════════════════════════════
+    // v4.9.3 · TRIPLE QUEST ENGINE — เควสต์ 3 สายหลัก
+    // ══════════════════════════════════════════════════════════════
+    /* ชั้นนี้ไม่แก้โค้ด v4.0-v4.9.2 เลยแม้แต่บรรทัดเดียว — ห่อฟังก์ชันเหมือนสิบสองชั้นก่อนหน้า
+       ทุกอย่างขึ้นต้นด้วย tq / TQ_ · ลบทั้งบล็อกนี้ทิ้งแล้วเกมและกระดานภารกิจ 20 เควสของ v4.2
+       ยังทำงานปกติทุกประการ
+
+       3 สายที่เพิ่มเข้ามา (แยกจาก 20 เควสของ v4.2 คนละก้อนข้อมูล คนละสารบัญแจ้งเตือน):
+         สาย 1 · ประจำวัน   — ฟาร์ม Gold / MP / EXP · รีเซ็ตเที่ยงคืน · ต้องเคลียร์ 1 ชั้นก่อนถึงเริ่มนับ
+         สาย 2 · ฮันเตอร์   — แก้จุดอ่อนภาษาจีนตาม Hunter Analytics · รีเซ็ตเที่ยงคืนเหมือนกัน
+         สาย 3 · พิชิตหอคอย — ความท้าทายระดับสูง ทำครั้งเดียวจบตลอดชีพ
+
+       ข้อควรระวังที่ยึดไว้:
+         · ทองรางวัลเควสไม่บวกเข้า totalGoldEarned (กติกากันเงินเฟ้อข้อ 1 ของ v4.2)
+         · ตัวอ่าน tqOf() เป็น read-only + มีสวิตช์ TQ_READY (กับดักข้อ 16)
+         · wrapper ที่ยัด DOM ล้างของเก่าก่อนแทรกเสมอ (กับดักข้อ 2)
+         · แจ้งเตือนเป็น toast ล้วน ไม่มี gate สักใบ (กับดักข้อ 18) */
+
+    const TQ_VER = 'v4.9.3';
+
+    function tqErr(e, where) {
+      if (typeof gcErrPush !== 'function') return;
+      try { gcErrPush('err', 'TRACK: ' + ((e && e.message) || e), where || '', (e && e.stack) || ''); } catch (e2) {}
+    }
+
+    // ── ค่าบาลานซ์ — แก้ตัวเลขที่นี่ที่เดียว ────────────────────────
+    /* ข้อความ cond ของทุกเควสประกอบจากค่าคงที่พวกนี้เอง จึงไม่มีทางที่เลขบนกระดาน
+       กับเลขที่ทำงานจริงจะเพี้ยนกัน (กติกาเดียวกับข้อความราคาร้านค้าของ v4.7.9.1) */
+    const TQ_FIT_GOAL    = 15;   /* สายฟิต — ตอบถูกสะสมกี่ข้อ */
+    const TQ_CAST_GOAL   = 2;    /* สายร่าย — ร่ายสกิลกี่ครั้ง (ขณะต่อสู้จริงเท่านั้น) */
+    const TQ_SHOP_GOAL   = 1;    /* สายช็อป — ซื้อไอเทมกี่ครั้ง */
+    const TQ_WEAK_GOAL   = 5;    /* ล้างคลังศัพท์ — ตอบถูกในคำคลังทบทวนกี่ข้อ */
+    const TQ_WEAK_WRONG  = 3;    /* คำจะเข้าคลังทบทวนเมื่อเคยตอบผิดมาแล้วกี่ครั้ง */
+    const TQ_ACC_PCT     = 80;   /* แม่นยำสูง — ต้องเกินกี่ % */
+    const TQ_ACC_MIN_N   = 20;   /* ...จากอย่างน้อยกี่ข้อในรอบนั้น (กันตอบถูกข้อเดียวแล้วได้ 100%) */
+    const TQ_A1_GOAL     = 10;   /* เซียน A1 — ปราบมอนสเตอร์ด้วยคำ A1 กี่ตัว */
+    const TQ_SBOSS_ROUND = 6;    /* ล้มยักษ์ — ต้องตอบถูกกี่รอบในห้องบอส S-RANK */
+    const TQ_STREAK_GOAL = 10;   /* สตรีคโหด — คอมโบต่อเนื่องกี่ข้อ (สะสมข้ามชั้นในโซนได้) */
+
+    /* รางวัล */
+    const TQ_RW_FIT   = 200;
+    const TQ_RW_CAST  = 30;      /* MP */
+    const TQ_RW_SHOP  = 100;     /* EXP */
+    const TQ_RW_WEAK_G = 250;
+    const TQ_RW_WEAK_E = 150;
+    const TQ_RW_A1    = 300;
+    const TQ_RW_SBOSS = 500;
+    const TQ_RW_SCAR  = 1000;    /* สายไร้รอยขีดข่วน — คุ้มค่าความเสี่ยงระดับ Instant Kill 2.5x */
+
+    /* การ์ดหายากของรางวัล 👑 ล้มยักษ์ — คัดเฉพาะใบที่เป็นคุณล้วน ๆ จากสายประคองเกม/แลกเปลี่ยน
+       ไม่หยิบสายวัดใจ (💀 ⚖️ 🎲 …) เพราะของรางวัลที่บังคับให้ HP เหลือ 1 ไม่ใช่รางวัล */
+    const TQ_RARE_POOL = ['ward', 'focus', 'mana', 'dew', 'merchant', 'chrono', 'edge'];
+
+    // ── สารบัญเควส 9 รายการ ──────────────────────────────────────
+    /* cat 'd' = รีเซ็ตเที่ยงคืน · cat 'L' = ครั้งเดียวจบตลอดชีพ
+       lock:true = ต้องปลดล็อกรอบวันก่อน (เคลียร์อย่างน้อย 1 ชั้นในวันนั้น) ถึงจะเริ่มนับ */
+    const TQ_DEFS = [
+      /* ── สาย 1 · ประจำวัน — ฟาร์ม Gold / MP / ไอเทมใช้งาน ───────── */
+      { id:'T1', no:1, track:'daily', cat:'d', lock:true, key:'ans', icon:'🎯',
+        name:'สายฟิต', goal:TQ_FIT_GOAL,
+        cond:'ตอบคำถามถูกสะสมครบ ' + TQ_FIT_GOAL + ' ข้อ', gold:TQ_RW_FIT },
+      { id:'T2', no:2, track:'daily', cat:'d', lock:true, key:'cast', icon:'⚡',
+        name:'สายร่าย', goal:TQ_CAST_GOAL,
+        cond:'ใช้งานสกิลสะสมครบ ' + TQ_CAST_GOAL + ' ครั้ง (ขณะต่อสู้จริงเท่านั้น)', mp:TQ_RW_CAST },
+      { id:'T3', no:3, track:'daily', cat:'d', lock:true, key:'shop', icon:'🛒',
+        name:'สายช็อป', goal:TQ_SHOP_GOAL,
+        cond:'ซื้อไอเทมจากร้านค้าฮันเตอร์ ' + TQ_SHOP_GOAL + ' ครั้ง', exp:TQ_RW_SHOP },
+
+      /* ── สาย 2 · ฮันเตอร์ — แก้จุดอ่อนภาษาจีน & ตำรา 《汉语教程》 ── */
+      { id:'T4', no:4, track:'hunter', cat:'d', key:'weak', icon:'📚',
+        name:'ล้างคลังศัพท์', goal:TQ_WEAK_GOAL,
+        cond:'ตอบถูกในคลังทบทวน (คำที่เคยตอบผิด ' + TQ_WEAK_WRONG + ' ครั้ง) สะสม ' + TQ_WEAK_GOAL + ' ข้อ',
+        gold:TQ_RW_WEAK_G, exp:TQ_RW_WEAK_E },
+      { id:'T5', no:5, track:'hunter', cat:'d', key:'acc', icon:'🎯',
+        name:'แม่นยำสูง', goal:1,
+        cond:'ทำความแม่นยำประจำรอบให้เกิน ' + TQ_ACC_PCT + '% (นับจากอย่างน้อย ' + TQ_ACC_MIN_N + ' ข้อ)',
+        item:'potion' },
+      { id:'T6', no:6, track:'hunter', cat:'d', key:'a1', icon:'📖',
+        name:'เซียน A1', goal:TQ_A1_GOAL,
+        cond:'เคลียร์มอนสเตอร์ด้วยคำศัพท์หมวด A1 จาก ' + SN_BOOK + ' ครบ ' + TQ_A1_GOAL + ' ตัว',
+        gold:TQ_RW_A1 },
+
+      /* ── สาย 3 · พิชิตหอคอย — Risk & Reward ระดับสูง ────────────── */
+      { id:'T7', no:7, track:'tower', cat:'L', icon:'👑',
+        name:'ล้มยักษ์', goal:1,
+        cond:'เอาชนะบอสประจำโซนระดับ S-RANK ชนิดตอบถูกครบ ' + TQ_SBOSS_ROUND + ' รอบ',
+        gold:TQ_RW_SBOSS, rare:true,
+        prog: t => Math.min(1, t.L.sboss || 0) },
+      { id:'T8', no:8, track:'tower', cat:'L', icon:'🛡️',
+        name:'สายไร้รอยขีดข่วน', goal:0,   /* goal ถูกเติมตอนติดตั้งจาก tqScarFloors().length */
+        cond:'', gold:TQ_RW_SCAR,
+        prog: t => (t.L.nopot || []).length },
+      { id:'T9', no:9, track:'tower', cat:'L', icon:'🔥',
+        name:'สตรีคโหด', goal:TQ_STREAK_GOAL,
+        cond:'ทำ Combo Streak ตอบถูกต่อเนื่อง ' + TQ_STREAK_GOAL + ' ข้อรวดภายในโซน (นับสะสมข้ามชั้นได้)',
+        item:'insurance',
+        prog: t => Math.min(TQ_STREAK_GOAL, t.L.streak || 0) }
+    ];
+
+    const TQ_BY_ID = {};
+    TQ_DEFS.forEach(function (d) { TQ_BY_ID[d.id] = d; });
+    const TQ_KEYS = ['ans', 'cast', 'shop', 'weak', 'acc', 'a1'];
+
+    /* ชั้นบอสของเควส 🛡️ สายไร้รอยขีดข่วน = ชั้นบอสทุกบานที่ยังไม่ถึง S-RANK (ได้ 5 · 10 · 15)
+       คำนวณจาก FLOOR_MAX กับ RANKS ของ v4.0 เอง ไม่มีเลขชั้นฮาร์ดโค้ดไว้ที่ไหน */
+    function tqScarFloors() {
+      const out = [];
+      for (let f = 1; f <= FLOOR_MAX; f++) {
+        if (isBossFloor(f) && rankOfFloor(f).key !== 'S') out.push(f);
+      }
+      return out;
+    }
+    function tqIsScarFloor(f) { return isBossFloor(f) && rankOfFloor(f).key !== 'S'; }
+    function tqIsSBoss(f)     { return isBossFloor(f) && rankOfFloor(f).key === 'S'; }
+
+    (function tqFixT8() {
+      const list = tqScarFloors();
+      const def  = TQ_BY_ID.T8;
+      def.goal = list.length;
+      def.cond = 'ผ่านชั้นบอส (ชั้น ' + list.join(', ') + ') โดยไม่กดใช้ ' +
+                 (itemOf('potion') ? itemOf('potion').icon + ' ' + itemOf('potion').name : 'ยาฟื้นพลัง') +
+                 ' แม้แต่ขวดเดียว';
+    })();
+
+    // ── ชุดแจ้งเตือน — สารบัญของตัวเอง TRACK 01/05-05/05 ──────────
+    /* แยกจาก SYS_NOTIF (ตรึง 25) · Q_NOTIF (6) · CX_NOTIF (4) · AB_NOTIF (9) · CD_NOTIF (9)
+       · NC_NOTIF (3) ยืมแค่กลไกโชว์ snShowToast มาใช้ ไม่ไปกินเลขของใคร
+       เป็น toast ล้วนทั้งชุด ไม่มี gate สักใบ (กับดักข้อ 18) */
+    const TQ_NOTIF = {
+      DONE: { tag:'TRACK 01/05', tone:'good', hold:true,
+        title: d => `✨ เควสต์สำเร็จ!: ${d.name} — รับรางวัล ${d.reward}`,
+        body:  d => `สาย: <b>${d.track}</b>\nเงื่อนไข: <i>${d.cond}</i>\nรางวัลเข้ากระเป๋าแล้ว: <b>${d.reward}</b>${d.extra || ''}\nทองในกระเป๋าตอนนี้: <b>${d.wallet}</b> ทอง` },
+
+      DONE_MANY: { tag:'TRACK 02/05', tone:'good', hold:true,
+        title: d => `✨ เควสต์สำเร็จพร้อมกัน ${d.count} รายการ`,
+        body:  d => `รายการที่สำเร็จ: <b>${d.names}</b>\nรวมรางวัลที่ได้รับแล้ว: <b>${d.reward}</b>\nทองในกระเป๋าตอนนี้: <b>${d.wallet}</b> ทอง` },
+
+      UNLOCK: { tag:'TRACK 03/05', tone:'', hold:true,
+        title: d => `📜 ปลดล็อกเควสต์ประจำวันแล้ว`,
+        body:  d => `เคลียร์หอคอยจบ <b>ชั้น ${d.floor}</b> ของวันนี้เรียบร้อย — สายภารกิจประจำวัน ${d.count} รายการเริ่มนับความคืบหน้าตั้งแต่ตอนนี้\nรีเซ็ตรอบใหม่ทุกเที่ยงคืน · เปิดดูได้ที่ <b>📜 QUESTS — กระดานภารกิจ</b>` },
+
+      BAGFULL: { tag:'TRACK 04/05', tone:'warn', hold:true,
+        title: d => `🎒 กระเป๋าเต็ม — รางวัลถูกพักไว้ก่อน`,
+        body:  d => `<b>${d.name}</b> สำเร็จแล้ว แต่ของแถม <b>${d.item}</b> ยังไม่มีที่เก็บ\nกระเป๋าตอนนี้ <i>${d.count}/${d.max}</i> ช่อง\nขาย/ใช้ไอเทมให้เหลือช่องว่าง แล้วกด <b>🎁 รับรางวัล</b> บนกระดานภารกิจ (รางวัลไม่หาย)` },
+
+      CLAIM: { tag:'TRACK 05/05', tone:'good',
+        title: d => `🎁 รับรางวัลที่พักไว้ — ${d.name}`,
+        body:  d => `ได้รับ: <b>${d.reward}</b>\nกระเป๋าตอนนี้ <i>${d.count}/${d.max}</i> ช่อง · ทอง <b>${d.wallet}</b>` }
+    };
+
+    // ── สถานะระหว่างเล่น (ไม่เซฟ — เป็นของ "รอบการเล่น" หรือ "ข้อที่กำลังตอบ") ──
+    let TQ_READY = false;   /* อ่านค่าจาก store เข้า G.tq ครบแล้ว (กับดักข้อ 16) */
+    let TQ_DIRTY = false;
+    let TQ_SEEN  = {};      /* edge-trigger กันยิงแจ้งเตือนซ้ำรัว (กติกาเดียวกับ SN_MP_SEEN) */
+    let TQ_HOLD  = [];      /* คิวกักแจ้งเตือนระหว่างนับเวลาตอบคำถาม */
+    let TQ_SES   = { ok: 0, n: 0 };   /* ความแม่นยำ "ประจำรอบ" — รีเซ็ตทุกครั้งที่เข้าเกม */
+    let TQ_HIT_F = 0;       /* ชั้นที่กำลังนับรอบตอบถูกอยู่ */
+    let TQ_HITS  = 0;       /* ตอบถูกไปกี่รอบบนชั้นนั้น (ใช้กับ 👑 ล้มยักษ์) */
+    let TQ_POT_F = 0;       /* ชั้นที่เพิ่งกดใช้ยาฟื้นพลังไป (ใช้กับ 🛡️ สายไร้รอยขีดข่วน) */
+
+    function tqG() { return (typeof G !== 'undefined' && G) ? G : null; }
+
+    // ── ข้อมูลถาวร: account.tq ────────────────────────────────────
+    function tqBlank() {
+      return { day:'', d:{}, unlocked:false, done:{ d:[], L:[] }, pend:[],
+               L:{ sboss:0, nopot:[], streak:0 } };
+    }
+
+    /* ซ่อมข้อมูลเพี้ยน + รีเซ็ตรอบวันที่หมดอายุ — ต้อง idempotent เพราะถูกเรียกทุกครั้ง
+       ที่อ่าน store ผ่าน migrateAccount และจาก tqSync() ระหว่างเล่น */
+    function tqEnsure(t) {
+      if (!t || typeof t !== 'object') t = tqBlank();
+      if (typeof t.day !== 'string') t.day = '';
+      if (!t.d || typeof t.d !== 'object') t.d = {};
+      if (!t.done || typeof t.done !== 'object') t.done = {};
+      ['d', 'L'].forEach(function (k) { if (!Array.isArray(t.done[k])) t.done[k] = []; });
+      if (!Array.isArray(t.pend)) t.pend = [];
+      if (!t.L || typeof t.L !== 'object') t.L = {};
+
+      const num = function (v) { return (typeof v === 'number' && isFinite(v) && v > 0) ? Math.floor(v) : 0; };
+
+      /* qDayKey ของ v4.2 เป็นตัวตัดสินรอบวันตัวเดียวกัน — ไม่สร้างนาฬิกาชุดที่สองมาให้เพี้ยนกันเอง */
+      const today = qDayKey();
+      if (t.day !== today) { t.day = today; t.d = {}; t.done.d = []; t.unlocked = false;
+                             t.pend = t.pend.filter(function (id) { const D = TQ_BY_ID[id]; return D && D.cat === 'L'; }); }
+      t.unlocked = t.unlocked === true;
+
+      TQ_KEYS.forEach(function (k) { t.d[k] = num(t.d[k]); });
+
+      t.L.sboss  = Math.min(1, num(t.L.sboss));
+      t.L.streak = Math.min(TQ_STREAK_GOAL, num(t.L.streak));
+      t.L.nopot  = (Array.isArray(t.L.nopot) ? t.L.nopot : [])
+        .map(function (v) { return Math.floor(v); })
+        .filter(function (f, i, arr) { return tqIsScarFloor(f) && arr.indexOf(f) === i; });
+
+      /* กัน id เพี้ยน/ซ้ำ ไม่งั้นตัวนับ "สำเร็จไปกี่เควส" จะเกินจำนวนจริง */
+      ['d', 'L'].forEach(function (cat) {
+        t.done[cat] = t.done[cat].filter(function (id, i, arr) {
+          const D = TQ_BY_ID[id];
+          return D && D.cat === cat && arr.indexOf(id) === i;
+        });
+      });
+      t.pend = t.pend.filter(function (id, i, arr) {
+        const D = TQ_BY_ID[id];
+        return D && arr.indexOf(id) === i && t.done[D.cat].indexOf(id) === -1;
+      });
+      return t;
+    }
+
+    function tqClone(t) { try { return JSON.parse(JSON.stringify(t)); } catch (e) { return tqBlank(); } }
+
+    /* อ่านอย่างเดียว — ห้ามสร้าง g.tq เปล่าให้เอง (กับดักข้อ 16) */
+    function tqOf(src) {
+      const g = src || tqG();
+      return (g && g.tq && typeof g.tq === 'object') ? g.tq : null;
+    }
+
+    function tqSave() {
+      if (!TQ_READY || !CURRENT_USER) return;
+      const t = tqOf();
+      if (!t) return;
+      const s = loadStore(), a = s[CURRENT_USER];
+      if (!a) return;
+      a.tq = tqClone(t);
+      saveStore(s);
+    }
+
+    /* เช็กรอบวันให้ตรงปัจจุบันก่อนอ่าน/เขียนตัวนับทุกครั้ง + ล้างธงที่ผูกกับชั้นเมื่อย้ายชั้นแล้ว */
+    function tqSync() {
+      const g = tqG(), t = tqOf(g);
+      if (!t) return null;
+      const was = t.day;
+      tqEnsure(t);
+      if (t.day !== was) { TQ_DIRTY = true; tqSeedSeen(); }
+
+      /* ธงสองตัวนี้เป็นของ "ชั้นที่ยืนอยู่" ไม่ใช่ของบัญชี — ก้าวพ้นชั้นนั้นเมื่อไหร่ก็ทิ้ง */
+      if (TQ_POT_F && g && g.floor !== TQ_POT_F) TQ_POT_F = 0;
+      if (g && TQ_HIT_F !== g.floor) { TQ_HIT_F = g.floor; TQ_HITS = 0; }
+      return t;
+    }
+
+    // ── ตัวอ่านความคืบหน้า ────────────────────────────────────────
+    function tqCur(def, t) {
+      if (!t) return 0;
+      if (def.cat === 'L') { try { return def.prog(t); } catch (e) { return 0; } }
+      return t.d[def.key] || 0;
+    }
+    function tqOk(def, t)   { return tqCur(def, t) >= def.goal; }
+    function tqIsDone(id, t){ const s = t || tqOf(); const D = TQ_BY_ID[id];
+                              return !!(D && s && s.done[D.cat].indexOf(id) !== -1); }
+    function tqIsPend(id, t){ const s = t || tqOf(); return !!(s && s.pend.indexOf(id) !== -1); }
+
+    /* สาย 1 เริ่มนับก็ต่อเมื่อ "เล่นจบอย่างน้อย 1 ชั้นในวันนั้น" แล้วเท่านั้น
+       (Daily Unlocking Requirement — กันเปิดแอปมาแล้วกดรับรางวัลฟรี) */
+    function tqDailyOn(t) { const s = t || tqOf(); return !!(s && s.unlocked); }
+    function tqLocked(def, t) { return def.lock === true && !tqDailyOn(t); }
+
+    /* ตีตราเฉพาะเควสที่ "จ่ายรางวัลไปแล้ว" หรือ "พักรอที่ว่างในกระเป๋าอยู่" เท่านั้น
+       เควสที่เงื่อนไขครบแล้วแต่ยังไม่ได้รับของ (เช่นปิดแท็บกลางคัน) ต้องไม่ถูกตีตรา
+       ไม่งั้นมันจะค้างอยู่แบบนั้นตลอดกาล — ตัวจ่ายจะเก็บตกให้เองในการตอบข้อถัดไป */
+    function tqSeedSeen() {
+      TQ_SEEN = {};
+      const t = tqOf();
+      TQ_DEFS.forEach(function (d) { TQ_SEEN[d.id] = !t || tqIsDone(d.id, t) || tqIsPend(d.id, t); });
+    }
+
+    function tqPendCount() { const t = tqOf(); return t ? t.pend.length : 0; }
+    function tqTrackName(k) {
+      return k === 'daily' ? 'เควสต์ประจำวัน' : k === 'hunter' ? 'เควสต์ฮันเตอร์' : 'เควสต์ไต่หอคอย';
+    }
+
+    // ── แจ้งเตือน (Silence Mode Constraint) ──────────────────────
+    /* สเปกกำหนดให้ toast ของสายเควสเด้งเฉพาะ "ช่วงจบข้อ/สรุปผล" เท่านั้น เพื่อไม่ให้บัง
+       โจทย์ · พินอิน · คำแปล · ตัวเลือก A-D ระหว่างนับเวลาตอบ
+       นี่เป็นการกักของ "ชั้นนี้ชั้นเดียว" ไม่ใช่การรื้อ Real-Time Immediate Display ของ v4.9.1
+       กลับมา — แจ้งเตือนของชั้นอื่นยังยิงสดเหมือนเดิมทุกใบ */
+    function tqBusy() {
+      if (typeof QUESTION_TIMER !== 'undefined' && QUESTION_TIMER !== null) return true;
+      if (typeof FREEZE_TIMER   !== 'undefined' && FREEZE_TIMER   !== null) return true;
+      if (typeof AC_HELD        !== 'undefined' && AC_HELD) return true;   /* v4.8.1 หยุดค้างกลางข้อ */
+      return false;
+    }
+
+    function tqFire(key, data) {
+      const def = TQ_NOTIF[key];
+      if (!def) return;
+      const d = data || {};
+      let title, body;
+      try { title = def.title(d); body = def.body(d); } catch (e) { return; }
+      try { snShowToast(def, title, body); } catch (e) { tqErr(e, 'tqFire'); }
+    }
+
+    function tqNotify(key, data) {
+      const def = TQ_NOTIF[key];
+      if (!def) return;
+      if (def.hold && tqBusy()) { TQ_HOLD.push({ key: key, data: data || {} }); return; }
+      tqFire(key, data);
+    }
+
+    /* ยิงของที่กักไว้ทั้งหมด — เรียกจากจุดที่ v4.0 จบข้อ/สรุปผลแล้วเท่านั้น
+       รวมใบ DONE หลายใบเป็นใบเดียว เพราะ v4.9.1 ตั้ง NC_MAX = 1 (ใบใหม่ล้างใบเก่า)
+       ถ้ายิงรัวจะเหลือให้เห็นแค่ใบสุดท้าย */
+    function tqFlush() {
+      if (!TQ_HOLD.length) return;
+      const q = TQ_HOLD; TQ_HOLD = [];
+      const g = tqG();
+      const dones = [], rest = {};
+      q.forEach(function (x) { if (x.key === 'DONE') dones.push(x.data); else rest[x.key] = x.data; });
+
+      Object.keys(rest).forEach(function (k) { tqFire(k, rest[k]); });
+
+      if (dones.length === 1) tqFire('DONE', dones[0]);
+      else if (dones.length > 1) {
+        tqFire('DONE_MANY', {
+          count:  dones.length,
+          names:  dones.map(function (x) { return x.name; }).join(' · '),
+          reward: dones.map(function (x) { return x.reward; }).join(' · '),
+          wallet: g ? g.gold : 0
+        });
+      }
+    }
+
+    // ── จ่ายรางวัล ───────────────────────────────────────────────
+    function tqRewardText(def) {
+      const p = [];
+      if (def.gold) p.push('+' + def.gold.toLocaleString('en-US') + ' Gold');
+      if (def.exp)  p.push('+' + def.exp.toLocaleString('en-US') + ' EXP');
+      if (def.mp)   p.push('+' + def.mp + ' MP');
+      if (def.item) { const it = itemOf(def.item); if (it) p.push('+1 ' + it.icon + ' ' + it.name); }
+      if (def.rare) p.push('การ์ดหายาก 1 ใบ');
+      return p.join(' · ');
+    }
+
+    /* การ์ดหายากถูกใส่มือตรง ๆ แล้วผูกกับช่วงชั้นปัจจุบัน — ใช้โมเดลสถานะเดียวกับ cdPick()
+       ของ v4.7 ทุกประการ (CD_CARD / CD_BAND / CD_ST) จึงหมดอายุเองตอนจบช่วงชั้นผ่าน
+       cdZoneCleanup() และไม่ทำให้หน้าต่างจั่วเด้งซ้ำกลางช่วง เพราะปั๊ม CD_BAND ไว้ด้วย */
+    function tqGrantRare() {
+      const g = tqG();
+      if (!g || g.practiceMode) return '';
+      if (typeof CD_BY_ID === 'undefined' || typeof cdBandOf !== 'function') return '';
+      const pool = TQ_RARE_POOL.filter(function (id) { return !!CD_BY_ID[id]; });
+      if (!pool.length) return '';
+      const card = CD_BY_ID[pool[Math.floor(Math.random() * pool.length)]];
+      CD_CARD = card;
+      CD_BAND = cdBandOf(g.floor);
+      CD_ST   = { ward: card.id === 'ward', noItem: false, noHeal: false,
+                  atk: 0, perfect: true, hit: 0, miss: 0, paid: 0 };
+      try { cdPaintUi(); } catch (e) { tqErr(e, 'tqGrantRare'); }
+      try { cdSave(); }   catch (e) { tqErr(e, 'tqGrantRare'); }
+      return card.icon + ' ' + card.name;
+    }
+
+    /* คืน true = จ่ายครบแล้ว · false = ของแถมยังไม่มีที่เก็บ ต้องพักไว้ก่อน */
+    function tqPay(def) {
+      const g = tqG();
+      if (!g) return false;
+      if (def.item && bagFull()) return false;
+
+      /* 💀 พันธสัญญาโลหิตทมิฬห้ามฟื้นพลังทุกทาง — EXP รางวัลอาจดันเลเวลอัปซึ่ง levelUpCheck()
+         ของ v4.0 เซ็ต hp = maxHp ให้ทันที ต้องหนีบกลับเหมือนที่ wrapper ของ clearFloor ใน v4.7 ทำ */
+      const st    = (typeof cdSt === 'function') ? cdSt() : null;
+      const hpWas = g.hp;
+
+      /* ทองรางวัลเควสไม่บวกเข้า totalGoldEarned — กันวนปั๊มเงื่อนไขเควสสะสมทองของ v4.2 */
+      if (def.gold) g.gold += def.gold;
+      if (def.mp)   g.mp = Math.min(maxMpOf(g), (g.mp || 0) + def.mp);
+      if (def.exp)  { g.exp += def.exp; levelUpCheck(); }
+      if (st && st.noHeal && g.hp > hpWas) g.hp = hpWas;
+
+      if (def.item) addItem(def.item, 1);
+      if (def.rare) tqGrantRare();
+
+      TQ_DIRTY = true;
+      try { recalcStats(); renderStats(); renderItems(); } catch (e) { tqErr(e, 'tqPay'); }
+      return true;
+    }
+
+    /* เควสสำเร็จ → จ่ายรางวัลทันที (auto-grant) แล้วค่อยแจ้งเตือน
+       ถ้าของแถมไม่มีที่เก็บ ให้พักไว้ที่ t.pend แล้วโชว์ปุ่ม 🎁 รับรางวัล บนกระดานแทน */
+    function tqComplete(def, t) {
+      const g = tqG();
+      if (tqPay(def)) {
+        t.done[def.cat].push(def.id);
+        const i = t.pend.indexOf(def.id);
+        if (i !== -1) t.pend.splice(i, 1);
+        TQ_DIRTY = true;
+        tqNotify('DONE', { name: def.name, cond: def.cond, track: tqTrackName(def.track),
+                           reward: tqRewardText(def), wallet: g ? g.gold : 0,
+                           extra: def.rare ? '\n<i>การ์ดหายากถูกใส่มือให้แล้ว — มีผลตลอดช่วงชั้นนี้</i>' : '' });
+      } else if (t.pend.indexOf(def.id) === -1) {
+        t.pend.push(def.id);
+        TQ_DIRTY = true;
+        const it = itemOf(def.item);
+        tqNotify('BAGFULL', { name: def.name, item: it ? it.icon + ' ' + it.name : def.item,
+                              count: bagCount(), max: BAG_SLOTS });
+      }
+    }
+
+    /* ปุ่ม 🎁 รับรางวัล บนกระดาน — ใช้กับของที่พักไว้เพราะกระเป๋าเต็มเท่านั้น */
+    function tqClaim(id) {
+      const def = TQ_BY_ID[id], t = tqSync();
+      const g = tqG();
+      if (!def || !t || !tqIsPend(id, t)) { tqRepaint(); return; }
+      if (!tqPay(def)) {
+        const it = itemOf(def.item);
+        tqNotify('BAGFULL', { name: def.name, item: it ? it.icon + ' ' + it.name : def.item,
+                              count: bagCount(), max: BAG_SLOTS });
+        tqRepaint();
+        return;
+      }
+      t.pend.splice(t.pend.indexOf(id), 1);
+      t.done[def.cat].push(id);
+      TQ_DIRTY = true;
+      tqSave();
+      tqRepaint();
+      tqFire('CLAIM', { name: def.name, reward: tqRewardText(def),
+                        count: bagCount(), max: BAG_SLOTS, wallet: g ? g.gold : 0 });
+    }
+
+    // ── ตัวนับ ───────────────────────────────────────────────────
+    function tqAdd(key, n) {
+      const t = tqOf();
+      if (!t || !(n > 0)) return;
+      const def = TQ_DEFS.find(function (d) { return d.cat === 'd' && d.key === key; });
+      if (def && tqLocked(def, t)) return;      /* ยังไม่ปลดล็อกรอบวัน = ไม่นับให้ */
+      t.d[key] = (t.d[key] || 0) + n;
+      TQ_DIRTY = true;
+    }
+    function tqSet(key, v) {
+      const t = tqOf();
+      if (!t || !(v > 0)) return;
+      const def = TQ_DEFS.find(function (d) { return d.cat === 'd' && d.key === key; });
+      if (def && tqLocked(def, t)) return;
+      if (v > (t.d[key] || 0)) { t.d[key] = v; TQ_DIRTY = true; }
+    }
+
+    /* เรียกหลังตัวนับขยับทุกครั้ง — จ่ายรางวัลของเควสที่เพิ่งครบ แล้วอัปเดตป้าย/กระดาน */
+    function tqAfter() {
+      const t = tqOf();
+      if (!t) return;
+      TQ_DEFS.forEach(function (def) {
+        const ok = tqOk(def, t) && !tqIsDone(def.id, t) && !tqLocked(def, t);
+        if (ok && !TQ_SEEN[def.id]) { TQ_SEEN[def.id] = true; tqComplete(def, t); }
+        else if (!ok) TQ_SEEN[def.id] = false;
+      });
+      tqRepaint();
+      if (TQ_DIRTY) { tqSave(); TQ_DIRTY = false; }
+    }
+
+    function tqRepaint() {
+      try {
+        if (typeof qRenderBadge === 'function') qRenderBadge();
+        const b = document.getElementById('qBoard');
+        if (b && b.classList.contains('active') && typeof qRenderBoard === 'function') qRenderBoard();
+      } catch (e) { tqErr(e, 'tqRepaint'); }
+    }
+
+    /* Anti-Farm Skill Logic — สาย ⚡ นับเฉพาะการร่ายที่เกิด "ขณะอยู่ใน Battle State" จริง ๆ
+       คือมีมอนสเตอร์อยู่ตรงหน้า · ไม่ใช่โหมดฝึก · ไม่ได้ยืนอยู่ที่ประตูวาป · ไม่มีหน้าต่างใดเปิดค้าง
+       (ยืม acOverlayOpen ของ v4.8.1 ซึ่งกวาดหน้าต่างของทุกชั้นด้วยตัวเลือกเดียวอยู่แล้ว)
+       และนาฬิกาต่อข้อต้องมีอยู่จริง — เดินอยู่ · ถูกแช่แข็ง ❄️ · หรือถูก v4.8.1 หยุดค้างไว้ */
+    function tqInBattle() {
+      const g = tqG();
+      if (!g || !g.currentMonster || g.practiceMode || g.warpOpen) return false;
+      if (typeof CD_OPEN !== 'undefined' && CD_OPEN) return false;
+      if (typeof acOverlayOpen === 'function' && acOverlayOpen()) return false;
+      return tqBusy();
+    }
+
+    /* คำนี้อยู่ใน "คลังทบทวน" ไหม — ต้องอ่านก่อนให้ v4.0 บันทึกผลข้อนี้ ไม่งั้นตอบผิดข้อนี้เอง
+       ก็ดันตัวเองเข้าเงื่อนไขได้ (บทเรียนเดียวกับ before.weak ของ v4.2) */
+    function tqWasWeak(m) {
+      const g = tqG();
+      if (!g || !m || !g.wordStats) return false;
+      const w = g.wordStats[String(m.id)];
+      return !!(w && (w.wrong || 0) >= TQ_WEAK_WRONG);
+    }
+
+    // ── กระดาน — ต่อท้าย #qBoardBody ของ v4.2 (ไม่สร้างโมดัลใหม่) ──
+    /* ใช้แผงเดิมของ v4.2 ทั้งใบ จึงไม่ต้องไปเติมชื่อลง AC_OVL_SEL ของ v4.8.1 ให้ตกหล่น */
+    function tqRow(def, t) {
+      const cur   = tqCur(def, t);
+      const done  = tqIsDone(def.id, t);
+      const pend  = tqIsPend(def.id, t);
+      const lock  = tqLocked(def, t);
+      const pct   = Math.max(0, Math.min(1, def.goal ? cur / def.goal : 0));
+
+      const reward = tqRewardText(def).split(' · ')
+        .map(function (x) { return '<span class="q-rwi">' + esc(x) + '</span>'; }).join(' · ');
+
+      const note = lock
+        ? '<div class="q-meta tq-lock">🔒 ยังไม่ปลดล็อกรอบวันนี้ — เคลียร์หอคอยให้จบ 1 ชั้นก่อน แล้วภารกิจสายนี้จะเริ่มนับเอง</div>'
+        : pend
+          ? '<div class="q-meta tq-lock">🎒 สำเร็จแล้ว แต่กระเป๋าเต็ม — เคลียร์ช่องว่างแล้วกดรับรางวัล</div>'
+          : '';
+
+      return '<div class="q-row' + (done ? ' done' : pend ? ' ready' : lock ? ' tq-off' : tqOk(def, t) ? ' ready' : '') + '">' +
+        '<div class="q-ic">' + def.icon + '</div>' +
+        '<div class="q-info">' +
+          '<div class="q-name">' + qPad(def.no) + ' · ' + esc(def.name) + '</div>' +
+          '<div class="q-cond">' + esc(def.cond) + '</div>' +
+          '<div class="q-bar"><div class="q-bar-fill" style="transform:scaleX(' + pct.toFixed(3) + ')"></div></div>' +
+          '<div class="q-meta"><span class="q-rwi">' + Math.min(cur, def.goal).toLocaleString('en-US') + ' / ' +
+            def.goal.toLocaleString('en-US') + '</span> · <span class="q-rw">' + reward + '</span></div>' +
+          note +
+        '</div>' +
+        '<button class="q-claim' + (pend ? ' on' : '') + '" onclick="tqClaim(\'' + def.id + '\')"' +
+          (pend ? '' : ' disabled') + '>' +
+          (done ? '✓ รับแล้ว' : pend ? '🎁 รับรางวัล' : lock ? '🔒 ล็อกอยู่' : '⏳ ยังไม่ครบ') +
+        '</button>' +
+      '</div>';
+    }
+
+    function tqSection(track, head, sub, t) {
+      const list = TQ_DEFS.filter(function (x) { return x.track === track; });
+      const done = list.filter(function (x) { return tqIsDone(x.id, t); }).length;
+      return '<div class="g-sec-title">' + head + ' — สำเร็จแล้ว ' + done + '/' + list.length + '</div>' +
+             '<div class="q-sum">' + sub + '</div>' +
+             list.map(function (x) { return tqRow(x, t); }).join('');
+    }
+
+    function tqRenderBlock() {
+      const body = document.getElementById('qBoardBody');
+      if (!body) return;
+      const old = document.getElementById('tqBlock');
+      if (old && old.parentNode) old.parentNode.removeChild(old);   /* กันแทรกซ้ำ — กับดักข้อ 2 */
+
+      const t = tqOf();
+      if (!t) return;
+      const acc = TQ_SES.n ? Math.round(TQ_SES.ok / TQ_SES.n * 100) : 0;
+
+      body.insertAdjacentHTML('beforeend',
+        '<div id="tqBlock">' +
+          '<div class="tq-head">⚔️ 3-TRACK QUEST ENGINE — เควสต์ 3 สายหลัก</div>' +
+          tqSection('daily', '🎯 สายที่ 1 · ภารกิจประจำวัน',
+            'รีเซ็ตทุกเที่ยงคืน · รอบวันที่ ' + esc(t.day) + ' · ' +
+            (tqDailyOn(t) ? '<b>ปลดล็อกแล้ววันนี้</b> — เริ่มนับความคืบหน้าได้'
+                          : '<b>ยังไม่ปลดล็อก</b> — ต้องเคลียร์หอคอยให้จบ 1 ชั้นก่อน'), t) +
+          tqSection('hunter', '📚 สายที่ 2 · ภารกิจฮันเตอร์',
+            'แก้จุดอ่อนภาษาจีนตามสถิติการเรียนรู้ · อ้างอิง ' + esc(SN_BOOK) + ' ระดับ A1 · ' +
+            'ความแม่นยำประจำรอบนี้ ' + acc + '% จาก ' + TQ_SES.n + ' ข้อ', t) +
+          tqSection('tower', '🗼 สายที่ 3 · ภารกิจไต่หอคอย',
+            'ทำครั้งเดียวจบตลอดชีพ ไม่รีเซ็ต · ความเสี่ยงสูง รางวัลสูง', t) +
+        '</div>');
+    }
+
+    // ── ห่อฟังก์ชันชั้นล่าง (ไม่แก้ของเดิมสักบรรทัด) ─────────────
+    const _tqMigrateAccount = migrateAccount;
+    migrateAccount = function (a) {
+      const r = _tqMigrateAccount.apply(this, arguments);
+      try { if (r && typeof r === 'object') r.tq = tqEnsure(r.tq); } catch (e) { tqErr(e, 'tqMigrate'); }
+      return r;
+    };
+
+    const _tqStartGame = startGame;
+    startGame = function (username) {
+      TQ_READY = false;               /* ปิดสวิตช์ก่อน — กับดักข้อ 16 */
+      TQ_HOLD = [];
+      TQ_SES  = { ok: 0, n: 0 };
+      TQ_HIT_F = 0; TQ_HITS = 0; TQ_POT_F = 0;
+      const r = _tqStartGame.apply(this, arguments);
+      try {
+        const acc = loadStore()[username];
+        G.tq = tqEnsure(acc ? tqClone(acc.tq) : null);
+        TQ_READY = true;              /* ค่าจริงเข้า G.tq แล้ว เขียนกลับ store ได้ */
+        TQ_DIRTY = true;
+        tqSeedSeen();
+        tqRepaint();
+      } catch (e) { tqErr(e, 'tqStartGame'); }
+      return r;
+    };
+
+    const _tqExitGame = exitGame;
+    exitGame = function () {
+      try { tqSave(); } catch (e) { tqErr(e, 'tqExitGame'); }
+      TQ_READY = false;               /* ปิดก่อนให้ของเดิมทำงาน ไม่งั้น saveProgress ข้างในจะเขียนทับ */
+      TQ_HOLD  = [];
+      return _tqExitGame.apply(this, arguments);
+    };
+
+    const _tqSaveProgress = saveProgress;
+    saveProgress = function () {
+      const r = _tqSaveProgress.apply(this, arguments);
+      if (TQ_DIRTY && TQ_READY && CURRENT_USER && tqOf()) { TQ_DIRTY = false; try { tqSave(); } catch (e) { tqErr(e, 'tqSaveProgress'); } }
+      return r;
+    };
+
+    const _tqResolveAnswer = resolveAnswer;
+    resolveAnswer = function (choice, btn, timedOut) {
+      const g = tqG();
+      const before = {
+        correct: g ? g.correct : 0,
+        weak:    tqWasWeak(g && g.currentMonster),
+        floor:   g ? g.floor : 0
+      };
+      const r = _tqResolveAnswer.apply(this, arguments);
+      try {
+        const t = tqSync();
+        if (t && g && !g.practiceMode) {
+          const gained = g.correct > before.correct;
+          TQ_SES.n++;
+          if (gained) {
+            TQ_SES.ok++;
+            tqAdd('ans', 1);
+            if (before.weak) tqAdd('weak', 1);
+            if (isBossFloor(before.floor)) { TQ_HIT_F = before.floor; TQ_HITS++; }
+          }
+          /* ความแม่นยำ "ประจำรอบ" ติดหมุดไว้เมื่อทำได้ครั้งแรก ไม่งั้นตอบผิดทีหลังแล้วหลุดเงื่อนไข */
+          if (TQ_SES.n >= TQ_ACC_MIN_N && TQ_SES.ok / TQ_SES.n * 100 > TQ_ACC_PCT) tqSet('acc', 1);
+          if ((g.streak || 0) > (t.L.streak || 0)) {
+            t.L.streak = Math.min(TQ_STREAK_GOAL, g.streak);
+            TQ_DIRTY = true;
+          }
+          tqAfter();
+        }
+      } catch (e) { tqErr(e, 'tqResolveAnswer'); }
+      try { tqFlush(); } catch (e) { tqErr(e, 'tqResolveAnswer'); }
+      return r;
+    };
+
+    /* 📖 เซียน A1 — ทุกคำใน VOCAB คือคำระดับ A1 ของ 《汉语教程》 อยู่แล้ว
+       "ปราบมอนสเตอร์ 1 ตัว" จึงเท่ากับ "เคลียร์ด้วยคำ A1 1 คำ" ตรงตัว */
+    const _tqOnMonsterDefeated = onMonsterDefeated;
+    onMonsterDefeated = function () {
+      try {
+        const g = tqG();
+        if (g && !g.practiceMode) { tqSync(); tqAdd('a1', 1); tqAfter(); }
+      } catch (e) { tqErr(e, 'tqOnMonsterDefeated'); }
+      const r = _tqOnMonsterDefeated.apply(this, arguments);
+      try { tqFlush(); } catch (e) { tqErr(e, 'tqOnMonsterDefeated'); }
+      return r;
+    };
+
+    const _tqClearFloor = clearFloor;
+    clearFloor = function (boss) {
+      const g = tqG();
+      /* ต้องอ่านก่อนให้ของเดิมทำงาน — clearFloor ของ v4.0 ดัน G.floor ขึ้นไปแล้วตอนจบ */
+      const cleared = g ? g.floor : 0;
+      const hits    = (TQ_HIT_F === cleared) ? TQ_HITS : 0;
+      const noPot   = TQ_POT_F !== cleared;
+      const practice = !!(g && g.practiceMode);
+
+      const r = _tqClearFloor.apply(this, arguments);
+
+      try {
+        const t = tqSync();
+        if (t && !practice) {
+          if (!t.unlocked) {                       /* Daily Unlocking Requirement */
+            t.unlocked = true;
+            TQ_DIRTY = true;
+            tqSeedSeen();
+            tqNotify('UNLOCK', { floor: cleared,
+                                 count: TQ_DEFS.filter(function (d) { return d.track === 'daily'; }).length });
+          }
+          if (boss && tqIsSBoss(cleared) && hits >= TQ_SBOSS_ROUND && !t.L.sboss) { t.L.sboss = 1; TQ_DIRTY = true; }
+          if (boss && tqIsScarFloor(cleared) && noPot && t.L.nopot.indexOf(cleared) === -1) {
+            t.L.nopot.push(cleared);
+            TQ_DIRTY = true;
+          }
+          TQ_POT_F = 0;
+          TQ_HITS  = 0;
+          tqAfter();
+        }
+      } catch (e) { tqErr(e, 'tqClearFloor'); }
+      try { tqFlush(); } catch (e) { tqErr(e, 'tqClearFloor'); }
+      return r;
+    };
+
+    /* นับเฉพาะครั้งที่ร่ายติดจริง (MP ถูกหักไป) และต้องอยู่ใน Battle State ตอนกดด้วย */
+    const _tqUseSkill = useSkill;
+    useSkill = function (key) {
+      const g = tqG();
+      const mpBefore = g ? g.mp : 0;
+      const inBattle = tqInBattle();
+      const r = _tqUseSkill.apply(this, arguments);
+      try {
+        if (g && inBattle && g.mp < mpBefore) { tqSync(); tqAdd('cast', 1); tqAfter(); }
+      } catch (e) { tqErr(e, 'tqUseSkill'); }
+      return r;
+    };
+
+    /* ซื้อของสำเร็จจริง = ทองถูกหักไป (ติดล็อกแรงค์/ทองไม่พอ/กระเป๋าเต็ม จะไม่ถูกนับ) */
+    const _tqBuyItem = buyItem;
+    buyItem = function (key) {
+      const g = tqG();
+      const goldBefore = g ? g.gold : 0;
+      const r = _tqBuyItem.apply(this, arguments);
+      try {
+        if (g && g.gold < goldBefore) { tqSync(); tqAdd('shop', 1); tqAfter(); }
+      } catch (e) { tqErr(e, 'tqBuyItem'); }
+      return r;
+    };
+
+    /* 🛡️ สายไร้รอยขีดข่วน — ปั๊มธงเฉพาะตอนยาฟื้นพลังถูกหักออกจากกระเป๋าจริง
+       (useItem ของ v4.0 มีทางออกก่อนหักของหลายทาง เช่น HP เต็มอยู่แล้ว) */
+    const _tqUseItem = useItem;
+    useItem = function (kind) {
+      const g = tqG();
+      const before = (g && g.items) ? (g.items.potion || 0) : 0;
+      const r = _tqUseItem.apply(this, arguments);
+      try {
+        if (g && g.items && (g.items.potion || 0) < before) TQ_POT_F = g.floor;
+      } catch (e) { tqErr(e, 'tqUseItem'); }
+      return r;
+    };
+
+    /* ประตูวาป = จุดพักที่ v4.0 หยุดเกมไว้ให้แล้ว ปล่อยของที่กักไว้ได้ปลอดภัย */
+    const _tqOpenWarp = openWarp;
+    openWarp = function () {
+      const r = _tqOpenWarp.apply(this, arguments);
+      try { tqFlush(); } catch (e) { tqErr(e, 'tqOpenWarp'); }
+      return r;
+    };
+
+    /* กระดานภารกิจของ v4.2 เขียน innerHTML ทับทั้งก้อนทุกครั้ง — ต่อท้ายได้เลย
+       แต่ tqRenderBlock ยังล้างของเก่าก่อนแทรกเสมอ เผื่อ qRenderBoard คืนค่าก่อนถึงบรรทัดเขียน */
+    const _tqRenderBoard = qRenderBoard;
+    qRenderBoard = function () {
+      const r = _tqRenderBoard.apply(this, arguments);
+      try { tqRenderBlock(); } catch (e) { tqErr(e, 'tqRenderBoard'); }
+      return r;
+    };
+
+    const _tqOpenBoard = qOpenBoard;
+    qOpenBoard = function () {
+      try { tqSync(); } catch (e) { tqErr(e, 'tqOpenBoard'); }
+      const r = _tqOpenBoard.apply(this, arguments);
+      /* v4.2 คืนค่าตั้งแต่บรรทัดแรกถ้าไม่มี G.quest — เปิดแผงให้เองเพื่อไม่ให้ปุ่มดูเหมือนเสีย */
+      try {
+        const el = document.getElementById('qBoard');
+        if (el && !el.classList.contains('active') && tqOf()) { tqRenderBlock(); el.classList.add('active'); }
+      } catch (e) { tqErr(e, 'tqOpenBoard'); }
+      return r;
+    };
+
+    /* ป้ายเลขบนปุ่ม 📜 QUESTS รวมของที่พักไว้ของชั้นนี้ด้วย */
+    const _tqRenderBadge = qRenderBadge;
+    qRenderBadge = function () {
+      const r = _tqRenderBadge.apply(this, arguments);
+      try {
+        const b = document.getElementById('qBadge');
+        if (b) {
+          const base = (typeof G !== 'undefined' && G && G.quest) ? Q_DEFS.filter(qClaimable).length : 0;
+          const n = base + tqPendCount();
+          b.textContent = n;
+          b.style.display = n ? 'inline-block' : 'none';
+        }
+      } catch (e) { tqErr(e, 'tqRenderBadge'); }
+      return r;
+    };
+
+    // ── ติดตั้งชั้นนี้ลง DOM ─────────────────────────────────────
+    (function tqInstall() {
+      if (!document.getElementById('tqStyle')) {
+        document.head.insertAdjacentHTML('beforeend',
+          '<style id="tqStyle">' +
+          '#tqBlock{margin-top:14px;padding-top:12px;border-top:1px dashed rgba(143,216,255,.28)}' +
+          '.tq-head{font-size:12px;font-weight:800;letter-spacing:.4px;color:#38b6ff;' +
+            'text-align:center;margin-bottom:10px}' +
+          '.q-row.tq-off{opacity:.6;border-left-color:rgba(255,200,69,.42)}' +
+          '.tq-lock{color:#ffc845}' +
+          '</style>');
+      }
+    })();
+
+
   </script>
 </body>
 </html>

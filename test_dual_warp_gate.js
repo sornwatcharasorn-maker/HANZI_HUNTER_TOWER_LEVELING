@@ -224,6 +224,18 @@ function snap(page) {
     await enter(page, 'dw_post');
     await settle(page);
 
+    /* ชั้น v4.9.3 จ่ายรางวัลเควสสายพิชิตหอคอยตอนเคลียร์ชั้นบอสด้วย
+       (🛡️ สายไร้รอยขีดข่วน — ผ่านชั้น 5/10/15 โดยไม่ใช้ยา = +1,000 ทอง)
+       ยอดนั้นเข้ากระเป๋าในสายเรียกเดียวกับ clearFloor แต่ **ไม่ได้อยู่บนกล่องรางวัลบอส**
+       ซึ่งถูกต้องแล้ว (กล่องรายงานเฉพาะยอดที่บอสจ่าย) เทสต์บล็อกนี้วัดกล่องเทียบส่วนต่าง
+       G.gold ทั้งก้อน จึงต้องปิดเควสสายนี้ก่อน ไม่งั้นชั้น 15 จะตกด้วยเหตุผลผิด */
+    await page.evaluate(() => {
+      if (typeof TQ_DEFS !== 'undefined' && G.tq) {
+        G.tq.done.L = TQ_DEFS.filter(d => d.cat === 'L').map(d => d.id);
+        tqSeedSeen();
+      }
+    });
+
     for (const f of [5, 10, 15]) {
       await standOn(page, f);
       const pre = await page.evaluate(() => ({ gold: G.gold, exp: G.exp, lv: G.level, maxExp: G.maxExp }));

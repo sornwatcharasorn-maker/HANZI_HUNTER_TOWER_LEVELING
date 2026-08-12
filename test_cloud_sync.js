@@ -18,10 +18,16 @@ function ok(name, cond, extra) {
 
 /* ── คลาวด์ปลอม: รองรับชุดคำสั่งย่อยของ PostgREST เท่าที่ชั้น v5.2 ใช้จริง ───── */
 const FAKE_CLOUD = function () {
-  window.__CS = { rows: {}, fail: 0, log: [] };
+  window.__CS = { rows: {}, fail: 0, log: [], fbHits: 0 };
   window.fetch = async function (url, opt) {
     url = String(url); opt = opt || {};
     const S = window.__CS, m = (opt.method || 'GET').toUpperCase();
+    /* ชั้น v5.4 · AUTO-SYNC ENGINE ยิงไป Firebase RTDB ตั้งแต่โหลดหน้าโดยไม่ต้องตั้งค่า
+       กลืนไว้เงียบ ๆ ไม่ให้ออกเน็ตจริง และไม่นับรวมใน log ที่ชุดนี้ใช้วัดของ v5.2 */
+    if (url.indexOf('firebasedatabase.app') >= 0) {
+      S.fbHits++;
+      return { ok: true, status: 200, text: async function () { return '{}'; } };
+    }
     S.log.push(m + ' ' + url);
     if (S.fail) throw new TypeError('Failed to fetch');
     const par = {};

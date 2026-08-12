@@ -18,6 +18,8 @@ const path = require('path');
 const FILE = 'file://' + path.resolve(__dirname, 'hanzi_hunter_tower_v3_1_intro.html');
 const LOG  = path.resolve(__dirname, 'test_fb_realtime.log');
 const FBURL = 'https://fake-rtdb.test';
+/* URL ที่ชั้น v5.4 ฝังไว้ในไฟล์เกม — บล็อก 1 ใช้เทียบว่าคอนฟิกถูกบังคับเขียนจริง */
+global.__PROD__ = 'https://hanzi-hunter-tower-leveling-default-rtdb.asia-southeast1.firebasedatabase.app';
 
 let PASS = 0, FAIL = 0;
 const FAILS = [];
@@ -33,12 +35,16 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 /* ── RTDB ปลอม ─────────────────────────────────────────────────── */
 const FAKE = (base) => `
   (function () {
-    const S = { rows: {}, log: [], fail: 0, es: null, esOpened: 0, esClosed: 0, base: ${JSON.stringify(base)} };
+    const S = { rows: {}, log: [], fail: 0, es: null, esOpened: 0, esClosed: 0, base: ${JSON.stringify(base)},
+                prod: 'https://hanzi-hunter-tower-leveling-default-rtdb.asia-southeast1.firebasedatabase.app', prodHits: 0 };
     window.__FB = S;
 
     const _fetch = window.fetch;
     window.fetch = function (url, opt) {
       const u = String(url && url.url ? url.url : url);
+      /* v5.4 บังคับเปิดคอนฟิกชี้ RTDB ตัวจริงตั้งแต่โหลดหน้า — กลืนไว้เงียบ ๆ
+         ไม่ให้ออกเน็ตจริงและไม่ให้ปนสถิติของ v5.3 ที่ชุดนี้กำลังวัด */
+      if (u.indexOf(S.prod) === 0) { S.prodHits++; return Promise.resolve(new Response('{}', { status: 200 })); }
       if (u.indexOf(S.base) !== 0) return _fetch.apply(this, arguments);
       const o = opt || {};
       const m = (o.method || 'GET').toUpperCase();
@@ -117,6 +123,9 @@ async function pickCard(page) {
 async function cfgOn(page, extra) {
   await page.evaluate(([url, ex]) => {
     fbCfgSave(Object.assign({ on: true, url: url, node: 'students', auth: '', pub: true }, ex || {}));
+    /* ชั้น v5.4 ยิงซ้ำทุก 5 วินาทีทับกลไกหน่วง 6 วินาทีของ v5.3 ที่ชุดนี้กำลังวัด
+       ดับหัวใจทิ้งเพื่อแยกสองกลไกออกจากกัน — จังหวะของ v5.4 วัดที่ test_auto_sync.js */
+    try { asStop(); } catch (e) {}
   }, [FBURL, extra || {}]);
 }
 
@@ -138,23 +147,28 @@ async function cfgOn(page, extra) {
 
   try {
     // ── 1. ยังไม่ตั้งค่า = เงียบสนิท ────────────────────────────
-    say('\n═══ 1 · ยังไม่ตั้งค่า → ต้องเงียบสนิท ═══');
-    eq('คอนฟิกเริ่มต้น on = false', await page.evaluate(() => FB_CFG.on), false);
+    /* สัญญาเดิมของ v5.3 คือ "ยังไม่ตั้งค่า = เงียบสนิท" ซึ่งชั้น v5.4 · AUTO-SYNC ENGINE
+       กลับด้านโดยตั้งใจ — นักเรียนต้องส่งข้อมูลได้ทันทีโดยไม่ต้องตั้งค่าอะไรเลย
+       บล็อกนี้จึงวัดสัญญาใหม่แทน ส่วนโหมด "ปิดสนิท" ยังทดสอบอยู่ที่บล็อก 14 */
+    say('\n═══ 1 · ค่าเริ่มต้นของ v5.4 → เปิดอัตโนมัติ ═══');
+    eq('คอนฟิกเริ่มต้น on = true (v5.4 บังคับเปิด)', await page.evaluate(() => FB_CFG.on), true);
     eq('โหนดเริ่มต้น = students', await page.evaluate(() => FB_CFG.node), 'students');
-    eq('fbOn() = false', await page.evaluate(() => fbOn()), false);
-    eq('ไม่มี URL ฝังในซอร์ส', await page.evaluate(() => FB_CFG.url), '');
+    eq('fbOn() = true โดยไม่ต้องตั้งค่าเอง', await page.evaluate(() => fbOn()), true);
+    eq('URL ถูกฝังไว้โดย v5.4', await page.evaluate(() => FB_CFG.url), global.__PROD__);
 
     await register(page, 'stu001', 'pw1234');
     await page.evaluate(() => saveProgress());
     await sleep(6600);
-    eq('ไม่มีคำขอออกเน็ตแม้แต่ครั้งเดียว', await page.evaluate(() => window.__FB.log.length), 0);
+    eq('ไม่มีคำขอไปโหนดทดสอบก่อนตั้งค่า', await page.evaluate(() => window.__FB.log.length), 0);
+    ok('แต่ยิงไป RTDB ตัวจริงของ v5.4 แล้ว', await page.evaluate(() => window.__FB.prodHits > 0),
+      await page.evaluate(() => window.__FB.prodHits));
 
     await page.evaluate(() => openGm());
     await sleep(200);
-    eq('ไม่เปิด EventSource ตอนกางแผง GM', await page.evaluate(() => window.__FB.esOpened), 0);
-    ok('#fbLive ถูกซ่อนไว้', await page.evaluate(() => {
+    ok('เปิดสาย SSE ให้เองตอนกางแผง GM', await page.evaluate(() => window.__FB.esOpened) >= 1);
+    ok('#fbLive แสดงอยู่', await page.evaluate(() => {
       const b = document.getElementById('fbLive');
-      return !!b && b.style.display === 'none';
+      return !!b && b.style.display !== 'none';
     }));
     await page.evaluate(() => closeGm());
 

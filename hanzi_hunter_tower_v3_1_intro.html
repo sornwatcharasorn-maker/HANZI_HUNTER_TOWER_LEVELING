@@ -17511,6 +17511,335 @@
       } catch (e) { asErr(e, 'asInstall'); }
     })();
 
+
+    // ══════════════════════════════════════════════════
+    // ชั้นที่สิบแปด (บนสุด) — v5.5 · GM EXPORT BRIDGE
+    // สะพานส่งออกข้อมูลของห้องควบคุม GM
+    //
+    // ปัญหาที่ชั้นนี้แก้: gmExportCsv ของ v4.0 กับ gcExportAudit ของ v4.3 อ่านจาก
+    // loadStore() ซึ่งเป็นบัญชีในเครื่องตัวเอง แต่ตั้งแต่ v5.3/v5.4 นักเรียนที่ครูเห็น
+    // ในตาราง LIVE มาจาก FB_LIVE (แคชเรียลไทม์) ล้วน ๆ ไม่เคยถูกเขียนลง store
+    // เครื่องครูจึงมี store ว่าง แล้ว gmExportCsv เจอ rows.length เป็น 0 → return เงียบ
+    // = กดปุ่มแล้วไม่มีอะไรเกิดขึ้น ส่วน gcExportAudit ขึ้นแค่ "ไม่มีข้อมูลในกลุ่มที่เลือก"
+    //
+    // ชั้นนี้ไม่แก้โค้ด v4.0-v5.4 เลย — ห่อฟังก์ชันแบบเดียวกับสิบเจ็ดชั้นก่อนหน้า
+    // ฟังก์ชันที่ถูกห่อ: gmExportCsv · gcExportAudit · gmRender · openGm
+    // ══════════════════════════════════════════════════
+
+    const XP_VER = '5.5';
+
+    /* 9 ฟิลด์ตามสเปก (ข้อ 1 แยกเป็นรหัสกับชื่อ เพราะครูต้องใช้รหัสไปจับคู่กับ store) */
+    const XP_HEAD = ['รหัสฮันเตอร์', 'ชื่อฮันเตอร์', 'เลเวล', 'EXP', 'ชั้นสูงสุด',
+                     'ความแม่นยำ (%)', 'ทอง', 'คำศัพท์ที่พิชิต', 'คำศัพท์ที่ตอบผิดซ้ำ',
+                     'อัปเดตเมื่อ'];
+
+    function xpErr(e, where) {
+      try { gcErrPush('error', 'XP:' + where + ' ' + ((e && e.message) || e), 'export', (e && e.stack) || ''); }
+      catch (_) {}
+    }
+
+    /* แจ้งเตือนแบบนุ่มนวล — ใช้ toast ของ v4.3 ก่อน ตกไปใช้ alert เฉพาะตอนไม่มีจริง ๆ */
+    function xpTip(msg) {
+      try { if (typeof gcTip === 'function') { gcTip(msg); return; } } catch (e) {}
+      try { alert(msg); } catch (e) {}
+    }
+
+    /* ── แหล่งข้อมูลที่ 1: Global State / Firebase Cache ──────────────────
+       window.latestStudentData ทำเป็น accessor ที่ชี้ FB_LIVE สดเสมอ จึงไม่มีทางค้าง
+       ข้อมูลเก่าหลังครูกดหยุดรับสัญญาณ (ตอนนั้น v5.3 สั่ง FB_LIVE = {} ทับ)
+       แต่ยังเขียนทับได้ตามปกติถ้าโค้ดอื่นอยากยัดชุดข้อมูลของตัวเองเข้ามา */
+    (function xpDefineLatest() {
+      try {
+        let over = null;
+        Object.defineProperty(window, 'latestStudentData', {
+          configurable: true,
+          get: function () {
+            if (over && Object.keys(over).length) return over;
+            try { return (typeof FB_LIVE === 'object' && FB_LIVE) ? FB_LIVE : {}; }
+            catch (e) { return {}; }
+          },
+          set: function (v) { over = (v && typeof v === 'object') ? v : null; }
+        });
+      } catch (e) { xpErr(e, 'defineLatest'); }
+    })();
+
+    function xpLiveRows() {
+      /* fbRows() ของ v5.3 กรองกลุ่มห้องเรียนกับช่องค้นหาให้แล้ว ไฟล์ที่ได้จึงตรงกับ
+         ตารางที่ครูเห็นตรงหน้าเป๊ะ ไม่ใช่ทุกคนในฐานข้อมูล */
+      try {
+        if (typeof fbRows === 'function') {
+          const r = fbRows();
+          if (r && r.length) return r;
+        }
+      } catch (e) { xpErr(e, 'fbRows'); }
+
+      let src = null;
+      try { src = window.latestStudentData; } catch (e) {}
+      if (src && typeof src === 'object' && Object.keys(src).length) {
+        return Object.keys(src).map(function (k) {
+          const r = src[k];
+          return (r && typeof r === 'object') ? Object.assign({}, r, { u: r.u || k }) : null;
+        }).filter(Boolean);
+      }
+      return [];
+    }
+
+    /* ── แหล่งข้อมูลที่ 2: DOM ของตาราง LIVE ─────────────────────────────
+       ใช้เมื่ออ่านตัวแปรไม่ได้เลย (เช่นชั้น v5.3 ถูกถอดออก แต่ตารางยังค้างอยู่บนจอ)
+       คอลัมน์เรียงตาม fbEnsureDom ของ v5.3 ถ้าที่นั่นสลับคอลัมน์ ต้องแก้ตรงนี้ตาม */
+    function xpDomRows() {
+      const out = [];
+      try {
+        const body = document.getElementById('fbBody');
+        if (!body) return out;
+        const num = function (el) {
+          const m = String((el && el.textContent) || '').replace(/,/g, '').match(/-?\d+/);
+          return m ? +m[0] : 0;
+        };
+        Array.prototype.forEach.call(body.querySelectorAll('tr'), function (tr) {
+          const td = tr.children;
+          if (!td || td.length < 9) return;          /* แถว "ยังไม่มีสัญญาณ" มี td ใบเดียว */
+          const nm = td[0].querySelector('.gm-name');
+          const sub = td[0].querySelector('.gm-sub');
+          let id = '';
+          const m = String((sub && sub.textContent) || '').match(/@([^\s·]+)/);
+          if (m) id = m[1];
+          const weak = Array.prototype.map.call(td[7].querySelectorAll('.fb-w'), function (w) {
+            const i = w.querySelector('i');
+            const ch = String(w.textContent || '').replace(String((i && i.textContent) || ''), '').trim();
+            return ch + (i ? ' (ผิด ' + i.textContent + ' ครั้ง)' : '');
+          }).join(' · ');
+          out.push({
+            u: id || String((nm && nm.textContent) || '').trim(),
+            name: String((nm && nm.textContent) || '').trim(),
+            lv: num(td[1].querySelector('b')) || num(td[1]),
+            exp: num(td[2]),
+            mfloor: num(td[3].querySelector('b')) || num(td[3]),
+            acc: num(td[4].querySelector('b')),
+            gold: num(td[5]),
+            words: num(td[6]),
+            xpWeak: weak,
+            xpAt: String(td[8].textContent || '').trim()
+          });
+        });
+      } catch (e) { xpErr(e, 'domRows'); }
+      return out;
+    }
+
+    /* ── แหล่งข้อมูลที่ 3: บัญชีในเครื่อง ────────────────────────────────
+       เคารพตัวกรองกลุ่มห้องเรียนของ v4.3 เหมือนที่ทางเดิมทำ */
+    function xpStoreRows() {
+      let rows = [];
+      try {
+        const s = loadStore();
+        rows = Object.keys(s).map(function (k) { return s[k]; });
+        const room = (typeof GC_ROOM === 'string' ? GC_ROOM : '');
+        if (room && typeof gcRoomOf === 'function') {
+          rows = rows.filter(function (a) { return gcRoomOf(a) === room; });
+        }
+      } catch (e) { xpErr(e, 'storeRows'); }
+      return rows;
+    }
+
+    function xpStoreToRec(a) {
+      let acc = 0;
+      try { acc = (typeof accAccuracy === 'function') ? accAccuracy(a) : 0; } catch (e) {}
+      let weak = '-';
+      try {
+        weak = weakWordsOf(a, 8).map(function (w) {
+          return w.word + ' (ผิด ' + w.wrong + '/' + w.seen + ')';
+        }).join(' · ') || '-';
+      } catch (e) {}
+      let words = 0;
+      try { words = (typeof cxCount === 'function') ? cxCount(a) : 0; } catch (e) {}
+      return {
+        u: a.user, name: a.name || a.user, lv: a.level || 1, exp: a.exp || 0,
+        mfloor: a.maxFloor || 1, acc: acc, gold: a.gold || 0, words: words,
+        xpWeak: weak, at: a.lastActive || 0
+      };
+    }
+
+    /* คำที่ผิดซ้ำ — payload ของ v5.3 ส่งมาเป็นอ็อบเจกต์ {id, ch, py, n, seen} */
+    function xpWeakText(r) {
+      if (typeof r.xpWeak === 'string') return r.xpWeak || '-';
+      const w = r.weak;
+      if (!Array.isArray(w) || !w.length) return '-';
+      return w.map(function (x) {
+        if (!x || typeof x !== 'object') return String(x || '');
+        const ch = x.ch || x.w || x.word || '';
+        const py = x.py || '';
+        const n  = (x.n != null ? x.n : x.wrong);
+        return ch + (py ? ' ' + py : '') + (n != null ? ' (ผิด ' + n + ' ครั้ง)' : '');
+      }).filter(Boolean).join(' · ') || '-';
+    }
+
+    function xpWhen(r) {
+      if (r.at) { try { return new Date(r.at).toLocaleString('th-TH'); } catch (e) {} }
+      return r.xpAt || '-';
+    }
+
+    function xpRecToRow(r) {
+      return [r.u || '-', r.name || r.u || '-', r.lv || 1, r.exp || 0,
+              (r.mfloor || 1) + '/' + FLOOR_MAX, (r.acc || 0) + '%', r.gold || 0,
+              r.words || 0, xpWeakText(r), xpWhen(r)];
+    }
+
+    /* BOM นำหน้าไฟล์ + CRLF ท้ายบรรทัด = Excel บนวินโดวส์อ่านภาษาไทยถูกทันทีโดยไม่ต้องตั้งค่า */
+    function xpCsv(rows) {
+      const q = function (x) { return '"' + String(x == null ? '' : x).replace(/"/g, '""') + '"'; };
+      const lines = [XP_HEAD.map(q).join(',')];
+      rows.forEach(function (r) { lines.push(r.map(q).join(',')); });
+      return '\uFEFF' + lines.join('\r\n');
+    }
+
+    /* ต้องแปะ <a> ลง DOM จริงก่อนกด และเลื่อนการคืน object URL ออกไป
+       เบราว์เซอร์บางตัวยกเลิกการดาวน์โหลดถ้า revoke ทันทีในทิกเดียวกัน */
+    function xpDownload(text, fname) {
+      const blob = new Blob([text], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fname;
+      a.rel = 'noopener';
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(function () {
+        try { document.body.removeChild(a); } catch (e) {}
+        try { URL.revokeObjectURL(url); } catch (e) {}
+      }, 4000);
+    }
+
+    /* ชื่อไฟล์ต้องเป็น ASCII ล้วน — วัดจริงบน Chromium แล้วพบว่าไฟล์ที่เปิดจาก file://
+       (ซึ่งเป็นวิธีที่ครูใช้จริง เพราะไฟล์ถูกส่งต่อทาง LINE) จะ "ทิ้งชื่อที่ตั้งไว้ทั้งชื่อ"
+       ถ้ามีอักขระนอก ASCII อยู่ในนั้น แล้วบันทึกเป็นไฟล์ชื่อ download ที่ไม่มีนามสกุล .csv
+       ชื่อกลุ่มภาษาไทยจึงใส่ลงชื่อไฟล์ไม่ได้ ต้องกรองเหลือเฉพาะส่วนที่เป็น ASCII */
+    function xpRoomTag() {
+      try {
+        const room = (typeof GC_ROOM === 'string' ? GC_ROOM : '');
+        if (!room) return '';
+        const tag = room.replace(/[^A-Za-z0-9.-]+/g, '_')
+                        .replace(/_{2,}/g, '_').replace(/^[._-]+|[._-]+$/g, '');
+        return tag ? tag + '_' : '';
+      } catch (e) { return ''; }
+    }
+
+    function xpStamp() {
+      const d = new Date(), p = function (n) { return (n < 10 ? '0' : '') + n; };
+      return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) +
+             '_' + p(d.getHours()) + p(d.getMinutes());
+    }
+
+    /* ตัวส่งออกหลัก — คืนจำนวนแถวที่ส่งออกจริง (0 = ไม่มีข้อมูล ไม่ได้สร้างไฟล์) */
+    function exportGMDataToExcel(opt) {
+      try {
+        const o = opt || {};
+        let recs = [], from = '';
+
+        if (!o.storeOnly) {
+          recs = xpLiveRows();
+          from = 'LIVE';
+          if (!recs.length) { recs = xpDomRows(); from = 'ตาราง'; }
+        }
+        if (!recs.length) {
+          recs = xpStoreRows().map(xpStoreToRec);
+          from = 'เครื่องนี้';
+        }
+
+        if (!recs.length) {
+          xpTip('⚠️ ยังไม่มีข้อมูลนักเรียนให้ส่งออก — ให้นักเรียนเปิดเกมและตอบอย่างน้อย 1 ข้อ แล้วลองอีกครั้ง');
+          return 0;
+        }
+
+        xpDownload(xpCsv(recs.map(xpRecToRow)),
+                   'hanzi_hunter_' + xpRoomTag() + xpStamp() + '.csv');
+        xpTip('⬇️ ส่งออกแล้ว ' + recs.length + ' คน (' + from + ') — เปิดด้วย Excel ได้ทันที');
+        return recs.length;
+      } catch (e) {
+        xpErr(e, 'export');
+        xpTip('⚠️ ส่งออกไม่สำเร็จ — ดูรายละเอียดที่ปุ่ม 🐞 Error Log');
+        return 0;
+      }
+    }
+    window.exportGMDataToExcel = exportGMDataToExcel;
+
+    /* ── ห่อปุ่มเดิมสองใบ ────────────────────────────────────────────────
+       ทางเดิมยังเป็นทางหลักเสมอเมื่อ store มีข้อมูลจริง (ไฟล์ของมันมีคอลัมน์เยอะกว่า)
+       ชั้นนี้เข้าไปแทนเฉพาะตอนที่ทางเดิมจะไม่ผลิตไฟล์ออกมาเลย */
+    const _xpGmExportCsv = gmExportCsv;
+    gmExportCsv = function () {
+      try { if (!xpStoreRows().length) return exportGMDataToExcel({}); }
+      catch (e) { xpErr(e, 'wrapGmExport'); }
+      return _xpGmExportCsv.apply(this, arguments);
+    };
+
+    const _xpGcExportAudit = (typeof gcExportAudit === 'function') ? gcExportAudit : null;
+    if (_xpGcExportAudit) {
+      gcExportAudit = function () {
+        try { if (!xpStoreRows().length) return exportGMDataToExcel({}); }
+        catch (e) { xpErr(e, 'wrapAudit'); }
+        return _xpGcExportAudit.apply(this, arguments);
+      };
+    }
+
+    /* ── ปุ่มส่งออกตาราง LIVE โดยตรง — แทรกครั้งเดียว (กับดักข้อ 2) ────── */
+    function xpEnsureBtn() {
+      try {
+        const bar = document.querySelector('#fbLive .fb-btns');
+        if (!bar || document.getElementById('xpLiveBtn')) return;
+        bar.insertAdjacentHTML('afterbegin',
+          '<button class="gm-btn sm jade btn-export" id="xpLiveBtn" data-xp-export="1" ' +
+            'title="ส่งออกตาราง LIVE ที่เห็นอยู่ตอนนี้เป็นไฟล์ CSV รองรับภาษาไทย">' +
+            '📥 Export ตาราง LIVE</button>');
+      } catch (e) { xpErr(e, 'ensureBtn'); }
+    }
+
+    /* ── ผูก Event Listener ให้ปุ่ม Export ทุกใบในแผง GM ────────────────
+       ตัวดักระดับเอกสารนี้ลงมือเฉพาะปุ่มที่ "ยังไม่มี onclick ของตัวเอง" เท่านั้น
+       ปุ่มเดิมสองใบมี inline onclick อยู่แล้วและถูกห่อไว้ข้างบน ถ้าดักซ้ำจะได้ไฟล์สองใบต่อคลิก */
+    const XP_SEL = '.btn-export,[data-xp-export]';
+
+    function xpIsExportBtn(el) {
+      try {
+        if (!el) return false;
+        if (el.matches && el.matches(XP_SEL)) return true;
+        return /Export\s*(ประวัติ|ข้อมูลฮันเตอร์)/.test(String(el.textContent || ''));
+      } catch (e) { return false; }
+    }
+
+    document.addEventListener('click', function (ev) {
+      try {
+        const t = ev.target;
+        const el = (t && t.closest) ? t.closest('button,a,.gm-btn') : null;
+        if (!el || !xpIsExportBtn(el)) return;
+        if (el.getAttribute && el.getAttribute('onclick')) return;   /* ทางเดิมทำงานอยู่แล้ว */
+        ev.preventDefault();
+        exportGMDataToExcel({});
+      } catch (e) { xpErr(e, 'click'); }
+    }, true);
+
+    (function xpInstall() {
+      try {
+        const _xpGmRender = (typeof gmRender === 'function') ? gmRender : null;
+        if (_xpGmRender) {
+          gmRender = function () {
+            const r = _xpGmRender.apply(this, arguments);
+            xpEnsureBtn();
+            return r;
+          };
+        }
+        const _xpOpenGm = (typeof openGm === 'function') ? openGm : null;
+        if (_xpOpenGm) {
+          openGm = function () {
+            const r = _xpOpenGm.apply(this, arguments);
+            xpEnsureBtn();
+            return r;
+          };
+        }
+        xpEnsureBtn();
+      } catch (e) { xpErr(e, 'xpInstall'); }
+    })();
+
   </script>
 </body>
 </html>

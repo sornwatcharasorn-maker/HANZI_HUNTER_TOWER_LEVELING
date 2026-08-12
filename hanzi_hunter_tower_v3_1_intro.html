@@ -16734,7 +16734,7 @@
               '<small id="fbSub">—</small></div>' +
             '<div class="fb-btns">' +
               '<button class="gm-btn sm" id="fbBtnMon" onclick="fbMonToggle()">⏸️ หยุดรับสัญญาณ</button>' +
-              '<button class="gm-btn sm" onclick="csGmOpen()" title="ตั้งค่า Firebase RTDB">⚙️ ตั้งค่า</button>' +
+              '<button class="gm-btn sm" data-fb-cloud="1" onclick="csGmOpen()" title="ตั้งค่า Firebase RTDB">⚙️ ตั้งค่า</button>' +
             '</div>' +
           '</div>' +
           '<div class="fb-wrap"><table class="fb-tb"><thead><tr>' +
@@ -17087,6 +17087,185 @@
         });
         window.addEventListener('offline', function () { FB_ST = 'wait'; });
       } catch (e) { fbErr(e, 'fbInstall'); }
+    })();
+
+    // ══════════════════════════════════════════════════════════════════
+    //  PATCH v5.3.1 · CLOUD UI PANEL REPAIR — ซ่อมแผง ☁️ คลาวด์ ของห้องควบคุม GM
+    // ------------------------------------------------------------------
+    //  อาการ: กดปุ่ม "☁️ คลาวด์" บนหัวแผง GM แล้วไม่มีหน้าต่างเด้งขึ้นมา
+    //  หรือหัวข้อ "3 · REALTIME GM MONITOR" ไม่แสดงผล
+    //
+    //  สาเหตุจริง — ไม่ใช่ event handler พัง และไม่ใช่ fbCfgSection ไม่ทำงาน
+    //  วัดจริงแล้ว csGmOpen() ทำงานครบทุกขั้น: #csGm ได้คลาส .active
+    //  · display เป็น flex · #fbForm มีอยู่ครบ · กรอบมีขนาดจริง 362×709
+    //  แต่ #csGm คือ .g-modal ที่ z-index 200 ส่วน #gmPanel เป็นชั้นทึบ
+    //  เต็มจอ (position:fixed · inset:0 · พื้น radial-gradient) ที่ z-index 500
+    //  โมดัลจึงไปกองอยู่ "ข้างหลัง" ห้องควบคุมทั้งใบ มองไม่เห็นเลย
+    //  หลักฐาน: elementFromPoint กลางกรอบโมดัล คืน #gcErrBtn ของแผง GM
+    //
+    //  บทเรียนทั่วไป (ตระกูลเดียวกันกับกับดักข้อ 23): "คลิกแล้วไม่มีอะไรเกิดขึ้น"
+    //  ไม่ได้หมายความว่า handler ไม่ถูกเรียก — ต้องพิสูจน์ด้วย elementFromPoint
+    //  ว่าของที่เปิดมา "มองเห็นจริง" ด้วย ไม่ใช่แค่ .active เป็น true
+    //
+    //  ชั้นนี้ไม่แก้โค้ด v4.0-v5.2 เลย (Zero-Mutation) — อยู่ท้ายสุดของชั้น 16
+    //  ยก z-index ด้วย CSS ก้อนของตัวเอง แล้วห่อ csGmOpen ตามกติกาเดิมของทั้ง 16 ชั้น
+    // ══════════════════════════════════════════════════════════════════
+
+    const FB_FIX_VER = 'v5.3.1';
+    /* แผนซ้อนของเกม: #gmPanel 500 · #gmModal 600→820 (v4.3 ยกขึ้น) · #gcModal 700 · #gcTip 900
+       760 จึงเหนือห้องควบคุมแล้ว แต่ยังอยู่ใต้กล่องกรอกข้อความกับทิปแจ้งเตือน สองอันนั้นจึงเปิดทับได้ตามเดิม */
+    const FB_FIX_Z = 760;
+
+    function fbFixEsc(s) {
+      if (typeof esc === 'function') { try { return esc(s); } catch (e) {} }
+      return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    /* สเปกข้อ 3 — อ่าน localStorage['yao_fbrt'] พลาด/ค่าเพี้ยน/ยังไม่เคยโหลด
+       ก็ต้องได้ก้อนที่ใช้งานได้กลับไปเสมอ ห้ามโยน error ออกไปหยุดสคริปต์ (Non-blocking)
+       เหตุที่ต้องมี: fbCfgLoad อยู่ใน try ของ fbInstall ถ้ามันล้มกลางทาง FB_CFG จะค้างเป็น null
+       แล้วทุกจุดที่อ่าน FB_CFG.node ตรง ๆ จะโยน TypeError ทั้งแผง */
+    function fbCfgSafe() {
+      try { if (!FB_CFG || typeof FB_CFG !== 'object') fbCfgLoad(); } catch (e) { fbErr(e, 'cfgSafe'); }
+      if (!FB_CFG || typeof FB_CFG !== 'object' || Array.isArray(FB_CFG))
+        FB_CFG = Object.assign({}, FB_CFG_DEF);
+      if (typeof FB_CFG.url !== 'string') FB_CFG.url = '';
+      if (typeof FB_CFG.auth !== 'string') FB_CFG.auth = '';
+      if (typeof FB_CFG.node !== 'string' || !FB_CFG.node) FB_CFG.node = FB_CFG_DEF.node;
+      FB_CFG.on = !!FB_CFG.on;
+      return FB_CFG;
+    }
+
+    /* ตัวสำรองขั้นสุดท้ายของหัวข้อ 3 — ใช้เมื่อ fbCfgSection() โยน error กลางทางเท่านั้น
+       id ทุกตัวตรงกับของเดิมเป๊ะ (fbFo/fbFu/fbFn/fbFa/fbFp/fbFc) ปุ่ม fbFormSave · fbFormCode
+       · fbCodeUse จึงทำงานต่อได้ครบทั้งชุดโดยไม่ต้องเขียนตัวจัดการซ้อน
+       และ fbCfgSection() กันตัวเองด้วย #fbForm อยู่แล้ว จึงไม่มีทางที่ฟอร์มจะซ้อนกัน */
+    function fbFixMiniForm(host) {
+      if (!host || document.getElementById('fbForm')) return false;
+      const c = fbCfgSafe();
+      const sel = function (v, t) {
+        return '<option value="' + v + '"' + ((c.on ? '1' : '0') === v ? ' selected' : '') + '>' + t + '</option>';
+      };
+      host.insertAdjacentHTML('beforeend',
+        '<div class="cs-sec">3 · REALTIME GM MONITOR ' + FB_VER +
+          '<small>โหมดสำรอง ' + FB_FIX_VER +
+          ' — แผงเต็มเรนเดอร์ไม่ออก ดูสาเหตุที่ปุ่ม 🐞 Error Log</small></div>' +
+        '<div class="cs-form" id="fbForm">' +
+          '<label>โหมด<select id="fbFo">' + sel('0', '— ปิด —') +
+            sel('1', 'Firebase RTDB (Realtime)') + '</select></label>' +
+          '<label>Database URL<input id="fbFu" value="' + fbFixEsc(c.url) + '" ' +
+            'placeholder="https://&lt;project&gt;-default-rtdb.asia-southeast1.firebasedatabase.app"></label>' +
+          '<label>โหนด<input id="fbFn" value="' + fbFixEsc(c.node) + '" placeholder="students"></label>' +
+          '<label>auth (เว้นว่างได้)<input id="fbFa" value="' + fbFixEsc(c.auth) + '"></label>' +
+          '<label class="cs-ck"><input type="checkbox" id="fbFp"' + (c.pub !== false ? ' checked' : '') +
+            '> เผยแพร่ข้อมูลจากเครื่องนี้</label>' +
+        '</div>' +
+        '<div class="cs-row">' +
+          '<button class="gm-btn jade" onclick="fbFormSave()">💾 บันทึกค่า</button>' +
+          '<button class="gm-btn" onclick="fbFormTest()">🔌 ทดสอบการเชื่อมต่อ</button>' +
+          '<button class="gm-btn" onclick="fbFormCode()">🔑 คัดลอกโค้ดตั้งค่า</button>' +
+        '</div>' +
+        '<div class="cs-row"><input class="fb-code" id="fbFc" ' +
+          'placeholder="วางโค้ดตั้งค่าจากเครื่องครูแล้วกดใช้ →">' +
+          '<button class="gm-btn" onclick="fbCodeUse()">📥 ใช้โค้ดนี้</button></div>');
+      return true;
+    }
+
+    /* #csGm ถูกสร้างโดย csInstall ของ v5.2 อยู่แล้ว — ตัวนี้เติมให้เฉพาะตอนที่มันล้มกลางทาง */
+    function fbFixEnsureModal() {
+      let m = document.getElementById('csGm');
+      if (m) return m;
+      try {
+        document.body.insertAdjacentHTML('beforeend',
+          '<div class="g-modal" id="csGm"><div class="g-modal-inner">' +
+            '<div class="g-modal-title">[ระบบ] ☁️ CLOUD SYNC — ศูนย์ข้อมูลออนไลน์</div>' +
+            '<div id="csGmBody"></div></div></div>');
+      } catch (e) { fbErr(e, 'ensureModal'); }
+      return document.getElementById('csGm');
+    }
+
+    /* สเปกข้อ 1+2 — เปิดแผงแบบการันตี 100%
+       ทุกขั้นแยก try/catch ของตัวเอง ขั้นใดพลาดขั้นที่เหลือก็ยังเดินต่อจนเปิดจนได้ */
+    function fbCloudOpen() {
+      const m = fbFixEnsureModal();
+      if (!m) return false;
+      fbCfgSafe();
+
+      try { if (typeof csGmRender === 'function') csGmRender(); } catch (e) { fbErr(e, 'cloudOpen:render'); }
+
+      const body = document.getElementById('csGmBody');
+      if (body) {
+        /* v5.2 เรนเดอร์ไม่ออก — ห้ามเปิดเป็นแผงเปล่าเด็ดขาด ครูจะแยกไม่ออกจาก "กดไม่ติด" */
+        if (!body.innerHTML.trim()) {
+          body.innerHTML = '<div class="fb-warn">⚠️ ส่วน CLOUD SYNC ' +
+            'เรนเดอร์ไม่สำเร็จ — ดูสาเหตุได้ที่ปุ่ม 🐞 Error Log ' +
+            'บนหัวแผง GM · ส่วนตั้งค่าระบบเรียลไทม์ข้างล่างนี้ยังใช้งานได้ตามปกติ</div>';
+        }
+        /* บังคับเรนเดอร์หัวข้อ 3 — wrapper บน csGmRender เป็นทางหลัก สองตัวนี้เป็นตาข่าย */
+        if (!document.getElementById('fbForm')) {
+          try { fbCfgSection(); } catch (e) { fbErr(e, 'cloudOpen:section'); }
+        }
+        if (!document.getElementById('fbForm')) {
+          try { fbFixMiniForm(body); } catch (e) { fbErr(e, 'cloudOpen:mini'); }
+        }
+      }
+
+      m.classList.add('active');
+      try { const i = m.querySelector('.g-modal-inner'); if (i) i.scrollTop = 0; } catch (e) {}
+      /* หน้าต่างระบบเปิด = v4.8.1 ต้องหยุดนาฬิกาต่อข้อ MutationObserver เห็นเองใน rAF ถัดไป
+         สั่งตรง ๆ อีกทีเพื่อให้หยุดทันที (idempotent เรียกซ้ำไม่มีผลข้างเคียง) */
+      try { if (typeof acSync === 'function') acSync(true); } catch (e) {}
+      return true;
+    }
+
+    /* ห่อ csGmOpen ของ v5.2 — ตัวเดิมทำสองอย่างคือ csGmRender() + เติม .active
+       fbCloudOpen ทำครบทั้งสองอย่างนั้นแล้วยังการันตีเพิ่ม จึงเรียกแทนไม่ใช่เรียกซ้อน
+       (เรียกซ้อนจะเรนเดอร์สองรอบ ข้อความผลลัพธ์ที่เพิ่งเขียนจะหาย) แต่คงตัวเดิมไว้เป็นทางสำรองสุดท้าย */
+    const _fbFixCsGmOpen = (typeof csGmOpen === 'function') ? csGmOpen : null;
+    csGmOpen = function () {
+      try { if (fbCloudOpen()) return true; } catch (e) { fbErr(e, 'csGmOpen'); }
+      if (_fbFixCsGmOpen) { try { return _fbFixCsGmOpen.apply(this, arguments); } catch (x) { fbErr(x, 'csGmOpen:orig'); } }
+      return false;
+    };
+
+    // ── ติดตั้งแพตช์ซ่อม ────────────────────────────
+    (function fbFixInstall() {
+      try {
+        fbCfgSafe();
+
+        if (!document.getElementById('fbFixStyle')) {
+          document.head.insertAdjacentHTML('beforeend',
+            '<style id="fbFixStyle">' +
+            /* ⭐ หัวใจของแพตช์นี้ — ยกโมดัลคลาวด์ขึ้นเหนือห้องควบคุม GM */
+            '#csGm{z-index:' + FB_FIX_Z + '}' +
+            '</style>');
+        }
+
+        /* ตาข่ายกันพลาดของปุ่ม ☁️ คลาวด์ และ ⚙️ ตั้งค่า — inline onclick ยังเป็นทางหลัก
+           ตัวนี้ลงมือ "เฉพาะตอนกดแล้วแผงไม่เปิด" จึงไม่มีการเรนเดอร์ซ้อนสองรอบ
+           (กันกรณี onclick หลุดเพราะ CSP หรือ binding ระดับ global หายจาก refactor รุ่นหน้า) */
+        document.addEventListener('click', function (e) {
+          try {
+            const t = e.target && e.target.closest
+              ? e.target.closest('#csGmBtn,[data-fb-cloud]') : null;
+            if (!t) return;
+            setTimeout(function () {
+              const m = document.getElementById('csGm');
+              if (!m || !m.classList.contains('active')) fbCloudOpen();
+            }, 0);
+          } catch (x) { fbErr(x, 'fixClick'); }
+        }, false);
+
+        /* ปุ่ม ☁️ คลาวด์ ถูกแทรกโดย csInstall ของ v5.2 — ถ้าตอนนั้นล้มกลางทาง
+           จะไม่มีปุ่มเลยทั้งใบ — เติมให้เอง (กันแทรกซ้ำตามกับดักข้อ 2) */
+        const headBtns = document.querySelector('#gmPanel .gm-head-btns');
+        if (headBtns && !document.getElementById('csGmBtn')) {
+          headBtns.insertAdjacentHTML('afterbegin',
+            '<button class="gm-btn" id="csGmBtn" data-fb-cloud="1" onclick="csGmOpen()" ' +
+            'title="ตั้งค่าคลาวด์ · Realtime GM Monitor">☁️ คลาวด์</button>');
+        }
+      } catch (e) { fbErr(e, 'fbFixInstall'); }
     })();
 
 

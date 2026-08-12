@@ -17922,7 +17922,7 @@
 
 
     // ══════════════════════════════════════════════════════════════
-    // ชั้นบนสุด — v5.6 · RULES GATE
+    // ชั้นที่สิบเก้า — v5.6 · RULES GATE
     //   (ป๊อปอัปกติกาบังคับอ่านก่อนเข้าเกท + สะพานส่งข้อมูลตอนพักหน้าจอ)
     // ══════════════════════════════════════════════════════════════
     /* ชั้นนี้ไม่แก้โค้ด v4.0-v5.5 เลย — ห่อฟังก์ชันแบบเดียวกับสิบแปดชั้นก่อนหน้า
@@ -18330,6 +18330,380 @@
         /* บังหน้าจอตั้งแต่เปิดเว็บ */
         rgOpen();
       } catch (e) { rgErr(e, 'rgInstall'); }
+    })();
+
+
+    // ══════════════════════════════════════════════════════════════════════
+    // ชั้นบนสุด (ที่ยี่สิบ) — v5.7 · LIVE ROSTER BRIDGE (ตารางฮันเตอร์อ่านทั้งเครื่องและสัญญาณสด)
+    // ══════════════════════════════════════════════════════════════════════
+    /* อาการ: เปิดห้องควบคุมบน Chrome ผ่าน GitHub Pages แล้วตารางล่างขึ้น "ยังไม่มีฮันเตอร์
+       ลงทะเบียนในเกท" ทั้งที่ตาราง LIVE ข้างบนมีเด็กออนไลน์ — เพราะ gmRender ของ v4.0 อ่าน
+       loadStore() อย่างเดียว ซึ่งบนโดเมนนั้น localStorage ของครูว่างเปล่า
+
+       แก้ด้วยการ "เติมทะเบียน" ไม่ใช่ "เขียนตารางใหม่" — ดันข้อมูลจากแคชเรียลไทม์ลง store
+       ก่อน gmRender ทำงาน แล้วปล่อยของเดิมวาดตามปกติ (ท่าเดียวกับ csRoomPull ของ v5.2)
+       ถ้าไปเขียน gmRender ให้วาดจาก FB_LIVE ตรง ๆ ปุ่ม 📋 แฟ้มฮันเตอร์ · 💊 เติม HP/MP
+       จะยังกดไม่ได้อยู่ดี เพราะ withStudent / gcOpen / gcHeal ล้วนต้องการ store[user] */
+    const LR_VER = '5.7';
+    const LR_MIRROR = 'lrMirror';        /* ธงของแถวที่ปั้นจากสัญญาณสด ไม่ใช่บัญชีที่เคยเล่นที่นี่ */
+
+    let LR_IN = false;                   /* อยู่กลาง gmRender — กันวนซ้ำกับ fbPaint */
+    let LR_BUSY = false;
+    let LR_SIG = '';                     /* ลายเซ็นสัญญาณรอบก่อน — ไม่เปลี่ยน = ไม่ต้องแตะ store */
+    let LR_RAF = 0;
+    const LR_MUTE = {};                  /* คนที่ครูเพิ่งกดล้างแถวสดทิ้ง — ห้ามปั้นคืนจนกว่าจะส่งข้อมูลใหม่ */
+
+    function lrErr(e, where) {
+      try { gcErrPush('error', 'LR:' + where + ' ' + ((e && e.message) || e), 'roster', (e && e.stack) || ''); }
+      catch (_) {}
+    }
+
+    function lrNum(v, d) { const n = Number(v); return isFinite(n) ? n : d; }
+
+    // ── 1. แหล่งข้อมูล — Fallback Chain ชุดเดียวกับสะพาน Export ของ v5.5 ──
+    /* ต่างจาก xpLiveRows() ตรงที่ **ไม่กรองกลุ่มและคำค้น** เพราะก้อนนี้คือทะเบียน ไม่ใช่ผลลัพธ์
+       ที่จะโชว์ — ตัวกรองเป็นงานของ gmRender กับ gcFilterRows ที่ปลายทาง ถ้ากรองตั้งแต่ตรงนี้
+       พอครูสลับกลุ่ม คนที่เคยถูกกรองออกจะหายจากทะเบียนไปด้วย */
+    function lrLiveRows() {
+      let src = null;
+      try { src = window.latestStudentData; } catch (e) {}          /* accessor ของ v5.5 → FB_LIVE สด */
+      if (!src || typeof src !== 'object' || !Object.keys(src).length) {
+        try { src = (typeof FB_LIVE === 'object' && FB_LIVE) ? FB_LIVE : null; }
+        catch (e) { src = null; }
+      }
+      const out = [];
+      if (src && typeof src === 'object') {
+        Object.keys(src).forEach(function (k) {
+          const r = src[k];
+          if (r && typeof r === 'object') out.push(Object.assign({}, r, { u: String(r.u || k) }));
+        });
+      }
+      if (out.length) return out;
+      /* ทางสุดท้าย: DOM ของตาราง LIVE (ใช้เมื่ออ่านตัวแปรไม่ได้เลย) */
+      try {
+        if (typeof xpDomRows === 'function') return xpDomRows().filter(function (r) { return r && r.u; });
+      } catch (e) { lrErr(e, 'domRows'); }
+      return [];
+    }
+
+    /* ลายเซ็นประกอบจากฟิลด์ที่ชั้นนี้เขียนลง store จริงเท่านั้น — ใส่ฟิลด์ที่ไม่ได้เขียนเข้าไป
+       ลายเซ็นจะเปลี่ยนฟรีแล้วไปแตะ localStorage ทุกครั้งที่เด็กตอบข้อเดียว */
+    function lrSig(rows) {
+      return rows.map(function (r) {
+        return [r.u, r.at || r.xpAt || 0, r.name || '', r.room || '', r.lv || 0, r.exp || 0,
+                r.hp || 0, r.mhp || 0, r.mp || 0, r.floor || 0, r.mfloor || 0, r.gold || 0,
+                r.corr || 0, r.wrong || 0, r.best || 0, r.title || '', r.frozen ? 1 : 0,
+                (r.weak || []).length].join(':');
+      }).sort().join('|');
+    }
+
+    // ── 2. ปั้นแถว / ผสานข้อมูล ────────────────────────────────────────
+    /* รหัสผ่านที่พิมพ์ไม่ได้ — แถวสดมีไว้ดู ห้ามใช้ล็อกอิน (ตัวกันจริงคือ wrapper ของ handleSubmit) */
+    function lrGhost(u, r) {
+      const a = blankAccount(u, String(r.name || u),
+                             ' live-' + Math.random().toString(36).slice(2) + Date.now().toString(36),
+                             String(r.room || '').trim());
+      a[LR_MIRROR] = true;
+      a.createdAt = lrNum(r.at, Date.now());
+      a.lastActive = lrNum(r.at, 0);
+      return a;
+    }
+
+    /* เขียนเฉพาะฟิลด์ที่ payload ของ v5.3 มีจริง — **ห้ามเขียนทับทั้งก้อน** payload เป็นก้อนแบน
+       ~1KB ที่ไม่มี wordStats · items · quest · ab · cd · tq ทับทั้งใบ = ล้างข้อมูลของ
+       นักเรียนที่เคยเล่นบนเครื่องนี้ทิ้ง */
+    function lrApply(a, r) {
+      let hit = 0;
+      const set = function (k, v) {
+        if (v == null || v !== v) return;                 /* กัน null / undefined / NaN */
+        if (a[k] === v) return;
+        a[k] = v; hit++;
+      };
+
+      set('name', String(r.name || a.name || r.u));
+      const room = String(r.room || '').trim();
+      if (room) set('classroom', room);
+
+      set('level',   Math.max(1, Math.round(lrNum(r.lv,    a.level   || 1))));
+      set('exp',     Math.max(0, Math.round(lrNum(r.exp,   a.exp     || 0))));
+      set('maxExp',  Math.max(1, Math.round(lrNum(r.mexp,  a.maxExp  || 100))));
+      set('hp',      Math.max(0, Math.round(lrNum(r.hp,    a.hp      || 0))));
+      /* ห้ามเขียน maxHp — v4.0 คำนวณใหม่จาก level + VIT ทุกครั้งที่ loadStore() (migrateAccount
+         เฟส 3) เขียนไปก็ถูกทับทันที เก็บค่าที่นักเรียนรายงานไว้ดูแทน */
+      const mhp = Math.round(lrNum(r.mhp, 0));
+      if (mhp > 0 && a.lrMaxHp !== mhp) { a.lrMaxHp = mhp; hit++; }
+      set('mp',      Math.max(0, Math.round(lrNum(r.mp,    a.mp      || 0))));
+      set('gold',    Math.max(0, Math.round(lrNum(r.gold,  a.gold    || 0))));
+      set('correct', Math.max(0, Math.round(lrNum(r.corr,  a.correct || 0))));
+      set('wrong',   Math.max(0, Math.round(lrNum(r.wrong, a.wrong   || 0))));
+      set('best',    Math.max(0, Math.round(lrNum(r.best,  a.best    || 0))));
+      set('maxFloor', Math.min(FLOOR_MAX, Math.max(1, Math.round(lrNum(r.mfloor, a.maxFloor || 1)))));
+      set('floor',    Math.min(FLOOR_MAX, Math.max(1, Math.round(lrNum(r.floor,  a.floor    || 1)))));
+
+      if (typeof r.title === 'string') set('equippedTitle', r.title);
+      if (typeof r.frozen === 'boolean') set('frozen', r.frozen);
+
+      const at = lrNum(r.at, 0);
+      if (at > lrNum(a.lastActive, 0)) set('lastActive', at);
+
+      /* คำที่ผิดซ้ำ — payload ส่งมาเป็น {id, ch, py, n, seen} ปั้นกลับเป็น wordStats ของ v4.0
+         ให้ "แฟ้มฮันเตอร์" อ่านผ่าน weakWordsOf() ได้ · ผสานทีละ id ด้วย Math.max ไม่ยัดทับ
+         ทั้งก้อน เพราะบัญชีที่เคยเล่นที่นี่มีฟิลด์ย่อยที่ payload ไม่มี */
+      if (Array.isArray(r.weak) && r.weak.length) {
+        if (!a.wordStats || typeof a.wordStats !== 'object') { a.wordStats = {}; hit++; }
+        r.weak.forEach(function (w) {
+          if (!w || typeof w !== 'object') return;
+          const id = Math.round(lrNum(w.id, -1));
+          if (id < 0) return;
+          const wrong = Math.max(0, Math.round(lrNum(w.n, 0)));
+          const seen  = Math.max(wrong, Math.round(lrNum(w.seen, wrong)));
+          const cur = a.wordStats[id] || { seen: 0, wrong: 0, recent: [] };
+          if ((cur.seen | 0) < seen)   { cur.seen  = seen;  hit++; }
+          if ((cur.wrong | 0) < wrong) { cur.wrong = wrong; hit++; }
+          a.wordStats[id] = cur;
+        });
+      }
+
+      /* จำนวนคำที่พิชิตอ่านจาก wordStats ทั้งก้อนซึ่ง payload ไม่ได้ส่งมา — เก็บตัวเลข
+         ที่นักเรียนรายงานแยกฟิลด์ ไม่ปนกับ cxCount() ของ v4.4 */
+      const words = Math.round(lrNum(r.words, -1));
+      if (words >= 0 && a.lrWords !== words) { a.lrWords = words; hit++; }
+      if (a[LR_MIRROR] && at && a.lrAt !== at) { a.lrAt = at; hit++; }
+      return hit;
+    }
+
+    // ── 3. เติมทะเบียน ────────────────────────────────────────────────
+    function lrHydrate(force) {
+      if (LR_BUSY) return 0;
+      const rows = lrLiveRows();
+      if (!rows.length) return 0;
+      const sig = lrSig(rows);
+      if (!force && sig === LR_SIG) return 0;
+
+      LR_BUSY = true;
+      let n = 0;
+      try {
+        const s = loadStore();
+        rows.forEach(function (r) {
+          const u = String(r.u || '').trim();
+          if (!u || u === CURRENT_USER) return;   /* บัญชีที่กำลังเล่นบนเครื่องนี้เป็นของจริงเสมอ */
+          let a = s[u];
+          if (!a) {
+            if (LR_MUTE[u] && lrNum(r.at, 0) <= LR_MUTE[u]) return;   /* เพิ่งถูกกดล้างและยังไม่ขยับ */
+            a = s[u] = lrGhost(u, r); n++;
+          }
+          else if (!a[LR_MIRROR]) {
+            /* บัญชีของจริง — ให้สัญญาณสดทับได้เฉพาะตอนใหม่กว่า (กติกาเดียวกับ csRoomPull) */
+            const at = lrNum(r.at, 0);
+            const loc = Math.max(lrNum(a.lastActive, 0), (a.cs && lrNum(a.cs.ts, 0)) || 0);
+            if (at && loc && at < loc) return;
+          }
+          n += lrApply(a, r);
+        });
+        if (n) saveStore(s);
+        LR_SIG = sig;
+      } catch (e) { lrErr(e, 'hydrate'); }
+      finally { LR_BUSY = false; }
+      return n;
+    }
+
+    /* หน่วง 1 เฟรม — ยิงถี่แค่ไหนก็รวมเป็นครั้งเดียว และห้ามวาดซ้อนตอนอยู่กลาง gmRender
+       (v5.3 เรียก fbPaint จากท้าย gmRender ถ้าวาดตรงนั้นจะวนไม่จบ) */
+    function lrPaintSoon() {
+      if (LR_RAF) return;
+      const run = function () {
+        LR_RAF = 0;
+        try {
+          if (LR_IN) return;
+          const p = document.getElementById('gmPanel');
+          if (p && p.classList.contains('active')) gmRender();
+        } catch (e) { lrErr(e, 'paint'); }
+      };
+      try { LR_RAF = requestAnimationFrame(run); } catch (e) { LR_RAF = 0; run(); }
+    }
+
+    function lrSync(force) {
+      let n = 0;
+      try { n = lrHydrate(force); } catch (e) { lrErr(e, 'sync'); }
+      if (n) lrPaintSoon();
+      return n;
+    }
+
+    /* ล้างแถวสดที่ค้าง — ลบเฉพาะแถวที่ชั้นนี้ปั้นเอง บัญชีที่เคยเล่นบนเครื่องนี้จริงไม่ถูกแตะ
+
+       **ต้องปิดปากไว้ด้วย ไม่ใช่ลบเฉย ๆ** — โหนดของ v5.3 ไม่มีใครลบแถวเก่าทิ้ง FB_LIVE จึงยัง
+       ถือข้อมูลของคนที่เลิกเล่นไปแล้ว ลบเฉย ๆ แล้ว hydrate รอบถัดไปจะปั้นกลับมาทันที
+       LR_MUTE จำเวลาที่กดล้างรายคน แล้วปั้นคืนเฉพาะคนที่ส่งข้อมูลใหม่กว่านั้น = กลับมาเล่นจริง */
+    function lrPurge(silent) {
+      let n = 0;
+      try {
+        const s = loadStore(), now = Date.now();
+        Object.keys(s).forEach(function (k) {
+          if (s[k] && s[k][LR_MIRROR] && k !== CURRENT_USER) { LR_MUTE[k] = now; delete s[k]; n++; }
+        });
+        if (n) { saveStore(s); LR_SIG = ''; }
+        if (!silent) {
+          try { gcTip(n ? '🧹 ล้างแถวสดแล้ว ' + n + ' แถว — คนที่ยังเล่นอยู่จะกลับมาเองเมื่อส่งข้อมูลรอบใหม่'
+                        : '🧹 ไม่มีแถวสดค้างอยู่'); } catch (e) {}
+        }
+        const p = document.getElementById('gmPanel');
+        if (p && p.classList.contains('active')) gmRender();
+      } catch (e) { lrErr(e, 'purge'); }
+      return n;
+    }
+
+    /* แถวสดต้องไม่ขวางการล็อกอิน/สมัครบนเครื่องที่ใช้ร่วมกัน — v4.0 เช็ก store[id] ก่อนเสมอ
+       (สมัคร: "มีผู้ใช้แล้ว" · ล็อกอิน: "รหัสผ่านลับไม่ตรง" เพราะแถวสดไม่มีรหัสจริง) ลบก่อนส่งต่อ
+       = กลับไปเป็นพฤติกรรมเดิมก่อนมีชั้นนี้เป๊ะ ถ้ายังออนไลน์อยู่ รอบถัดไปก็ปั้นคืนเอง */
+    function lrDropGhost(u) {
+      try {
+        const s = loadStore(), a = s[u];
+        if (!a || !a[LR_MIRROR]) return false;
+        delete s[u];
+        saveStore(s);
+        LR_SIG = '';
+        return true;
+      } catch (e) { lrErr(e, 'dropGhost'); return false; }
+    }
+
+    // ── 4. ป้ายกำกับบนจอ ──────────────────────────────────────────────
+    function lrEnsureDom() {
+      if (document.getElementById('lrStyle')) return;
+      const st = document.createElement('style');
+      st.id = 'lrStyle';
+      st.textContent =
+        '.lr-tag{display:inline-block;margin-left:6px;padding:0 5px;border-radius:5px;' +
+          'font-size:9px;font-weight:700;color:#04121a;background:#2ef2d0}' +
+        '#gmBody tr.lr-row td{background:rgba(46,242,208,.05)}' +
+        '.lr-note{margin:0 0 10px;padding:9px 11px;border:1px solid rgba(46,242,208,.4);' +
+          'border-left:3px solid #2ef2d0;border-radius:8px;background:rgba(46,242,208,.07);' +
+          'color:#bfeee6;font-size:11.5px;line-height:1.6}' +
+        '.lr-note b{color:#2ef2d0}';
+      document.head.appendChild(st);
+    }
+
+    /* gmRender เขียน tbody ใหม่ทุกครั้ง ป้ายจึงไม่สะสม แต่ยังกันซ้ำไว้ (กับดักข้อ 2) */
+    function lrBadgeRows() {
+      const body = document.getElementById('gmBody');
+      if (!body) return;
+      let s = {};
+      try { s = loadStore(); } catch (e) { return; }
+      Array.prototype.forEach.call(body.rows, function (tr) {
+        const a = s[tr.dataset.gcUser];
+        if (!a || !a[LR_MIRROR]) return;
+        tr.classList.add('lr-row');
+        const sub = tr.querySelector('.gm-sub');
+        if (sub && !sub.querySelector('.lr-tag')) {
+          sub.insertAdjacentHTML('beforeend',
+            '<span class="lr-tag" title="มาจากสัญญาณเรียลไทม์ ไม่ใช่บัญชีที่เคยเล่นบนเครื่องนี้">📡 สด</span>');
+        }
+      });
+    }
+
+    /* ปุ่มล้างแถวสด — ต้องกันแทรกซ้ำเอง (กับดักข้อ 2) */
+    function lrEnsureBtn() {
+      try {
+        const bar = document.querySelector('#fbLive .fb-btns');
+        if (!bar || document.getElementById('lrPurgeBtn')) return;
+        bar.insertAdjacentHTML('beforeend',
+          '<button class="gm-btn sm" id="lrPurgeBtn" onclick="lrPurge()" ' +
+            'title="ลบแถวสดของคนที่ไม่ได้ส่งสัญญาณแล้วออกจากทะเบียนของเครื่องนี้">🧹 ล้างแถวสด</button>');
+      } catch (e) { lrErr(e, 'ensureBtn'); }
+    }
+
+    /* บอกครูตรง ๆ ว่าแถวนี้เป็นภาพสะท้อน — ยังไม่มีช่องทางสั่งกลับไปเครื่องนักเรียน (ข้อจำกัดของ v5.3) */
+    function lrMirrorNote() {
+      const body = document.getElementById('gcBody');
+      if (!body || typeof GC_SEL !== 'string' || !GC_SEL) return;
+      if (body.querySelector('.lr-note')) return;
+      let a = null;
+      try { a = loadStore()[GC_SEL]; } catch (e) { return; }
+      if (!a || !a[LR_MIRROR]) return;
+      body.insertAdjacentHTML('afterbegin',
+        '<div class="lr-note">📡 <b>แถวนี้มาจากสัญญาณเรียลไทม์</b> — ปั้นจากข้อมูลที่เครื่องนักเรียน' +
+        'ส่งมา (อัปเดต ' + esc(typeof fbAgo === 'function' ? fbAgo(a.lrAt || a.lastActive) : '—') + ')<br>' +
+        'ทุกปุ่มกดได้จริง แต่ผลอยู่ในทะเบียนของเครื่องนี้เท่านั้น <b>ยังส่งกลับไปเครื่องนักเรียนไม่ได้</b> ' +
+        'และจะถูกสัญญาณรอบถัดไปเขียนทับ</div>');
+    }
+
+    // ── 5. ห่อฟังก์ชันของชั้นล่าง ──────────────────────────────────────
+    /* จุดดักหลักมีจุดเดียวคือ gmRender — เติมทะเบียนให้เสร็จ "ก่อน" ของเดิมอ่าน store
+       ทุกชั้นที่ต่อท้ายอยู่ (v4.3 · v5.3 · v5.4 · v5.5) จึงเห็นข้อมูลชุดเดียวกันโดยไม่ต้องแก้อะไร */
+    const _lrGmRender = gmRender;
+    gmRender = function () {
+      const was = LR_IN;
+      LR_IN = true;
+      try { lrHydrate(false); } catch (e) { lrErr(e, 'gmRender:hydrate'); }
+      try {
+        return _lrGmRender.apply(this, arguments);
+      } finally {
+        LR_IN = was;
+        try { lrEnsureBtn(); lrBadgeRows(); } catch (e) { lrErr(e, 'gmRender:paint'); }
+      }
+    };
+
+    const _lrOpenGm = openGm;
+    openGm = function () {
+      try { lrEnsureDom(); } catch (e) { lrErr(e, 'openGm:dom'); }
+      const r = _lrOpenGm.apply(this, arguments);
+      try { lrSync(true); } catch (e) { lrErr(e, 'openGm'); }
+      return r;
+    };
+
+    /* ทุกสัญญาณไหลมาลงที่ fbPaint ของ v5.3 อยู่แล้ว (fbApply → fbPaintSoon → fbPaint และ
+       fbTickRun ทุก 5 วินาทีระหว่างกางแผง) เกาะตัวเดียวจึงครอบทุกทางเข้า */
+    const _lrFbPaint = (typeof fbPaint === 'function') ? fbPaint : null;
+    if (_lrFbPaint) {
+      fbPaint = function () {
+        const r = _lrFbPaint.apply(this, arguments);
+        try { lrSync(false); } catch (e) { lrErr(e, 'fbPaint'); }
+        return r;
+      };
+    }
+
+    /* v5.5 เลือกสะพาน Export ด้วย "สดมากกว่าในเครื่องไหม" — แถวสดไม่ใช่ข้อมูลในเครื่องของจริง
+       ถ้านับรวม สองฝั่งจะเท่ากันเสมอ แล้วครูจะได้ไฟล์ของ v4.0 แทนรายงานภาษาไทยของ v5.5 */
+    const _lrXpUse = (typeof xpUseBridge === 'function') ? xpUseBridge : null;
+    if (_lrXpUse) {
+      xpUseBridge = function () {
+        try {
+          const live = xpLiveRows().length || xpDomRows().length;
+          const s = loadStore(), room = (typeof GC_ROOM === 'string' ? GC_ROOM : '');
+          const real = Object.keys(s).filter(function (k) {
+            const a = s[k];
+            if (!a || a[LR_MIRROR]) return false;
+            return !room || typeof gcRoomOf !== 'function' || gcRoomOf(a) === room;
+          }).length;
+          return live > real;
+        } catch (e) { lrErr(e, 'useBridge'); return _lrXpUse.apply(this, arguments); }
+      };
+    }
+
+    const _lrGcPaint = (typeof gcPaint === 'function') ? gcPaint : null;
+    if (_lrGcPaint) {
+      gcPaint = function () {
+        const r = _lrGcPaint.apply(this, arguments);
+        try { lrMirrorNote(); } catch (e) { lrErr(e, 'gcPaint'); }
+        return r;
+      };
+    }
+
+    const _lrHandleSubmit = handleSubmit;
+    handleSubmit = function () {
+      try {
+        const reg = (typeof currentMode === 'string' && currentMode === 'register');
+        const el = document.getElementById(reg ? 'reg-id' : 'login-id');
+        const id = ((el && el.value) || '').trim();
+        if (id) lrDropGhost(id);
+      } catch (e) { lrErr(e, 'handleSubmit'); }
+      return _lrHandleSubmit.apply(this, arguments);
+    };
+
+    // ── 6. ติดตั้ง ────────────────────────────────────────────────────
+    /* ฟังก์ชันของชั้นนี้ประกาศระดับบนสุดของสคริปต์อยู่แล้ว = เป็นสมบัติของ window เอง
+       onclick="lrPurge()" จึงเรียกได้โดยไม่ต้องผูก window.* ให้ซ้ำ */
+    (function lrInstall() {
+      try { lrEnsureDom(); } catch (e) { lrErr(e, 'lrInstall'); }
     })();
 
   </script>

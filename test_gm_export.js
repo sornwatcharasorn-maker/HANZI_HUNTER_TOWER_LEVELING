@@ -65,7 +65,10 @@ const SEED = () => {
   say('1) ตาราง LIVE มีข้อมูล แต่ store ว่าง (เคสที่พังเดิม)');
   { const { ctx, page } = await open();
     await page.evaluate(SEED); await page.waitForTimeout(300);
-    ok(await page.evaluate(() => Object.keys(loadStore()).length) === 0, 'store ว่างจริง');
+    /* v5.7 เติมแถวสดลงทะเบียนให้ตาราง GM ด้านล่างใช้งานได้ — เกณฑ์เดิม "store ว่าง"
+       จึงเปลี่ยนเป็น "ไม่มีบัญชีของจริงในเครื่อง" ซึ่งคือเจตนาเดิมของเคสนี้ */
+    ok(await page.evaluate(() => { const s = loadStore();
+      return Object.keys(s).filter(k => !s[k].lrMirror).length; }) === 0, 'store ว่างจริง (ไม่นับแถวสด)');
     ok(await page.evaluate(() => document.querySelectorAll('#fbBody tr').length) === 3, 'ตาราง LIVE 3 แถว');
 
     for (const [label, fn] of [['Export ข้อมูลฮันเตอร์','gmExportCsv()'], ['Export ประวัติ','gcExportAudit()']]) {
@@ -138,7 +141,8 @@ const SEED = () => {
   { const { ctx, page } = await open();
     await page.evaluate(() => { const s=loadStore(); s.teacher=migrateAccount(blankAccount('teacher','p')); s.teacher.name='ครูทดลอง'; saveStore(s); });
     await page.evaluate(SEED); await page.waitForTimeout(300);
-    ok(await page.evaluate(() => Object.keys(loadStore()).length) === 1, 'store มี 1 คนจริง');
+    ok(await page.evaluate(() => { const s = loadStore();
+      return Object.keys(s).filter(k => !s[k].lrMirror).length; }) === 1, 'store มีบัญชีของจริง 1 คน');
     const d = await grab(page, 'gmExportCsv()');
     ok(!!d, 'ได้ไฟล์');
     ok(d && d.text.includes('สมชาย ใจดี') && d.text.includes('อนันต์'), '  มีนักเรียนจาก LIVE ครบ');

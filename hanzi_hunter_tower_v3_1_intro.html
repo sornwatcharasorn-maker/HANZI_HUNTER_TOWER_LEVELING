@@ -17920,6 +17920,418 @@
       } catch (e) { xpErr(e, 'xpInstall'); }
     })();
 
+
+    // ══════════════════════════════════════════════════════════════
+    // ชั้นบนสุด — v5.6 · RULES GATE
+    //   (ป๊อปอัปกติกาบังคับอ่านก่อนเข้าเกท + สะพานส่งข้อมูลตอนพักหน้าจอ)
+    // ══════════════════════════════════════════════════════════════
+    /* ชั้นนี้ไม่แก้โค้ด v4.0-v5.5 เลย — ห่อฟังก์ชันแบบเดียวกับสิบแปดชั้นก่อนหน้า
+       ฟังก์ชันที่ถูกห่อเพิ่ม: enterGate · acPaintVeil · acSync
+
+       สองเรื่องในชั้นเดียว
+       1) ป๊อปอัปกติกา (System Rules Alert) — ขึ้นบังหน้าจอตั้งแต่เปิดเว็บ
+          บังคับให้เลื่อนอ่านครบทุกหัวข้อก่อน ปุ่มยืนยันถึงจะกดได้ แล้วค่อยเข้าเกท
+       2) สะพานส่งข้อมูลขึ้นห้องควบคุม GM ตอนเกมเข้าสถานะพัก — window.syncStudentDataToGM()
+
+       **ระบบพักหน้าจอไม่ได้ถูกเขียนใหม่** ชั้น v4.8.1 ทำครบอยู่แล้วทั้ง visibilitychange ·
+       blur · pagehide · การเลื่อนจอหนีโซนคำถาม ชั้นนี้จึงเกาะไปกับ acSync ของมันจุดเดียว
+       แล้วเปลี่ยนแค่ถ้อยคำบนม่านกับเพิ่มการยิงข้อมูลขึ้น GM ตอนข้ามรอยต่อเข้าสู่สถานะพัก */
+
+    const RG_VER = '5.6';
+
+    /* กันยิงซ้ำตอนสถานะพักกระพริบไปมา (เลื่อนจอขึ้น-ลงเร็ว ๆ) */
+    const RG_SYNC_GAP = 3500;
+
+    let RG_ACK    = false;   /* กดยืนยันรับทราบกติกาแล้วหรือยัง — ของรอบการเปิดหน้า ไม่ต้องเซฟ */
+    let RG_READ   = false;   /* เลื่อนอ่านครบแล้วหรือยัง */
+    let RG_PAUSED = false;   /* สถานะพักรอบก่อน — ใช้จับ "รอยต่อ" ไม่ใช่จับทุกเฟรม */
+    let RG_SYNC_T = 0;       /* เวลาที่ยิงขึ้น GM ครั้งล่าสุด */
+
+    function rgErr(e, where) {
+      if (typeof gcErrPush !== 'function') return;
+      try { gcErrPush('err', 'RULES: ' + ((e && e.message) || e), where || '', (e && e.stack) || ''); } catch (e2) {}
+    }
+
+    // ── 1. เนื้อหากติกา — แก้ข้อความที่ก้อนนี้ก้อนเดียว ──────────────
+    /* โครงเดียวกันทุกหัวข้อ: ไอคอน + ชื่อหัวข้อ + รายการย่อย
+       tone: 'danger' แดง · 'good' เขียว · 'warn' เหลือง · '' ฟ้าปกติ
+       รายการย่อยเป็น [ป้ายหน้า, คำอธิบาย] หรือสตริงเดี่ยว (บรรทัดเต็ม) */
+    const RG_SECTIONS = [
+      {
+        icon: '⚠️', tone: 'danger', tag: 'CRITICAL WARNING',
+        title: 'คำเตือนสำคัญ — อุปกรณ์และเบราว์เซอร์',
+        rows: [
+          ['✅ ต้องเปิดด้วย', 'คัดลอกลิงก์ไปเปิดเล่นบน <b>Google Chrome</b> หรือ <b>Safari</b> เท่านั้น'],
+          ['❌ ห้ามเด็ดขาด', 'ห้ามเปิดเล่นผ่านเบราว์เซอร์ชั่วคราวในแอป <b>LINE</b> หรือ <b>Facebook</b>'],
+          'เพราะเบราว์เซอร์ในแอปจะล้างข้อมูลทิ้งเมื่อปิดแอป ' +
+          '<b>ไอดีและประวัติการเล่นทั้งหมดจะสลายหายไป</b> กู้คืนไม่ได้'
+        ]
+      },
+      {
+        icon: '📡', tone: 'good', tag: 'REALTIME CLOUD SYNC v5.5',
+        title: 'ระบบเชื่อมต่อห้องควบคุม GM อัตโนมัติ',
+        rows: [
+          ['🔗 ไม่ต้องตั้งค่า', 'ระบบเชื่อมต่อสายรับสัญญาณ GM Control Room ให้เอง <b>อัตโนมัติ 100%</b> ' +
+            'ไม่ต้องกรอกโค้ดหรือตั้งค่าใด ๆ'],
+          ['⚡ ส่งสดวินาทีต่อวินาที', 'ทุกคำตอบ การผ่านชั้น และค่าสถานะจะถูกยิงขึ้นหน้าจอครูแบบ <b>Realtime</b>'],
+          ['📶 เน็ตหลุดก็เล่นต่อได้', 'ระบบพักข้อมูลไว้ในเครื่องก่อน แล้วส่งขึ้นให้เองเมื่อสัญญาณกลับมา']
+        ]
+      },
+      {
+        icon: '📖', tone: '', tag: 'SYSTEM GUIDE',
+        title: 'คำอธิบายระบบและฟังก์ชันทั้งหมดในเกม',
+        rows: [
+          ['📜 QUESTS<br><i>กระดานภารกิจ</i>', 'ทำภารกิจประจำวัน / ประจำสัปดาห์ เพื่อรับ <b>EXP</b>, <b>Gold</b> และ <b>Diamonds</b>'],
+          ['📊 STATUS<br><i>สถานะ</i>', 'เช็ก Level, Rank (<b>F ถึง SSS</b>), HP/MP, ค่าพลังโจมตี และอัตราความแม่นยำ (%)'],
+          ['📈 ANALYTICS<br><i>จุดอ่อน</i>', 'ระบบวิเคราะห์สมอง แสดงรายชื่อคำศัพท์ที่ตอบผิดซ้ำ พร้อมสถิติเพื่อซ่อมจุดอ่อน'],
+          ['🏆 LEADERBOARD<br><i>อันดับห้อง</i>', 'กระดานเกียรติยศแสดงอันดับ Top ของห้องเรียนแบบ Realtime'],
+          ['🛍️ SHOP<br><i>ร้านค้า</i>', 'นำ Gold / Diamonds ไปซื้อน้ำยาฟื้นฟู HP/MP หรือบัฟเพิ่ม EXP/Gold'],
+          ['📖 CODEX<br><i>คลังอักขระ</i>', 'สมุดรวบรวมคำศัพท์ภาษาจีนที่เคยพิชิต สำหรับทบทวนพินอินและความหมาย'],
+          ['⚙️ SYSTEM CORE<br><i>แกนกลาง</i>', 'ศูนย์ควบคุม ตั้งค่าเสียง ดูการเชื่อมต่อ Cloud Sync และจัดการไอดี'],
+          ['🕳️ ABYSS<br><i>เหวลึก</i>', 'ดันเจี้ยนระดับสูงพิเศษ สำหรับท้าทายโหมดโหดเพื่อล่ารางวัลหายาก'],
+          ['👁️ SYSTEM SCAN<br><i>เฉลยอักขระ</i>', 'ใช้เหรียญทอง (Gold) สแกนเฉลยคำตอบในข้อที่ยาก']
+        ]
+      },
+      {
+        icon: '⏸️', tone: 'warn', tag: 'ANTI-CHEAT AUTO PAUSE',
+        title: 'ระบบพักหน้าจออัตโนมัติ — กันการเปิดหาคำตอบ',
+        rows: [
+          ['🔍 ตรวจจับเมื่อ', 'พับหน้าจอ · สลับแอป · เปิดแท็บอื่น · เลื่อนออกจากหน้าต่างคำถาม'],
+          ['⏱️ ระบบจะทำอะไร', 'หยุดนาฬิกาของข้อนั้นทันที แล้ว<b>ปิดบังโจทย์</b>ไม่ให้แอบอ่านไปค้นคำตอบ'],
+          ['📡 ส่งรายงานทันที', 'ข้อมูลล่าสุดจะถูกยิงขึ้น <b>GM Control Room</b> ทุกครั้งที่เกิดการพักหน้าจอ'],
+          ['▶️ กลับมาเล่นต่อ', 'กดปุ่ม <b>“▶️ กลับเข้าสู่การต่อสู้”</b> บนหน้าจอ เวลาจะเดินต่อจากวินาทีเดิมเป๊ะ'],
+          'เวลาที่หยุดไปไม่ได้ถูกหักทิ้ง — พักได้โดยไม่เสียเปรียบ แต่จะแอบเปิดหาคำตอบไม่ได้'
+        ]
+      }
+    ];
+
+    // ── 2. ประกอบหน้าจอ ─────────────────────────────────────────────
+    function rgRowHtml(r) {
+      if (typeof r === 'string') return '<div class="rg-note">' + r + '</div>';
+      return '<div class="rg-row"><div class="rg-k">' + r[0] + '</div>' +
+             '<div class="rg-v">' + r[1] + '</div></div>';
+    }
+
+    function rgSecHtml(s) {
+      return '<section class="rg-sec' + (s.tone ? ' ' + s.tone : '') + '">' +
+               '<div class="rg-tag">' + s.tag + '</div>' +
+               '<h3 class="rg-h"><span class="rg-ico">' + s.icon + '</span>' + s.title + '</h3>' +
+               s.rows.map(rgRowHtml).join('') +
+             '</section>';
+    }
+
+    /* แทรกครั้งเดียว — กันแทรกซ้ำเอง (กับดักข้อ 2) */
+    function rgEnsureDom() {
+      if (!document.getElementById('rgStyle')) {
+        document.head.insertAdjacentHTML('beforeend',
+          '<style id="rgStyle">' +
+          /* ── ป๊อปอัปกติกา ────────────────────────────────────────
+             ใช้โครง .g-modal ของ v4.0 จึงถูก AC_OVL_SEL ของ v4.8.1 นับเป็นหน้าต่างระบบเอง
+             (ไม่ต้องไปเติมชื่อลงตัวเลือกนั้น ซึ่งเป็น const แก้ไม่ได้อยู่แล้ว)
+             z-index 1000 = เหนือทุกชั้นทึบของเกม (gcTip 900 คือตัวที่สูงสุดเดิม)
+             เพราะป๊อปอัปนี้ต้องบังทุกอย่างตั้งแต่วินาทีที่เปิดเว็บ */
+          '#rgGate{z-index:1000;background:rgba(3,9,18,.94);padding:12px}' +
+          '#rgGate .rg-box{width:100%;max-width:560px;max-height:88vh;display:flex;flex-direction:column;' +
+            'border-radius:16px;border:2px solid #00d2ff;background:#0b192c;' +
+            'box-shadow:0 0 40px rgba(0,210,255,.42),0 0 120px rgba(0,210,255,.12);overflow:hidden}' +
+
+          /* หัวป๊อปอัป — อยู่นอกสายเลื่อน จึงติดอยู่บนสุดเสมอ */
+          '.rg-head{flex:0 0 auto;padding:14px 16px 12px 16px;text-align:center;' +
+            'border-bottom:1px solid rgba(0,210,255,.32);' +
+            'background:linear-gradient(180deg,rgba(0,210,255,.14) 0%,rgba(0,210,255,0) 100%)}' +
+          '.rg-kicker{font-size:9.5px;font-weight:800;letter-spacing:2.6px;color:#00d2ff}' +
+          '.rg-title{margin-top:5px;font-size:17px;font-weight:800;color:#a8ecff;line-height:1.35;' +
+            'text-shadow:0 0 14px rgba(0,210,255,.55)}' +
+          '.rg-sub{margin-top:4px;font-size:11px;color:#7fa6c4;line-height:1.6}' +
+
+          /* สายเลื่อน */
+          '.rg-body{flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrolling:touch;' +
+            'overscroll-behavior:contain;padding:12px 14px 4px 14px}' +
+          '.rg-sec{margin-bottom:12px;padding:11px 12px;border-radius:12px;' +
+            'border:1px solid rgba(0,210,255,.3);border-left:4px solid #00d2ff;' +
+            'background:rgba(0,210,255,.055)}' +
+          '.rg-sec.danger{border-color:rgba(255,90,110,.34);border-left-color:#ff5a6e;background:rgba(255,90,110,.07)}' +
+          '.rg-sec.good{border-color:rgba(46,242,208,.32);border-left-color:#2ef2d0;background:rgba(46,242,208,.06)}' +
+          '.rg-sec.warn{border-color:rgba(255,200,69,.32);border-left-color:#ffc845;background:rgba(255,200,69,.06)}' +
+          '.rg-tag{font-size:8.5px;font-weight:800;letter-spacing:1.9px;color:#00d2ff;opacity:.95}' +
+          '.rg-sec.danger .rg-tag{color:#ff8f9d}' +
+          '.rg-sec.good .rg-tag{color:#2ef2d0}' +
+          '.rg-sec.warn .rg-tag{color:#ffc845}' +
+          '.rg-h{margin:3px 0 9px 0;font-size:13.5px;font-weight:800;color:#dff2ff;line-height:1.45}' +
+          '.rg-ico{margin-right:6px}' +
+
+          /* แถวคำอธิบาย — สองคอลัมน์บนจอกว้าง ซ้อนกันบนจอแคบ */
+          '.rg-row{display:grid;grid-template-columns:118px 1fr;gap:8px;align-items:start;' +
+            'padding:6px 0;border-top:1px dashed rgba(140,190,225,.18)}' +
+          '.rg-row:first-of-type{border-top:none}' +
+          '.rg-k{font-size:11.5px;font-weight:800;color:#8fd8ff;line-height:1.45}' +
+          '.rg-k i{display:block;font-style:normal;font-weight:600;font-size:10px;color:#7fa6c4}' +
+          '.rg-v{font-size:12px;line-height:1.75;color:#c8dbeb}' +
+          '.rg-v b,.rg-note b{color:#ffc845}' +
+          '.rg-note{margin-top:8px;padding:7px 9px;border-radius:8px;font-size:11.5px;line-height:1.7;' +
+            'color:#b6cee0;background:rgba(3,9,18,.55);border:1px dashed rgba(140,190,225,.24)}' +
+          '@media (max-width:430px){' +
+            '.rg-row{grid-template-columns:1fr;gap:2px}' +
+            '.rg-k{color:#00d2ff}' +
+            '.rg-title{font-size:15.5px}' +
+            '.rg-v{font-size:11.5px}}' +
+
+          /* ท้ายป๊อปอัป — ปุ่มยืนยันอยู่นอกสายเลื่อน จึงเห็นตลอดเวลา */
+          '.rg-foot{flex:0 0 auto;padding:10px 14px calc(12px + env(safe-area-inset-bottom)) 14px;' +
+            'border-top:1px solid rgba(0,210,255,.3);background:rgba(3,9,18,.6)}' +
+          '#rgMore{margin-bottom:8px;text-align:center;font-size:11px;font-weight:700;color:#ffc845;' +
+            'animation:rgBlink 1.5s ease-in-out infinite}' +
+          '#rgGate.rg-read #rgMore{display:none}' +
+          '@keyframes rgBlink{0%,100%{opacity:1}50%{opacity:.35}}' +
+          '#rgOk{width:100%;padding:13px 10px;border:none;border-radius:11px;cursor:pointer;' +
+            'font-family:inherit;font-size:14px;font-weight:800;color:#04101d;line-height:1.35;' +
+            'background:linear-gradient(180deg,#8fe9ff 0%,#00d2ff 100%);' +
+            'box-shadow:0 0 24px rgba(0,210,255,.5)}' +
+          '#rgOk span{display:inline-block;white-space:nowrap}' +
+          '#rgOk:active{transform:translateY(1px)}' +
+          '#rgOk[disabled]{cursor:not-allowed;opacity:.42;box-shadow:none;' +
+            'background:linear-gradient(180deg,#31506b 0%,#1d3348 100%);color:#93aec4}' +
+          '.rg-foot-note{margin-top:7px;text-align:center;font-size:9.5px;line-height:1.6;color:#6d8399}' +
+          '.rg-foot-note span{display:inline-block;white-space:nowrap}' +
+
+          /* ── ม่านหยุดเกมของ v4.8.1 — ทำให้ทึบขึ้นตามสเปกจอดำ ────────
+             แก้แค่ "ความเข้มของพื้น" ตัวเดียว **ห้ามใส่ backdrop-filter ที่ม่านเด็ดขาด**
+             การเบลอเป็นหน้าที่ของคลาส ac-mask ซึ่งเบลอเฉพาะโจทย์กับตัวเลือกอยู่แล้ว
+             (เหตุผลเต็มอยู่ในคอมเมนต์ของ v4.8.1 — เบลอทั้งจอกินแรงเครื่องนักเรียนฟรี ๆ
+              และทำให้หลอด HP/MP กับเรดาร์หอคอยพร่าไปด้วยทั้งที่ไม่ได้เฉลยอะไรเลย) */
+          '#acVeil{background:rgba(2,6,12,.88)}' +
+          '#acVeil .ac-box{border-color:#00d2ff;box-shadow:0 0 38px rgba(0,210,255,.5)}' +
+          '#acVeil .ac-kicker{color:#00d2ff}' +
+          '.rg-sync{margin-top:9px;font-size:10.5px;font-weight:700;color:#2ef2d0;line-height:1.6}' +
+          '</style>');
+      }
+
+      if (!document.getElementById('rgGate')) {
+        document.body.insertAdjacentHTML('beforeend',
+          '<div class="g-modal" id="rgGate">' +
+            '<div class="g-modal-inner rg-box">' +
+              '<div class="rg-head">' +
+                '<div class="rg-kicker">SYSTEM · RULES ALERT</div>' +
+                '<div class="rg-title">🛡️ ประกาศจากระบบหอคอย</div>' +
+                '<div class="rg-sub">กรุณาอ่านกติกาและคำเตือนให้ครบทุกข้อ ก่อนเข้าสู่เกท<br>' +
+                  '<span style="opacity:.75">请先阅读全部规则</span></div>' +
+              '</div>' +
+              '<div class="rg-body" id="rgBody">' + RG_SECTIONS.map(rgSecHtml).join('') + '</div>' +
+              '<div class="rg-foot">' +
+                '<div id="rgMore">▼ เลื่อนอ่านให้ครบทุกข้อ ปุ่มยืนยันจึงจะกดได้</div>' +
+                /* ห่อทีละก้อนด้วย nowrap — จอ 390px จะตัด "▶" ไปอยู่บรรทัดใหม่ตัวเดียว */
+                '<button type="button" id="rgOk" disabled onclick="rgAck()">' +
+                  '<span>🔵 ยืนยันรับทราบกติกา</span> · <span>เข้าสู่เกท (登塔) ▶</span></button>' +
+                '<div class="rg-foot-note"><span>ระบบพักหน้าจออัตโนมัติทำงานตลอดการเล่น</span> · ' +
+                  '<span>ข้อมูลถูกส่งขึ้นห้องควบคุม GM แบบเรียลไทม์</span></div>' +
+              '</div>' +
+            '</div>' +
+          '</div>');
+
+        const body = document.getElementById('rgBody');
+        if (body) body.addEventListener('scroll', rgScrollCheck, { passive: true });
+      }
+    }
+
+    // ── 3. บังคับอ่านให้ครบก่อนถึงกดยืนยันได้ ────────────────────────
+    /* วัดจาก scrollHeight ของจริงทุกครั้ง ไม่ใช้ media query เดา (กติกาเดียวกับ cdScrollHint
+       ของ v4.7) เพราะความสูงขึ้นกับความยาวข้อความและความกว้างจอ
+       เนื้อหาสั้นจนไม่ต้องเลื่อน = ถือว่าอ่านครบทันที ไม่งั้นปุ่มจะกดไม่ได้ตลอดกาล */
+    function rgScrollCheck() {
+      try {
+        if (RG_READ) return;
+        const b = document.getElementById('rgBody');
+        if (!b) return;
+        const room = b.scrollHeight - b.clientHeight;
+        if (room > 24 && b.scrollTop < room - 24) return;
+        RG_READ = true;
+        const g = document.getElementById('rgGate');
+        if (g) g.classList.add('rg-read');
+        const ok = document.getElementById('rgOk');
+        if (ok) ok.disabled = false;
+      } catch (e) { rgErr(e, 'scrollCheck'); }
+    }
+
+    function rgOpen() {
+      try {
+        rgEnsureDom();
+        const g = document.getElementById('rgGate');
+        if (!g) return false;
+        g.classList.add('active');
+        const b = document.getElementById('rgBody');
+        if (b) b.scrollTop = 0;
+        /* เนื้อหาสั้นกว่ากรอบ (จอสูง/แท็บเล็ต) ต้องปลดล็อกปุ่มให้ตั้งแต่แรก
+           วัดหลังเบราว์เซอร์จัดหน้าเสร็จ ไม่งั้น scrollHeight ยังเป็น 0 */
+        requestAnimationFrame(function () { requestAnimationFrame(rgScrollCheck); });
+        return true;
+      } catch (e) { rgErr(e, 'open'); return false; }
+    }
+
+    function rgClose() {
+      const g = document.getElementById('rgGate');
+      if (g) g.classList.remove('active');
+    }
+
+    /* กดยืนยัน = ปิดป๊อปอัปแล้วเข้าเกทตามปกติ
+       ถ้าล็อกอินเงียบของ v5.2 พาเข้าหอคอยไปแล้วระหว่างที่ป๊อปอัปยังบังอยู่ ก็แค่ปิดม่าน
+       แล้วปลุก v4.8.1 ให้เดินนาฬิกาต่อ — ไม่ต้องเรียก enterGate ซ้ำ */
+    function rgAck() {
+      try {
+        if (!RG_READ) { rgScrollCheck(); if (!RG_READ) return false; }
+        RG_ACK = true;
+        rgClose();
+        const gs = document.getElementById('gameScreen');
+        if (gs && gs.classList.contains('active')) {
+          if (typeof acSync === 'function') acSync(true);
+          return true;
+        }
+        if (typeof enterGate === 'function') enterGate();
+        return true;
+      } catch (e) { rgErr(e, 'ack'); return false; }
+    }
+
+    // ── 4. สะพานส่งข้อมูลขึ้นห้องควบคุม GM ──────────────────────────
+    /* ทางเข้าสาธารณะตัวเดียวที่โค้ดอื่น/ครู/เทสต์เรียกได้ — ไม่มีเครื่องยนต์เป็นของตัวเอง
+       ตัวส่งจริงคือ fbPush ของ v5.3 (จอครูเรียลไทม์) กับ csFlush ของ v5.2 (เซฟออนไลน์)
+       ชั้นไหนถูกถอด/ยังไม่ตั้งค่า ตัวนั้นก็เงียบไปเอง เกมไม่กระทบ */
+    function syncStudentDataToGM(opt) {
+      const o = opt || {};
+      let sent = false;
+      let u = null;
+      try { u = (typeof CURRENT_USER !== 'undefined') ? CURRENT_USER : null; } catch (e) {}
+      if (!u) return false;
+
+      /* เขียนความคืบหน้าล่าสุดลง store ก่อนเสมอ ผ่านทางเดิมของ v4.0 เท่านั้น
+         (saveStore ถูกห่อไว้แล้วโดย v5.2/v5.3 จุดเซฟใหม่จึงไม่ต้องแตะชั้นพวกนั้นเลย) */
+      try {
+        const gs = document.getElementById('gameScreen');
+        if (o.save !== false && gs && gs.classList.contains('active') &&
+            typeof saveProgress === 'function') saveProgress();
+      } catch (e) { rgErr(e, 'sync/save'); }
+
+      try {
+        if (typeof fbPush === 'function') { fbPush(u, !!o.keepalive); sent = true; }
+      } catch (e) { rgErr(e, 'sync/fb'); }
+
+      try {
+        if (typeof csTouch === 'function') csTouch(true);
+        else if (typeof csFlush === 'function') { csFlush(); }
+        sent = true;
+      } catch (e) { rgErr(e, 'sync/cs'); }
+
+      RG_SYNC_T = Date.now();
+      return sent;
+    }
+
+    /* ตัวจับรอยต่อ — อ่านคลาสที่ acSync ของ v4.8.1 เพิ่งเขียนลง #gameScreen
+       ถูกกว่าการเรียก acPaused() ซ้ำ (ซึ่งยิง querySelector ทั้งเอกสาร + วัดพิกัดจริง)
+       และตรงกับสถานะที่ผู้เล่นเห็นบนจอเป๊ะ ๆ เสมอ */
+    function rgPauseSync() {
+      const gs = document.getElementById('gameScreen');
+      const on = !!gs && gs.classList.contains('active') && gs.classList.contains('ac-mask');
+      if (on === RG_PAUSED) return;
+      RG_PAUSED = on;
+      if (!on) return;
+      if (Date.now() - RG_SYNC_T < RG_SYNC_GAP) return;
+      try { syncStudentDataToGM({}); } catch (e) { rgErr(e, 'pauseSync'); }
+    }
+
+    // ── 5. ห่อฟังก์ชันของชั้นล่าง ────────────────────────────────────
+    /* ยังไม่รับทราบกติกา = เข้าเกทไม่ได้ ไม่ว่าจะมาจากทางไหน
+       (แตะหน้าต้อนรับ · ปุ่ม "แตะเพื่อเข้าสู่ประตูมิติ" · กด Enter/Space) */
+    const _rgEnterGate = enterGate;
+    enterGate = function () {
+      try {
+        if (!RG_ACK) { rgOpen(); return; }
+      } catch (e) { rgErr(e, 'enterGate'); }
+      return _rgEnterGate.apply(this, arguments);
+    };
+
+    /* ถ้อยคำบนม่านหยุดเกม — ตัว def ของ v4.8.1 ไม่ถูกแตะ แค่เขียนทับตอนม่านขึ้นจริง */
+    if (typeof acPaintVeil === 'function') {
+      const _rgAcPaintVeil = acPaintVeil;
+      acPaintVeil = function () {
+        const r = _rgAcPaintVeil.apply(this, arguments);
+        try {
+          const away = (typeof AC_FOCUS !== 'undefined') && AC_FOCUS;
+          const t = document.getElementById('acVeilTitle');
+          const b = document.getElementById('acVeilBody');
+          if (t) {
+            t.textContent = away
+              ? '⏸️ SYSTEM PAUSED — ตรวจพบการเลื่อนออกจากหน้าต่างคำถาม'
+              : '⏸️ SYSTEM PAUSED — พักหน้าจอชั่วคราว';
+          }
+          if (b) {
+            b.innerHTML = (away
+              ? 'ระบบตรวจพบว่าคุณสลับแท็บ / สลับแอป / พับหน้าจอ<br>'
+              : 'คุณสั่งพักหน้าจอเอง<br>') +
+              '<b>โจทย์ถูกปิดบังไว้</b> และนาฬิกาหยุดเดินแล้ว<br>' +
+              'เวลาจะเดินต่อจากวินาทีเดิมเป๊ะ ไม่มีการหักทิ้ง' +
+              '<div class="rg-sync">📡 ส่งข้อมูลล่าสุดขึ้น GM Control Room แล้ว</div>';
+          }
+          rgVeilBtn();
+        } catch (e) { rgErr(e, 'paintVeil'); }
+        return r;
+      };
+    }
+
+    /* ปุ่มบนม่านเป็น DOM นิ่งของ v4.8.1 (ไม่มีใคร render ทับ) ตั้งข้อความให้ครั้งเดียวก็พอ
+       แต่ตั้งซ้ำได้ฟรี จึงเรียกจาก acPaintVeil ด้วยกันพลาด */
+    function rgVeilBtn() {
+      const veil = document.getElementById('acVeil');
+      const btn  = veil ? veil.querySelector('.ac-btn') : null;
+      if (btn && btn.textContent !== '▶️ กลับเข้าสู่การต่อสู้') btn.textContent = '▶️ กลับเข้าสู่การต่อสู้';
+    }
+
+    /* เกาะรอยต่อ "เข้าสู่สถานะพัก" ที่ตัวประสานกลางของ v4.8.1 ตัวเดียว
+       ไม่ไล่ดักเหตุการณ์ทีละทาง (visibilitychange · blur · เปิดหน้าต่าง · เลื่อนหนี)
+       ท่าเดียวกับที่ v5.1 ใช้กับ auPauseSync */
+    if (typeof acSync === 'function') {
+      const _rgAcSync = acSync;
+      acSync = function () {
+        const r = _rgAcSync.apply(this, arguments);
+        try { rgPauseSync(); } catch (e) { rgErr(e, 'acSync'); }
+        return r;
+      };
+    }
+
+    // ── 6. ติดตั้ง ───────────────────────────────────────────────────
+    (function rgInstall() {
+      try {
+        rgEnsureDom();
+        rgVeilBtn();
+
+        /* กด Enter บนป๊อปอัป = ยืนยัน (ถ้าอ่านครบแล้ว) — ดักแบบ capture
+           เพื่อให้ได้ยินก่อนตัวดัก Enter/Space ของหน้าต้อนรับ ซึ่งจะเรียก enterGate ซ้ำ */
+        document.addEventListener('keydown', function (e) {
+          try {
+            const g = document.getElementById('rgGate');
+            if (!g || !g.classList.contains('active')) return;
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault(); e.stopPropagation();
+              if (RG_READ) rgAck();
+            }
+          } catch (e2) { rgErr(e2, 'keydown'); }
+        }, true);
+
+        window.addEventListener('resize', function () {
+          if (!RG_READ) rgScrollCheck();
+        });
+
+        /* ปิดหน้าเพจระหว่างพัก = ยิงรอบสุดท้ายแบบ keepalive
+           (v5.4 ทำอยู่แล้วสำหรับกรณีทั่วไป ตัวนี้ครอบเฉพาะตอนที่มีข้อค้างอยู่) */
+        window.addEventListener('pagehide', function () {
+          try { if (RG_PAUSED) syncStudentDataToGM({ keepalive: true }); } catch (e) {}
+        });
+
+        window.syncStudentDataToGM = syncStudentDataToGM;
+        window.rgOpen = rgOpen;
+
+        /* บังหน้าจอตั้งแต่เปิดเว็บ */
+        rgOpen();
+      } catch (e) { rgErr(e, 'rgInstall'); }
+    })();
+
   </script>
 </body>
 </html>

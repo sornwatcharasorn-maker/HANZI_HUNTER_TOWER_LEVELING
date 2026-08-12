@@ -17269,6 +17269,248 @@
     })();
 
 
+
+    // ══════════════════════════════════════════════════════════════════
+    //  ชั้นที่สิบเจ็ด — v5.4 · AUTO-SYNC ENGINE  (ซิงก์อัตโนมัติ 100%)
+    // ------------------------------------------------------------------
+    //  เป้าหมาย: นักเรียนเปิดลิงก์แล้วเล่นได้เลย ไม่ต้องกรอกโค้ด ไม่ต้องตั้งค่าคลาวด์
+    //  ชั้น 16 (v5.3) มีเครื่องยนต์ครบอยู่แล้ว — ผู้เผยแพร่ REST PUT · ผู้รับฟัง SSE ·
+    //  ตารางสดในห้องควบคุม GM — แต่ "ปิดสวิตช์รอ" ไว้เพราะคอนฟิกไม่ได้ฝังลงซอร์ส
+    //  ชั้นนี้ทำหน้าที่เดียวคือ "เปิดสวิตช์ให้เองทุกครั้งที่เปิดหน้า" แล้วเติมจังหวะส่ง
+    //  ที่สเปกของงานนี้ขอเพิ่มมาสามอย่าง: เต้นทุก 5 วินาที · beforeunload · visibilitychange
+    //
+    //  ไม่แก้โค้ด v4.0-v5.3 เลย — ห่อฟังก์ชันแบบเดียวกับสิบหกชั้นก่อนหน้า
+    //  ลบชั้นนี้ทิ้งทั้งก้อนแล้ว v5.3 กลับไปเป็นโหมด "ครูกรอกคอนฟิกเอง" ตามเดิมทุกประการ
+    //
+    //  ⚠️ ข้อแลกเปลี่ยนที่รับไว้โดยรู้ตัว — ต่างจากกฎ zero-hardcode ของ v5.2/v5.3
+    //  URL ฐานข้อมูลถูกฝังลงไฟล์นี้แล้ว (AS_URL) และ RTDB Rules ของโหนด /students
+    //  ต้องเปิด .write ไว้ ใครได้ไฟล์ไปก็เขียนโหนดนี้ได้ จึงห้ามเก็บอะไรที่เป็นความลับ
+    //  ใน payload ของ v5.3 (ซึ่งไม่มี pw และไม่มีแฮชอยู่แล้วโดยการออกแบบ)
+    // ══════════════════════════════════════════════════════════════════
+
+    const AS_VER   = 'v5.4';
+    const AS_URL   = 'https://hanzi-hunter-tower-leveling-default-rtdb.asia-southeast1.firebasedatabase.app';
+    const AS_NODE  = 'students';
+    const AS_K_PUB = 'yao_fbrt_pub';    /* '1' = เครื่องนี้ส่งข้อมูล · '0' = รับฟังอย่างเดียว (เครื่องครู) */
+    const AS_K_MAN = 'yao_fbrt_man';    /* '1' = ครูตั้ง URL เองจากแผง GM — ชั้นนี้ต้องไม่เขียนทับ */
+    const AS_TICK  = 5000;              /* สเปกข้อ 2 — ยิงโปรไฟล์ทุก 5 วินาที */
+
+    let AS_T = null, AS_BEATS = 0, AS_SEEDED = false;
+
+    function asErr(e, w) {
+      try {
+        if (typeof gcErrPush === 'function')
+          gcErrPush('autosync', (w || '') + ': ' + ((e && e.message) || e), AS_VER, e && e.stack);
+      } catch (x) {}
+    }
+
+    // ── 1. ธงผู้เผยแพร่ระดับเครื่อง ───────────────────────────────
+    /* สเปกข้อ 1 สั่งให้ตั้ง yao_fbrt_pub = '1' — เก็บเป็นคีย์แยกของตัวเองโดยตั้งใจ
+       เพื่อให้ครูปลดเครื่องตัวเองออกจากตารางห้องได้โดยไม่ต้องไปยุ่งกับ yao_fbrt ทั้งก้อน
+       ซึ่งชั้นนี้เขียนทับใหม่ทุกครั้งที่เปิดหน้าอยู่แล้ว */
+    function asPub() {
+      let v = null;
+      try { v = localStorage.getItem(AS_K_PUB); } catch (e) {}
+      if (v !== '0' && v !== '1') {
+        v = '1';
+        try { localStorage.setItem(AS_K_PUB, v); } catch (e) {}
+      }
+      return v === '1';
+    }
+
+    function asSetPub(on) {
+      try { localStorage.setItem(AS_K_PUB, on ? '1' : '0'); } catch (e) {}
+      try { if (typeof fbCfgSave === 'function') fbCfgSave({ pub: !!on }); } catch (e) { asErr(e, 'setPub'); }
+      asPaintBtn();
+      return !!on;
+    }
+
+    // ── 1.1 ทางออกของครู — ตั้ง URL เองแล้วต้องไม่ถูกเขียนทับ ─────
+    /* การบังคับเขียนคอนฟิกทุกครั้งที่เปิดหน้า (ข้อ 3) จะกลืนค่าที่ครูเพิ่งกรอกในแผง GM ทิ้ง
+       ทำให้ย้ายฐานข้อมูล/เปลี่ยนโหนดไม่ได้อีกเลย ซึ่งเป็นการทำลายฟีเจอร์ของ v5.3 ทั้งชุด
+       จึงห่อ fbCfgSave ไว้: มีใครสั่งเปลี่ยน url เป็นค่าอื่นที่ไม่ใช่ AS_URL = ปักธง "ตั้งเอง"
+       แล้ว asSeed จะถอยมือทั้งหมด · ล้างช่อง URL ให้ว่างเมื่อไหร่ = กลับสู่โหมดอัตโนมัติ
+       ธงอยู่ระดับเครื่อง ไม่ผูกบัญชี (กติกาเดียวกับ yao_notify ของ v4.9.1) */
+    function asManual() {
+      try { return localStorage.getItem(AS_K_MAN) === '1'; } catch (e) { return false; }
+    }
+
+    function asSetManual(on) {
+      try {
+        if (on) localStorage.setItem(AS_K_MAN, '1');
+        else localStorage.removeItem(AS_K_MAN);
+      } catch (e) {}
+    }
+
+    const _asFbCfgSave = fbCfgSave;
+    fbCfgSave = function (o) {
+      try {
+        if (o && Object.prototype.hasOwnProperty.call(o, 'url')) {
+          const u = String(o.url || '').trim().replace(/\.json.*$/i, '').replace(/\/+$/, '');
+          asSetManual(!!u && u !== AS_URL);
+        }
+      } catch (e) { asErr(e, 'cfgSave'); }
+      return _asFbCfgSave.apply(this, arguments);
+    };
+
+    // ── 2. ปลดของที่เวอร์ชันเก่าบล็อกไว้ ──────────────────────────
+    /* สเปกข้อ 4 — v5.3 ปิดตัวเองทันทีถ้า v5.2 ตั้ง provider เป็น firebase
+       ชี้ URL เดียวกันและใช้ชื่อโหนดเดียวกัน (fbClash) เพราะสองชั้นจะเขียนทับกันคนละรูปแบบ
+       เครื่องที่ครูเคยตั้งค่าไว้แบบนั้นจะไม่มีวันเห็นสัญญาณสดเลย — ย้าย v5.2 ไปโหนด hunters
+       ให้อยู่คนละที่กัน ทั้งสองชั้นจึงทำงานพร้อมกันได้ตามที่ออกแบบไว้แต่แรก */
+    function asUnblock() {
+      try {
+        if (typeof CS_CFG !== 'object' || !CS_CFG) return false;
+        if (CS_CFG.provider !== 'firebase') return false;
+        if (String(CS_CFG.url || '').replace(/\/+$/, '') !== AS_URL) return false;
+        if (String(CS_CFG.table || '') !== AS_NODE) return false;
+        if (typeof csCfgSave !== 'function') return false;
+        csCfgSave({ table: 'hunters' });
+        return true;
+      } catch (e) { asErr(e, 'unblock'); return false; }
+    }
+
+    // ── 3. บังคับเขียนคอนฟิกทุกครั้งที่เปิดหน้า ────────────────────
+    /* สเปกข้อ 1 — localStorage ถูกเขียนทับ "เสมอ" เครื่องที่เพิ่งเปิดลิงก์ครั้งแรก
+       เครื่องที่ค้างคอนฟิกรุ่นเก่า และเครื่องที่ถูกล้างแคชไป จึงพร้อมส่งเหมือนกันหมด
+       แต่จะเรียก fbCfgSave (ซึ่งตัดสาย SSE ของครูแล้วต่อใหม่) เฉพาะตอนค่าที่ใช้อยู่จริง
+       ยังไม่ตรงเท่านั้น ไม่งั้นจอครูจะกระพริบทุกครั้งที่สลับแท็บกลับมา */
+    function asSeed() {
+      try {
+        if (asManual()) { AS_SEEDED = fbOn(); return AS_SEEDED; }
+        asUnblock();
+        const pub  = asPub();
+        const want = { on: true, url: AS_URL, node: AS_NODE, pub: pub };
+
+        let cur = {};
+        try { cur = JSON.parse(localStorage.getItem(FB_K_CFG) || '{}') || {}; } catch (e) {}
+        if (!cur || typeof cur !== 'object') cur = {};
+        try {
+          localStorage.setItem(FB_K_CFG, JSON.stringify(Object.assign({}, FB_CFG_DEF, cur, want)));
+        } catch (e) {}
+
+        const c = FB_CFG;
+        if (!c || c.on !== true || c.url !== AS_URL || c.node !== AS_NODE || c.pub !== pub || fbClash())
+          fbCfgSave(want);
+
+        AS_SEEDED = fbOn();
+      } catch (e) { asErr(e, 'seed'); AS_SEEDED = false; }
+      return AS_SEEDED;
+    }
+
+    // ── 4. จังหวะส่ง ─────────────────────────────────────────────
+    /* ต้องมีรหัสฮันเตอร์อยู่จริงถึงจะมีอะไรให้ส่ง — ยืนอยู่หน้าแรก/หน้าเกทจึงเงียบสนิท
+       และเครื่องที่ถูกปลดธงผู้เผยแพร่ (เครื่องครู) ก็ไม่มีแถวไปปนในตารางห้อง */
+    function asAlive() {
+      try {
+        return !!(CURRENT_USER && typeof fbOn === 'function' && fbOn() &&
+                  FB_CFG && FB_CFG.pub !== false);
+      } catch (e) { return false; }
+    }
+
+    function asFlush(keepalive) {
+      try {
+        if (!asAlive()) return false;
+        fbPush(CURRENT_USER, keepalive === true);
+        return true;
+      } catch (e) { asErr(e, 'flush'); return false; }
+    }
+
+    /* หัวใจเต้นทุก 5 วินาที — ยิงแม้ค่าไม่ขยับ เพราะฟิลด์ at คือตัวบอกครูว่า
+       "ใครยังนั่งเล่นอยู่ตอนนี้" ซึ่งเป็นข้อมูลที่การส่งเฉพาะตอนมีการเปลี่ยนแปลงให้ไม่ได้
+       ข้ามให้เองตอนจอถูกพับ (สลับแอป) เพราะ visibilitychange ยิงไปแล้วหนึ่งครั้ง
+       และการยิงต่อขณะอยู่หลังจอเป็นการกินแบตของเครื่องนักเรียนฟรี ๆ */
+    function asBeat() {
+      try {
+        if (!asAlive()) return;
+        if (document.hidden) return;
+        AS_BEATS++;
+        fbPush(CURRENT_USER, false);
+      } catch (e) { asErr(e, 'beat'); }
+    }
+
+    function asStart() { if (!AS_T) { try { AS_T = setInterval(asBeat, AS_TICK); } catch (e) { asErr(e, 'start'); } } }
+    function asStop()  { if (AS_T) { clearInterval(AS_T); AS_T = null; } }
+
+    // ── 5. ปุ่มสลับโหมดเครื่อง (อยู่บนแถบตารางสดในห้องควบคุม GM) ────
+    /* fbEnsureDom ของ v5.3 สร้างแถบปุ่มไว้แล้ว ชั้นนี้แค่เติมปุ่มเพิ่มหนึ่งใบ
+       และต้องกันแทรกซ้ำเอง เพราะ gmRender ถูกเรียกทุกครั้งที่พิมพ์ค้นหา (กับดักข้อ 2) */
+    function asPaintBtn() {
+      try {
+        const b = document.getElementById('asPubBtn');
+        if (b) b.textContent = asPub() ? '📤 เครื่องนี้: ส่งข้อมูล' : '🚫 เครื่องนี้: ไม่ส่งข้อมูล';
+      } catch (e) {}
+    }
+
+    function asEnsureBtn() {
+      try {
+        const host = document.querySelector('#fbLive .fb-btns');
+        if (!host || document.getElementById('asPubBtn')) { asPaintBtn(); return; }
+        host.insertAdjacentHTML('afterbegin',
+          '<button class="gm-btn sm" id="asPubBtn" onclick="asTogglePub()" ' +
+          'title="ปลดธงนี้บนเครื่องครู เพื่อไม่ให้บัญชีครูไปปนในตารางห้อง"></button>');
+        asPaintBtn();
+      } catch (e) { asErr(e, 'ensureBtn'); }
+    }
+
+    function asTogglePub() { asSetPub(!asPub()); }
+
+    // ── 6. ห่อฟังก์ชันของชั้นล่าง ────────────────────────────────
+    const _asStartGame = startGame;
+    startGame = function () {
+      const r = _asStartGame.apply(this, arguments);
+      try { asSeed(); asStart(); asFlush(false); } catch (e) { asErr(e, 'startGame'); }
+      return r;
+    };
+
+    /* v5.3 ยิงรอบสุดท้ายให้เองใน wrapper ของ exitGame อยู่แล้ว ชั้นนี้จึงแค่ดับหัวใจ */
+    const _asExitGame = exitGame;
+    exitGame = function () {
+      const r = _asExitGame.apply(this, arguments);
+      try { asStop(); } catch (e) { asErr(e, 'exitGame'); }
+      return r;
+    };
+
+    const _asGmRender = gmRender;
+    gmRender = function () {
+      const r = _asGmRender.apply(this, arguments);
+      try { asEnsureBtn(); } catch (e) { asErr(e, 'gmRender'); }
+      return r;
+    };
+
+    // ── 7. ติดตั้งชั้นนี้ ─────────────────────────────────────────
+    (function asInstall() {
+      try {
+        asPub();     /* ปั๊มธงให้เครื่องที่ยังไม่เคยตั้ง ก่อนอ่านไปใช้ที่อื่น */
+        asSeed();
+        asStart();
+
+        /* สเปกข้อ 3 — ปิดหน้าต่าง/ออกจากเกม
+           keepalive คือสิ่งเดียวที่ทำให้คำขอรอดหลังหน้าเพจถูกทำลาย (v5.3 ใช้ท่าเดียวกันที่ pagehide)
+           v5.3 ยิงที่ pagehide เฉพาะตอนมีของค้าง (FB_DIRTY) ส่วนตัวนี้ยิงเสมอ
+           เพราะหัวใจ 5 วินาทีล้างธงนั้นทิ้งไปแล้วเป็นปกติ */
+        window.addEventListener('beforeunload', function () {
+          try { asStop(); asFlush(true); } catch (e) {}
+        });
+
+        /* สเปกข้อ 3 — พับหน้าจอ/สลับแอป (ทางเดียวที่มือถือใช้จริง beforeunload มักไม่ยิง)
+           ขากลับมาต้องยืนยันคอนฟิกใหม่ด้วย เผื่อมีแท็บอื่นของเกมไปแก้ localStorage ทับไว้ */
+        document.addEventListener('visibilitychange', function () {
+          try {
+            if (document.hidden) { asFlush(true); return; }
+            asSeed(); asStart(); asFlush(false);
+          } catch (e) { asErr(e, 'vis'); }
+        });
+
+        window.addEventListener('online', function () {
+          try { asStart(); asFlush(false); } catch (e) {}
+        });
+
+        /* แผง GM อาจถูกกางไว้ก่อนที่ชั้นนี้จะติดตั้งเสร็จ (เปิดหน้าค้างไว้แล้วโหลดใหม่) */
+        asEnsureBtn();
+      } catch (e) { asErr(e, 'asInstall'); }
+    })();
+
   </script>
 </body>
 </html>

@@ -15596,6 +15596,248 @@ exitGame = function() {
     CA_BUSY = !1;
   } catch (e) {}
   return r;
-};</script>
+};
+
+// ══════════════════════════════════════════════════════════════════════════
+//  ชั้นที่ยี่สิบสอง — v5.9 · MENU ICON ART
+//  (ไอคอนภาพจริงบนปุ่มเมนูหลักครบทั้ง 9 ใบ)
+// ══════════════════════════════════════════════════════════════════════════
+/*  ชั้นนี้ไม่แก้โค้ด v4.0-v5.8 เลย — ห่อฟังก์ชันแบบเดียวกับยี่สิบเอ็ดชั้นก่อนหน้า
+        ฟังก์ชันที่ถูกห่อมีแค่ **ตัวเดียว** คือ abSyncButtons ของ v4.6
+        ลบตั้งแต่บรรทัดนี้ถึงท้ายไฟล์ทิ้งได้ทั้งก้อน แล้วปุ่มทั้ง 9 ใบกลับไปเป็นอีโมจิเหมือนเดิม
+
+        ── ปุ่มเมนูหลัก 9 ใบมาจาก 4 ชั้นคนละที่กัน ──────────────────────────────────
+        แถวปุ่มล่าง (.g-actions) ไม่ได้ถูกเขียนไว้ที่เดียว — v4.0 วางไว้ใน HTML 5 ใบ
+        แล้วอีก 4 ใบถูกยัดเข้ามาตอนรันด้วยชั้นบน (v4.2 · v4.4 · v4.6) ตามลำดับนี้
+
+            📜 QUESTS      v4.2 แทรก afterbegin       (#qBoardBtn)
+            📊 STATUS      v4.0 ใน HTML               (onclick openStatus)
+            📈 ANALYTICS   v4.0 ใน HTML               (onclick openAnalytics)
+            🏆 LEADERBOARD v4.0 ใน HTML               (onclick openBoard)
+            🎒 SHOP        v4.0 ใน HTML               (onclick openShop)
+            📖 CODEX       v4.4 แทรกหลัง SHOP         (#cxBoardBtn)
+            ⚙️ SYSTEM CORE v4.6 แทรกก่อน SYSTEM SCAN  (#abCoreBtn)
+            🕳️ ABYSS       v4.6 แทรกก่อน SYSTEM SCAN  (#abAbyssBtn)
+            👁️ SYSTEM SCAN v4.0 ใน HTML · ตัวสุดท้าย  (onclick showHint)
+
+        ทั้ง 9 ใบถูกติดตั้งครบตั้งแต่ตอนโหลดหน้า (ทุกตัวติดตั้งใน IIFE ไม่ได้รอ startGame)
+        ชั้นนี้อยู่ท้ายไฟล์จึงเห็นครบทุกใบตั้งแต่วินาทีแรก ไม่ต้องรอเหตุการณ์อะไรเลย
+
+        **สารบัญปุ่มอยู่ที่ MI_BTNS ที่เดียว** ค้นด้วย id ก่อน ไม่มี id ค่อยตกไปหาจาก
+        onclick — กติกาเดียวกับที่ v4.4/v4.6 ใช้หาปุ่ม SHOP กับ SYSTEM SCAN
+        **ห้ามค้นด้วยข้อความบนปุ่ม** เพราะชั้นนี้เป็นคนลบอีโมจิออกเอง ค้นด้วยข้อความ
+        จะหาไม่เจอในรอบที่สอง (และกฎเดิมของ repo ก็ห้ามอ่าน textContent มาระบุตัวปุ่มอยู่แล้ว)
+
+        ── ทำไมต้องห่อ abSyncButtons ────────────────────────────────────────────
+        abSyncButtons() ของ v4.6 เขียน innerHTML ทับปุ่ม ⚙️ SYSTEM CORE กับ 🕳️ ABYSS
+        **ทุกครั้งที่ renderStats ทำงาน** (คือแทบทุกครั้งที่ HP/MP/ทองขยับ) ภาพที่แทรกไว้
+        จึงถูกล้างทิ้งพร้อมกับที่อีโมจิเดิมกลับมา — ถ้าไม่ห่อ ไอคอนสองใบนี้จะกะพริบหายไป
+        กลางเกมโดยไม่มี error ให้เห็นเลย · ปุ่มอีก 7 ใบไม่มีใครเขียนทับ (ป้ายตัวเลขของ
+        v4.2/v4.4 แตะแค่ textContent ของ span ตัวเอง ไม่ได้แตะทั้งปุ่ม) จึงแทรกครั้งเดียวจบ
+
+        ── ภาพเป็น data URI เท่านั้น (กฎไฟล์เดียวจบ) ──────────────────────────────
+        ห้ามเขียน <img src="1_QUESTS.jpg"> แม้ไฟล์จะอยู่ใน repo ก็ตาม ไฟล์นี้ถูกส่งต่อทาง
+        LINE แล้วเปิดจาก file:// เป็นปกติ อ้าง path ภายนอกเมื่อไหร่รูปแตกทันที
+        ขั้นตอน: ย่อ 72px → WebP q72 → base64 → เขียนลง MI_ART ด้วย embed_menu_icon_art.py
+
+        ทั้ง 9 รูปรวมกันกินราว 16KB (base64) = ราว 0.8% ของเพดาน 2MB — ถูกที่สุดในบรรดา
+        ชุดภาพทั้งหมดของเกม เพราะไอคอนแสดงจริงแค่ 22 CSS px (จอ ≤360px เหลือ 20)
+        72px จึงคมถึง DPR 3.2 แล้ว **อย่าดันขึ้นไปอีก** ที่ได้มาคือไบต์ที่เสียไปเปล่า ๆ
+        และ base64 ผ่าน terser ไปเฉย ๆ ไม่ถูกย่อแม้แต่ไบต์เดียว เติมกี่ไบต์ก็โตเท่านั้นเป๊ะ
+
+        MI_ART[key] ว่าง = ยังไม่ได้ฝังภาพใบนั้น → ปุ่มคงอีโมจิเดิมไว้ทั้งใบ
+        **ไม่มีรูปแตกและไม่มีคำขอเน็ตออกไปข้างนอก** ฝังทีละใบก็ได้ ไม่ต้องครบ 9 พร้อมกัน
+        (กติกาเดียวกับ CD_CARDS[].img ของ v4.7 และ ITEMS[].img ของ Item Asset Patch)
+
+        ── เลย์เอาต์: อีโมจิถูก "แทนที่" ไม่ใช่ "เพิ่มของซ้อน" ──────────────────────
+        ภาพถูกแทรกเป็นลูกตัวแรกของปุ่ม แล้วอีโมจิเดิมถูกตัดออกจากข้อความในจังหวะเดียวกัน
+        ปุ่มจึงไม่มีทั้งอีโมจิและภาพพร้อมกัน (ซึ่งจะดูรกและกินความกว้างซ้ำซ้อน)
+        .g-btn เป็น flex อยู่แล้ว ภาพจึงเรียงกับข้อความเองโดยไม่ต้องแตะ layout ของ v4.0
+        และ **ไม่มีการเพิ่ม/ลดลูกของ .g-actions สักตัว** กฎ :last-child ที่ทำให้
+        👁️ SYSTEM SCAN กินเต็มแถวจึงไม่ถูกแตะเลย (กับดักข้อ 11)
+
+        วัดจริงหลังฝังภาพครบ 9 ใบ: จอ 320 / 360 / 390 / 430 / 768 ไม่มีจอไหนล้นแนวนอน
+        และความสูงของแถวปุ่มเท่าเดิมทุกจอ เพราะกรอบไอคอน (22px) ยังเตี้ยกว่าความสูง
+        บรรทัดของปุ่มที่มีอยู่แล้ว **ถ้าจะขยายกรอบต้องวัดใหม่ทั้งชุด**                     */
+const MI_VER = "v5.9", MI_ART = {
+  quests: "data:image/webp;base64,UklGRqQEAABXRUJQVlA4IJgEAABQFACdASpIAEgAPpVAl0klo6GhLhdMALASiWMAvJxDEaFCP0JY69CvF+5N/GYvwS0q01bybahi07X9xOxGKu3TcnR+8eJCXdFQHuubM5b/RmSLiVQYO04/8SrtHf5d/qJeioLRANjtWKGIJnygHb9agW163NMSYdTBQPKvL1xb8pmcBpiu+M1OSbIsk90xBsllMXAtXEufR/Xr/QsXpx3VuBaaikfmRIGjepAA/v71qhsm753rttCw1dYoO+HOnvn/TOMgdDPeerJVkTn3k+yw6pOMHvWoet37OqNzljFHRywj2ZpUO1pmuAOswEKEQrt3u/Tmi8s41oTm68hFuIwmpwYnp++P9Yc43+qr27RnZ00yPe1eZhSjr+wbxq/3eR1ZnLirbtaQ/fUmJ1tEhaEuuI/MuV+x9DcQwYG2mbW4zH1q2FoVm5e8gTAj/ICWe5clWyTTiow5J1xOZkYhb5cPZ1xKeBDNYdlJlss888PPo1CHls7oBD5hNsLpwF0pcYPOr9+934cNGBBFBNd9hYM1rNiXmxtcTvEIkQPS1SFAjmDDqxYnk8yKahfGvIJxGhrxzGx3qwMBa+oaARTAX+xgD4gx8eX5hrexfVhhwZfo2vkScbiJKrnwFit3s5+3fb0mjFWAd8h+X7bvDnhMIX9dx4+6jgWmeECL8QUbf6fUfBPWtyQKGkPg9qqBVSAYUnDm3QmPeZMQO6hQH+rWIVkm27hX841VHBWrMmcwtWTb+tlnOKckEEP7bYVFMp2vs/SygFlkMCecuttj987j4lyrcMy/OhwIOKfNbw9OAij49OcecQbgI+pH0X67zzrzXLoZv9Eqi8EORdB7fZNmk472nI/fkNBoOkLl+UyTx54M2tpyh7Z9x0nmSfUI1xPZl0AwR5S1EvrH/pmK1SYdTT7uDnWe/gpq9XK8ml7lzKd2Z2bD2puRL6zCaiyEHQtjCsOVoADjoDN9y3yhqEVRA56tKzJKhqP8CWXtN0a1QdnBBxm+crOskv64IbNwFowvN9ox3XyJmyr5vq626S1oJTGEEZ4UHUUb2R2IpbaVEOCSqcVajqw3qI26w3KKnir4lQnkcStgdXCCbSH6ihOxp3sBc4JyJt329QaufiJddIWe/TGh3rL+v+Zy8t/BzHHtlWJzfBomXw2pWUigQuamuO3rWW++26/XYh0Ytd/Silo1PHZhRuhKy1t/5EOijn+2t0L1+Wwn0yIOjgYUnnXfzZTyzEfJ6jIXt5IOt/qni8OKIa/wzZ12jM9PqO99978WvvaJlFE+ev+ERcT36/088CsxIk+X8NLyzEi8pCOy/Luj3bn6ZTYmac9DVVJrKm41qBmL4PNfhcV1WIvgDnn8wjECroA+wCmNv6dBky0EiHFfn2PPeNOdPGK2G2xH2EF52R2hQSSj6rrFZCB8rEVFuIqLftuiyh/LOHs/ZRwCnxrp9hkDwcELo//tf/PUT38r75+3N+aq0KMrgOyHUTx43Rr0ERlyeBg6Ygy+jOXar1QQMMXfvuOcG6bUHpzy3kJSI2y4/q68eIYLZulwP8oAia4AZ+v5wAAAAAA=",
+  status: "data:image/webp;base64,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",
+  analytics: "data:image/webp;base64,UklGRmAFAABXRUJQVlA4IFQFAAAwFwCdASpIAEgAPpVGnEklpCMhLNgJELASiUWYAGU7sZbxb/CXuG+dkZqZluCvtI2T1uvwbHF4NaTKaJ5IdQ1NdXiCCW/MpVpUo0KCEgSjdG+avEu6rIrlsBV0r3b6/DGlIc3WgTsvcYUdzAwc4nxU3oW9xC/a/5E+yMSsLM/+i/qWS9Saas1NMqO/zZVbxqf/ovfh+W1x0Vf8SfHJOB67jb8woP7QD2vzywY6TtEe2lCHD3ZeK9qkjSFrIgFjw6qSiAD+/vWvn6HM1CmKD3qgwqtunAco1+7+BNBPQjrtOz7Rge0qPEz6V6RpVoJ3YBYgGAW5/siPWei6bcxl0XwsOE+fgE+K2B3zReAbvrrmZTU83wAvrCBj6KbDqAo0QS+6X3o5iwObJ9nX2nqexKTevV60vUtsxU24LdFrQrom0IKOnP37y2O8C3rRpE1p9PQvrIOr8Tn+dTRg8CLU8n0sEwIkfTDSp9v8udiw/UPBdlPp15pd6++/kLQQTTnmErpBHEaqjpB3syUZyvPCdC2CmaOcC32TGdWEdYqsoZY5dpOxuLSCEMH6NX3WIKu7QbGfwhSRpxhabMGww8raa0R70I5Fu/PQRblmWWF5a1yqD0YxU9NYGMpaaf03B2jEdRUle46tW5Ru9OmICSMIL6hMNeUwxflt2S7zS+ImAEzsmjmwy+Zgfpm2SyeMJikn0IUpfRyUG0Dxb2rJ505aRe84YxqY9KF5m28XUmSDZXy0OMWn6RFuVYbhj7dKXyf3hIYHF0haME9Eq0BxS4rpYfsP69czHsqX1YtYlj4Bxg5qzUr/aX1MH51wh774FhltBISVDdkMsj2xhFVclQnV5ISjvZuQpf2gbL4II/Pwbo9+pLjrSigCKiRQcZaB3p4Vb/xXxkCGZ+mEZ1Ti5wnYTqDY0VO3Ge01RULdgPNimrce6ao3L/plQVs2/Qybi3gkhZy8hA1AgSKXFRmC3v/g30iBzvfoBqH6m0IZgZn1Vuel3puOp0tWeElNdIzfDeL5JRytpPG4GuvkqH1VoOL1kvtFSViwHFRggnMNL8tgF1MdqNRfbNK32IeXNb/l9CcQZgq34ElyBHev/2ATCFW9Cm2BouFj97cl9BAUgrm92NldbzxWmTpphe0+TgyrSCjMourtFl+FXE496o5ZLmeEG4aeggGGuh9govH7PugmB50hNCM7dNfw+WIEXErGeDmzAM48I339uj3QcPPUPW77Jq3N9uKCZG5clzsPXobzRC4DyP+8bupk37qDv87DngObfOyPRZAVHZ9C0X5zO4yC8ckU8u1HPZQNAN6gflz9WC1+Ae7vD3HLjHYrUP5fv84VXuKwxp1mXRvIjYYZQWpGFm+4U5/oFuDdQgpHDqwlO3irbT343acxrPMduHbayqj2kFk9QAbGM5/EhbWQM9Ki6inRDOJjhIfo7xu62OrDu/wP9qOdxXFIvfFl9LIZaIAs0Zrncn6GX/FUOooYLNSRUiMxKGg5yXokKd+cjowUYXiaEfKl2AgCZZ1jXpL2XarP/ywdPyiRQ5awSKzV0gL5IXdmKueMfQd9r3K9B+sD/lvz3hATGxecmD5+2IsTZp5mvpFxZNC8Ia3kL3pv1o9OG6vayXdlNSIWturJ+IndkeM8XRgUtoParuVDgbrs8rWKsf5cxaA7cj3Zo65ouNMX+XuGBd6l9Z66VPSALQKlGe+sEgpYzq2UAOgnJmDs7EZhgQ7Jei7EeUutlm9MIRiViGYtWihlwWBpYjpL+V77zMX3+lySQBtGZEpBFzjueFHRSFADa5fydbivZhKeVV1oTJRgDXAAAA==",
+  leaderboard: "data:image/webp;base64,UklGRpgEAABXRUJQVlA4IIwEAADwEwCdASpIAEgAPpU6mEiloyIoLhi8kQASiUAYv5VyGCBVXFup59/fUp4rQdaa09UdWkNP8kX1nbnMjd3nY8Tlnphv4e7GcHP5ihSvnAdK9aYIv3DPfWninmutWIDZ1rrl9V0wGdjU3N49RVmijoy6wceOTq9gH1XBSXCjnhU1znoI/eoeXxoJPPK1+EnGBNsul6f4plMvv/k6VnBfLqt//hQIC9Y5gAAA/vyyCoqybvEoeuK+RSgm9aDnFs4PwoHTqqJKE5RbjS81I9iYfQN6oQfk9ep9wxOaP+/Lmk0+tzud48c69/NFomXAOIVWSF1VrHOfVZflv1E8bo9pu/oCjQub6sO/ytfliYrQhJ+rmSVMXz6qprJBT/ftq2DQUQ/YoHj6EWIZW21AYYopdB/44nemTt227XPsepjkJ9/mcf3NUaN16Wu7g9I7/Q65/s7O5+rYQUTtkLAgjj0gcQc0dYu6U/BUELvD7Sj9cFPx25zjQJyPmk+JBSvOp06S06uCE5iglEjTWFTywljRXHPYJco4nRZq3ckk1C+TZq9r3WCzb3m0j1ZMmGEHjgBLlJHcZo0M2xFeaKkWjeTZocqM32mIXK1eqDjiUhFNIjjS6d9iptcFaKPnDECPIvTUIOQ09DtNGTyknqPn9oT1dGMaKF5TRLC/sdPoG5q1+bQbYljEiUZ+bJp+XWv+vrMLzq+CiBaFUrUzETCjj9W5+sh1NLpDS/Xi4zvYo6ok25NGGVHK7KlwMCKxprQbHN3/qyI6Z4dctSgNHCUNxazPHya2mOOmJ0EN+0E6dMgKqTg/8XP6Js2PltHY7szCWIwS+wu2KIIQ1gh9AqzUwLwnj/wVfPwdakE3gAkLj6vf51e8QY4pxcHutI6+qMupNZ1+HUrk6QvTdf+RNwsR0d8C7Ecy1E+U05qHb80QO9Iq22ED5ZwoMTpF/zPxUKEBUYzCKOXCBu2E78LgGeWgfbiXfolxA381y68JMPuG9Yr4ZwZIOOs433d6Hnl/zy6f9PnsQozd8EqnE8hBUJAf+3ysqs9L6g3ScuC6cYLuV1ZfFe/Be5EMcUUSh+9sYfQbSu6rJDWuNkkdNDEw2o7kUGM/VshetlitUYmffvDPdjyaTT3c+rt+KEJFX+lMpNGUZPnI72Z0iGLgt+P7Xow3aIcjeX7s1Nt64JmZ30GKSA+s4swMnO9FSsW1V501q7G32vJiptn9xRqEhZDJ7eNFjE0nilZX+oslbAknOJ6gr3GWpW0cTZ19YDwxyjAPiKbd6n+UnXa4ggDdxEEMewfvFm5+4O8P2dcstw5LeSf3uRg0CMMbrBYnwnrHST7S0dUIH3K4raH2f4LBVV2VTtkdI0aVymuxtgzJvFYSmOKHMYZEc9/EkRF+orSTvOKerW0EAhUnzn9mLlMxuYF/iO/CYdBFMRdScATceTVy/fYEPP7GOEZSf/5R11opK6EKQ2eVmxIoZLqpvJa3RJCK4TZmUvWWC2IPdHlc6P3Zh2TUySgHgu+U4GVL42HmGcu9+7kBvtLNQ7M7rgbN1INFIBcAAAA=",
+  shop: "data:image/webp;base64,UklGRigFAABXRUJQVlA4IBwFAADwFgCdASpIAEgAPpVAmEilo6IhLhXdILASiWIAw2iYkXGrRO8HbwDQm87ezWHI0Duu73zzKWEml3Z79A7pe+Rml8fClmvsXojXhQaKH8zcgQz2s9FRkpNpHqMeucckKIxsNPJk1+rbwSaE5eMGukX8ZWhxx+AvCuVXMMWjPB6SgoVwxruxJB7AT+Roj0uqdSC1jevWX19t0pS6jTX3gEUDDtszFpeH0PkB2beUbexgpd2NzWNA/tzFOUYue7ySc6AA/v5tR0M/3vaGFf37LxPGEP28/EkfBtFQGFm3Tr44wVJn+q7WSIuQiMoVR5LCKlR2TfcU9X9QoAj+Gcys4pVq6kHESShs5groUw74Ep3HbrdPikys+3ip7wLaT+k1bdmyRjBy+SJ9yIuDUFGhjoVH3+e9CAPVc9Wmbf+Nv1f2jEv+5g6UUNW3NU8RSzGHrevmlSgUtUE50bE65+ucx4iv5SapJ7oLrktFMTN6BtzZT5YiPpXpzF+iHusfrMZEU7mVlvfp7z2XnumDrcBUiK8Wid8fFOWnKaifKvrqoeUcI7jWwjHfMdYFhtHt0+Lt37OhtzM7J6oUZ9i/OoPuyt25MjMKun3xF6i2V6gRem03xx2dqWWJfuhDSHwFYJkMCmXeacuZ//44t2WxSCmUc4KCAVWk1EPHzRlt7TA/Da35v8u5kepKecrWfw1pHKBPEJcKz69aM//nnyajmL6wDvk2n5NKiBLqWcn4ggjir6kdD+hz+6qoSkimWRiF0v59UTsJguXJ5TTSPPlDWS5cAJeYYLe5WdSkuCBp+5OWmIPvRIwFmZAGpHlTYJAxneijVZ4wKnhp7NnrYSmGNpGzh6QvcP7FFTJFpLKMav34eazEU+rPV4XVqVncy2z9r2KmuxsUfpzljW4/mKt3qsIKhr/IIBM9Kc7bNT+Mx6ow1QjXBhbN3gBcIfGbmTrUl6EsqGj7faSCK01uHImiS3sb+a7i1Kwht9DY+UbowTzMfVc7Lp+zBAHL/pJPZCF2++xstL3+cMEU9VtB9mt6+NKmr3qvn0SGJey1QQu8ocZDhccafS6cAhh2pgHvSTKBwGATS/tEUCsjPmli+peVXsXIwH+LK/oXqBZhp2Jz9MVvRkImyRHwNPXf4CP+HYzlxfozlgUfMS5pTWocBztUU7oJUCDGmOMIn5W5Wq9ZOMwiprNAFIC59843im8WaGa5phcJybSuw77TNaImeciego9y7oY/YHTGgXP5fEtRXoxFhqKys45wuXf4lFYjpqbRScbgwgrAnS/+fUwLIVgPkdvjgiUl37HUjY8zyFux/7q9HSqbjQc3pCW1caGhW2Ahbzf320WiZU4Ma3M6wXdheX8Z3SFWAXZEPNIcbNP7D7IkOVSTpeS0aOC/f0EwHM62fpwH7T5ZWNhsm0nCJGX40tk6WVdfu1EYxQDfgyZe/Jl1qqgvbUE1OiKQrn6AiKjn5FI+nZSNjNW4dpvGP0m4i9KvX3PWzhiX7bYGMbL9mPRkrMTyzviIOdx/oU++15d2c1T7Tbs88pkTxmr4K3pJ3RvZyUDpjLgEaV0KZ4C6/YSZI8melXKrL993U81PDlmbDlVhxfewNY5ZVv4r/BuVlnCSrIUqAOGVr1Ts7sg3w9n/9j+2J9BhUemj0FEiAFERv7jeZWF7f2IStctHqMlUMR8SZX6tH88qR98AaUzMwNcYPl1xquavcuf4sHIeyPNfSUHsrvAPt619oj/d9TgAAAA=",
+  codex: "data:image/webp;base64,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",
+  core: "data:image/webp;base64,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",
+  abyss: "data:image/webp;base64,UklGRpICAABXRUJQVlA4IIYCAACwDwCdASpIAEgAPpVEnkulo6KhqPJI4LASiWUAyqy8jPIts+qsPXX1Fq53kc+AiitIJzvDwCIJKYLreEWGGCek//S0JKzsCtFvebcGL6FkTEPmN5bkg1p8+suXeroJbQZmhFQl4and+7ruktcL+rK4n5u5l83vALE1sSdoEdDNMUUq8G94AAD++8Pt+xLXzt7qRBh0IqE5GbFVn6rTOLiDHRZGdhBMNMIIou64TiObecBNdD1BFeK+cGzcAOGWXHppem345bpQPN/lDgSdGUwXezILuN/2og+uwmCRXAKwHu8+YcYgwCsdrzjX82dXzdpjv1JlV2dTuSzAkVrWIcmBQlPlu51SS0NTqZ6cd6+pJcAZkndQyNrCf7lX67UEgZC5KyLe1r+vJITdEIsmMteYxVVQqG3MTD+wPTLVnYeCCQSX+guOiHB4irADGVsRC6ZBpWf8yABR8OuX50PMJhUKJzTionQiFCm4NfhjkaCyCF2eRtcoT/UU5C/ZJC/fjBLeqNfBJWViFcFfZWoAjdKvBvCutI1p/j5RxqON0J0SlkkWWTcWKPdFe+EObU35acTHxsuDwlFB603rqCZpolj7Hn6ZTII7PqfVHTj6rpfpp9Pgv4vzjvmZc0MD+Cbt87s6G7yLTk337YGxWCbqnwwxbgAYQfsnap2Xq9VSfuAUfcbRFoUeMxcIClqZNFRIFYykKTcyeHJ6n7NmZsIZ0TEPitHCAI8RgdFP65dq18XDrJNY/aB27JdbEZm3BptG/LGVfQmgos+Gd7PxpcyVkKetUm7b/woZ2fV5Sbx8z9dYr4TxHQkHfmTonaNc9mhUrbQ0tlwWaLTsYIT9zhUWDUqIZs53wAAA",
+  scan: "data:image/webp;base64,UklGRuwEAABXRUJQVlA4IOAEAABQFQCdASpIAEgAPpE6l0gloyIhL1leILASCWIAv2vfUvBwvjx8cJp02CBQNPZf1405EPAtG9J3SoTV/KBcdWTYKu14+vUGbMZ+p7l4KPiBK/ij/8wBTbW55No+eCb2o5hDkWa7CR3kqtnwVHlwnaj2pTr6DuETJeKq8nVzCAXJHA1NH64AgAFO3HDzyDCcGpQGs9iwG7CTVpIXx48MF/OBH+vmGoapsNz55DX7nfpmHwBqkAD+/oboe6MRnHYiVndvuDy5jAqF08LupjfoywNaytt3OGXCrMFmPec63+dM5Iq5+xtm3nD3jeqxKn/uVMB7Vb0UEIZf3vvvqNueRvJG1hhEcyRqlbtbDEZigolC1bs68mVN7r7ec7ZxEomy0byYLx59Ymm5NVXxv7x+Mdi/o9CPwdTJ2MqeNZ7LdnqW+6WV6jL0KSQ8qhdMmX/leM5s6Xs9X37mvV2wSr4jIZkFQxpn1Kt1WavOKhQikJ3WaNYibyTP0D1vKEI6zkm+dno9mFKz/ZrmYYcuX7bBsnR9Rom9El4J8aQParpJhis7X7Y7w3DHqK09KdLkG01LHQnVvmTa6baBFJL/FxyD5GNwYHmZ09UN//rv2tJhOGYyc+bo1EOc1nBHPM9ViLWqJPmc3hLdnD9k78FsD0J/wesBi1fv1Z3/CkGJxiLDpxX2SYr5dspMTjcaMrVI/5MMQI1HJZ4C36YDM/Aj3CRwLQrzKb3Vk8g7nN3zDlu6d4HMDiChMCp8xz6saQ6ghiU0s1IDLFxUcegGXq10ion3fVgvrx0gZzJHVZWezds+078ddG8uR2GFj34z4opC+dcrQBk3Dy+IIWDsD3q0Z/8DrXP3/yU5OdqIQgNc2Ntmu++0ZBA6hiLwU62eXjkznMXyodddy0HDSmFdl2jTatLd/eLnDCEfpN/zvfLLW3YYY0EwFAKDmX5aP6K8296n6PD30dtRAUUVcFXB1kiCrOCYUNqH/QVp3MZRyZENsyMDxJeKx5x7Jf6udhIoS5Ct7fku7KZPvli0Ng4FcsZ6KpfRMuFbbL1fWqK+ARmvP2xfkHJ6oyEqhKdqeWQG5E44+K7bx0Zg0y+Y3eYesPQrTNQbo1TGAhZI6qJl8uSJsgNB1JQH0bFLTXw5Zy+NeLgmw7y722XWhW46xFVeZxuvxlcOtpLMT99Craiso/5KDJLgQrsqf5BLOr8+2v0P8emqBJxntwIUEwCIAoVeDH62O0W5OsY/9FHpQTEFcnYh8dPbaE61UXCsERC6H6bgt3oyIIZcllah+0tXk1JF1F3NcNLiunBwBBilZgGxyTiCFvE055PcqiZbMGX+j01sNUmCgwSvhNeCoAXdJT707W5ZwXoT/yaYq49K4AFEW10TG97W/RsHWWc2mH9jtxygz+cSv+98SArszGmMgxqFjZkgOW2KCvCe9IWt/bebXa/QojsWtsm4wYeeYg+y/kUFowK5lLwyJnLg3JPGvoysoKtLpOAKPiRhAiqjA4EDsFsNbxJK2IaML+zbJu+X3ZLzpw/cUODHnm6LUAsQt4IC684autT5DMB81zoTOhGi7nIKnqCrdgW8O0XXQGFYlpXWt3i9lzQaGU7OVfgXmOqpHMQ+HcXATJlGtT0mQEWhFMPeJJ3FMUTponOx0YKgQrsxcgjIUAAAAAA="
+}, MI_BTNS = [ {
+  key: "quests",
+  id: "qBoardBtn",
+  hook: "",
+  emoji: "📜",
+  file: "1_QUESTS"
+}, {
+  key: "status",
+  id: "",
+  hook: "openStatus",
+  emoji: "📊",
+  file: "2_STATUS"
+}, {
+  key: "analytics",
+  id: "",
+  hook: "openAnalytics",
+  emoji: "📈",
+  file: "3_ANALYTICS"
+}, {
+  key: "leaderboard",
+  id: "",
+  hook: "openBoard",
+  emoji: "🏆",
+  file: "4_LEADERBOARD"
+}, {
+  key: "shop",
+  id: "",
+  hook: "openShop",
+  emoji: "🎒",
+  file: "5_SHOP"
+}, {
+  key: "codex",
+  id: "cxBoardBtn",
+  hook: "",
+  emoji: "📖",
+  file: "6_CODEX"
+}, {
+  key: "core",
+  id: "abCoreBtn",
+  hook: "",
+  emoji: "⚙️",
+  file: "7_SYSTEM_CORE"
+}, {
+  key: "abyss",
+  id: "abAbyssBtn",
+  hook: "",
+  emoji: "🕳️",
+  file: "8_ABYSS"
+}, {
+  key: "scan",
+  id: "",
+  hook: "showHint",
+  emoji: "👁️",
+  file: "9_SYSTEM_SCAN"
+} ];
+
+/* ── คลังภาพ: data URI ของไอคอนทั้ง 9 ใบ ────────────────────────────────
+       เขียนโดย embed_menu_icon_art.py เท่านั้น อย่าแก้มือ
+       (สคริปต์แทนที่เฉพาะเนื้อในเครื่องหมายคำพูดของแต่ละคีย์ ไม่แตะโครงรอบ ๆ) */
+/* ไอคอนพังห้ามลามไปทำเกมพัง — ทุกจุดหุ้ม try/catch แล้วเขียนลง Error Log ของ v4.3 */
+function miErr(e, w) {
+  try {
+    "function" == typeof gcErrPush && gcErrPush("menuicon", (w || "") + ": " + (e && e.message || e), MI_VER, e && e.stack);
+  } catch (x) {}
+}
+
+function miArt(key) {
+  const s = MI_ART[key];
+  return "string" == typeof s && s.length > 32 ? s : "";
+}
+
+/* ── สไตล์ ───────────────────────────────────────────────────────────────
+       แทรกครั้งเดียว (กติกาข้อ 2 ของ CLAUDE.md: ตัวที่ยัด DOM ต้องกันแทรกซ้ำเสมอ)
+
+       กรอบไอคอนตรึงขนาดเป็น px ตายตัวและเตี้ยกว่าความสูงบรรทัดของปุ่มอยู่แล้ว
+       แถวปุ่มจึงไม่สูงขึ้นเลย · ใช้ margin-right ที่ตัวกรอบ **ไม่ใช้ gap ของ flex**
+       เพราะ gap จะไปบวกทับ margin-left ของป้ายตัวเลข (.q-badge / .cx-badge / .ab-badge)
+       ที่ชั้นล่างตั้งไว้แล้ว แล้วป้ายจะกระเด็นห่างออกไปเกินจริง
+
+       object-fit:cover ใช้ได้เพราะต้นฉบับเป็นจัตุรัส 350x350 ทั้ง 9 ใบ ไม่มีอะไรถูกครอบทิ้ง
+       (ต่างจากไอคอนไอเทมของ Item Asset Patch ที่สัดส่วนเพี้ยนกันสุดขั้ว จนต้องถมเป็น
+        จัตุรัสตั้งแต่ตอนฝัง) ถ้าวันหนึ่งเปลี่ยนไปใช้ภาพที่ไม่ใช่จัตุรัส ต้องถมก่อนฝัง       */ const MI_CSS = ".mi-ico{flex:0 0 auto;display:block;width:22px;height:22px;margin-right:6px;" + "border-radius:6px;overflow:hidden;border:1px solid rgba(255,200,69,.45);" + "background:rgba(4,8,14,.55);box-shadow:0 0 6px rgba(255,200,69,.16);}" + ".mi-ico img{display:block;width:100%;height:100%;object-fit:cover;" + "-webkit-user-select:none;user-select:none;pointer-events:none;}" + ".g-btn.mi-on{line-height:1.25;}" + 
+/* จอแคบสุดที่รองรับ (320px) ตัวอักษรกับกรอบต้องถอยให้กันเล็กน้อย ไม่งั้นข้อความ
+         ยาว ๆ อย่าง "LEADERBOARD — อันดับห้อง" จะตัดคำแล้วดันปุ่มทั้งแถวสูงขึ้น */
+"@media (max-width:360px){.mi-ico{width:20px;height:20px;margin-right:5px;}}";
+
+function miEnsureStyle() {
+  if (document.getElementById("miStyle")) return;
+  const st = document.createElement("style");
+  st.id = "miStyle", st.textContent = MI_CSS, (document.head || document.documentElement).appendChild(st);
+}
+
+/* หาปุ่มจากสารบัญ — id ก่อน แล้วค่อยตกไปหาจาก onclick (กติกาเดียวกับ v4.4/v4.6) */ function miFind(def) {
+  if (def.id) {
+    const byId = document.getElementById(def.id);
+    if (byId) return byId;
+  }
+  if (!def.hook) return null;
+  const act = document.querySelector(".g-actions");
+  return act && Array.prototype.filter.call(act.children, function(b) {
+    return -1 !== (b.getAttribute("onclick") || "").indexOf(def.hook);
+  })[0] || null;
+}
+
+/* ตัดอีโมจินำหน้าออกจาก "โหนดข้อความตัวแรกที่มีเนื้อ" เท่านั้น
+       ตัดเฉพาะตอนขึ้นต้นด้วยอีโมจิที่สารบัญระบุไว้จริง ๆ — ถ้าชั้นบนเปลี่ยนข้อความบนปุ่ม
+       ไปเป็นอย่างอื่น จะไม่มีอะไรถูกตัด (ปลอดภัยกว่าการเดาด้วย regex อีโมจิแบบกว้าง ๆ
+       ซึ่งกินตัวอักษรอื่นที่ไม่ได้ตั้งใจไปด้วยได้) */ function miStripEmoji(el, emoji) {
+  if (!emoji) return;
+  const kids = el.childNodes;
+  for (let i = 0; i < kids.length; i++) {
+    const n = kids[i];
+    if (3 !== n.nodeType) continue;
+ /* 3 = text node */    if (!n.nodeValue.trim()) continue;
+ /* ช่องว่างล้วน ข้ามไปหาตัวถัดไป */    const t = n.nodeValue.replace(/^\s+/, "");
+    return void (0 === t.indexOf(emoji) && (n.nodeValue = t.slice(emoji.length).replace(/^\s+/, "")));
+ /* แตะแค่โหนดแรกที่มีเนื้อเสมอ */  }
+}
+
+function miDecorate(def) {
+  const el = miFind(def);
+  if (!el) return !1;
+  const art = miArt(def.key);
+  if (!art) return !1;
+ /* ยังไม่ฝังภาพใบนี้ → คงอีโมจิเดิมไว้ */  const first = el.firstElementChild;
+  if (first && first.classList && first.classList.contains("mi-ico")) return !0;
+  miStripEmoji(el, def.emoji);
+  const box = document.createElement("span");
+  box.className = "mi-ico";
+  const img = document.createElement("img");
+  return img.src = art, img.alt = "", img.setAttribute("aria-hidden", "true"), img.draggable = !1, 
+  box.appendChild(img), el.insertBefore(box, el.firstChild), el.classList.add("mi-on"), 
+  !0;
+}
+
+/* ตัวประสานกลาง — เรียกได้ถี่แค่ไหนก็ได้ ปุ่มที่ใส่ภาพไว้แล้วจะออกตั้งแต่บรรทัดแรก */ function miPaint() {
+  try {
+    miEnsureStyle();
+    for (let i = 0; i < MI_BTNS.length; i++) try {
+      miDecorate(MI_BTNS[i]);
+    } catch (e) {
+      miErr(e, "decorate:" + MI_BTNS[i].key);
+    }
+  } catch (e) {
+    miErr(e, "paint");
+  }
+}
+
+// ══ ห่อฟังก์ชันของชั้นล่าง ════════════════════════════════════════════════
+/* v4.6 เขียน innerHTML ทับปุ่ม ⚙️ กับ 🕳️ ทุกครั้งที่วาดสถานะ → ต้องใส่ภาพคืนทันที
+       ใส่คืน "หลัง" ของเดิมทำงานจบเสมอ ไม่งั้นจะไปแทรกภาพแล้วโดนเขียนทับในบรรทัดถัดไป */ if ("function" == typeof abSyncButtons) {
+  const _miAbSyncButtons = abSyncButtons;
+  abSyncButtons = function() {
+    const r = _miAbSyncButtons.apply(this, arguments);
+    try {
+      miPaint();
+    } catch (e) {
+      miErr(e, "abSyncButtons");
+    }
+    return r;
+  };
+}
+
+!function miInstall() {
+  try {
+    miPaint();
+  } catch (e) {
+    miErr(e, "install");
+  }
+}();</script>
 </body>
 </html>

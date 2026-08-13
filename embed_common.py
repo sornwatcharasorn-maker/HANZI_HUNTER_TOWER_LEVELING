@@ -24,6 +24,7 @@ HARD_LIMIT = 2000000          # เพดานจริงของไฟล์
 FALLBACK_KB = 1953            # ใช้ตอนยังไม่มีไฟล์แจก = พฤติกรรมเดิมก่อนมีขั้นตอนย่อ
 
 SRC_REL = os.path.join('src', 'hanzi_hunter_tower_v3_1_intro.src.html')
+SRC_ROOT_REL = 'hanzi_hunter_tower_v3_1_intro.src.html'
 DIST_REL = 'hanzi_hunter_tower_v3_1_intro.html'
 
 
@@ -36,11 +37,17 @@ def resolve_game(here):
     """คืน (ไฟล์ที่ต้องแก้, ไฟล์แจก, รากrepo)
 
     มีต้นฉบับ → แก้ต้นฉบับ · ไม่มี → ตกกลับไปแก้ไฟล์แจกตรง ๆ แบบเดิม
+
+    ต้นฉบับอยู่ได้สองที่ **และต้องลองทั้งคู่เสมอ** — ตั้งใจให้อยู่ที่ src/ แต่เจ้าของ repo
+    อัปโหลดผ่านเว็บ GitHub ไฟล์จึงมาโผล่ที่รากrepo ได้ (กติกาเดียวกับ resolve() ของ
+    build_minify.js) ถ้าลองแต่ src/ จะตกไปแก้ "ไฟล์แจก" ตรง ๆ ซึ่งการ build รอบถัดไป
+    จะทับทิ้งทั้งหมดโดยไม่มี error ให้เห็นเลย (กับดักข้อ 28)
     """
     for root in _roots(here):
-        src = os.path.join(root, SRC_REL)
-        if os.path.exists(src):
-            return src, os.path.join(root, DIST_REL), root
+        for rel in (SRC_REL, SRC_ROOT_REL):
+            src = os.path.join(root, rel)
+            if os.path.exists(src):
+                return src, os.path.join(root, DIST_REL), root
     for root in _roots(here):
         dist = os.path.join(root, DIST_REL)
         if os.path.exists(dist):

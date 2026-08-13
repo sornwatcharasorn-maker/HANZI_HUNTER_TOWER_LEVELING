@@ -1,0 +1,5 @@
+node_modules/
+__pycache__/
+*.pyc
+*.log
+live_roster_log.txt

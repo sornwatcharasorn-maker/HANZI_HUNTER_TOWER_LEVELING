@@ -21,13 +21,16 @@ import sys
 from PIL import Image, ImageDraw
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-GAME = os.path.join(HERE, 'hanzi_hunter_tower_v3_1_intro.html')
-if not os.path.exists(GAME):                       # เผื่อวางสคริปต์ไว้ในโฟลเดอร์ย่อย tools/
-    GAME = os.path.join(os.path.dirname(HERE), 'hanzi_hunter_tower_v3_1_intro.html')
+sys.path.insert(0, HERE)
+import embed_common
+# ตั้งแต่มีขั้นตอนย่อไฟล์ ต้องฝังลง "ต้นฉบับ" เสมอ แล้วสั่งย่อใหม่ปิดท้าย
+# (ฝังลงไฟล์แจกตรง ๆ จะถูกการย่อรอบถัดไปทับทิ้ง)
+GAME, DIST, ROOT = embed_common.resolve_game(HERE)
 
 TARGET_W = 800      # เพดานความกว้าง — ไม่ขยายภาพเกินขนาดต้นฉบับ (ขยายแล้วได้แต่ความเบลอกับไฟล์ที่ใหญ่ขึ้น)
 QUALITY = 82        # เท่ากับ SN_WARP_ART ที่ใช้อยู่
-BUDGET_KB = 1953    # เพดานไฟล์รวมตาม CLAUDE.md = 2,000,000 ไบต์ (~2MB แบบทศนิยม)
+# เพดานฝั่งต้นฉบับที่เทียบเท่า 2,000,000 ไบต์ของไฟล์แจก (ดู embed_common.py)
+BUDGET_KB = embed_common.budget_kb(GAME, DIST)
 
 #   เดิมตั้งไว้ 2048 ซึ่งเป็น 2 MiB = 2,097,152 ไบต์ — หลวมกว่ากฎที่เขียนใน CLAUDE.md อยู่ ~97KB
 #   บันไดคุณภาพจึงไม่เคยถูกไล่ลงเลยทั้งที่ไฟล์ทะลุเพดานตามเอกสารไปแล้ว
@@ -94,6 +97,7 @@ def main(path, quality=None, ruler_on=False):
         sys.exit('หยุด: ไฟล์รวมทะลุเพดาน %d KB แล้ว ลด TARGET_W หรือ QUALITY ลง' % BUDGET_KB)
 
     io.open(GAME, 'w', encoding='utf-8').write(src)
+    embed_common.rebuild(ROOT)          # ต้นฉบับเปลี่ยนแล้ว → ย่อไฟล์แจกใหม่
     if not ruler_path:
         print('\nฝังภาพเรียบร้อย — สัดส่วนภาพเท่าเดิม จึงไม่ต้องวัด TR_ART_Z ใหม่')
         return

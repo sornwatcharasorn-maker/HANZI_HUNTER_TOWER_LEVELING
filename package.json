@@ -1,0 +1,14 @@
+{
+  "name": "hanzi-hunter-tower-leveling",
+  "private": true,
+  "version": "5.7.0",
+  "description": "เครื่องมือย่อไฟล์เกม — ต้นฉบับอยู่ที่ src/ ไฟล์แจกอยู่ที่รากrepo",
+  "scripts": {
+    "build": "node build_minify.js",
+    "check": "node build_minify.js --check"
+  },
+  "devDependencies": {
+    "clean-css": "^5.3.3",
+    "terser": "^5.50.0"
+  }
+}

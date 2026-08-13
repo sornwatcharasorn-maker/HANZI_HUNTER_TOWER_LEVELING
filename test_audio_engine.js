@@ -39,7 +39,15 @@ function head(s) { log('\n══ ' + s + ' ' + '═'.repeat(Math.max(0, 62 - s.l
   await wait(400);
 
   // ── ล็อกอินเข้าเกม ───────────────────────────────────────────
-  await ev(() => enterGate());
+  /* v5.6 · RULES GATE บล็อก enterGate() ไว้จนกว่าจะรับทราบกติกา กล่องล็อกอินจึงยังไม่โผล่
+     แล้ว page.fill() ด้านล่างจะค้างรอ actionability จนหมดเวลา
+     ต้องเข้าทางเดียวกับที่นักเรียนทำจริง: เลื่อนอ่านให้สุด → rgAck() (ซึ่งเรียก enterGate() ให้เอง) */
+  await ev(() => { const b = document.getElementById('rgBody'); if (b) b.scrollTop = b.scrollHeight; });
+  await wait(150);
+  await ev(() => {
+    try { rgScrollCheck(); } catch (e) {}
+    if (typeof rgAck === 'function') rgAck(); else enterGate();
+  });
   await wait(700);
   await ev(() => switchTab('register'));
   await page.fill('#reg-id', 'audiotest');

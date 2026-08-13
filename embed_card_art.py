@@ -24,11 +24,14 @@ import sys
 from PIL import Image
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-GAME = os.path.join(HERE, 'hanzi_hunter_tower_v3_1_intro.html')
-if not os.path.exists(GAME):                       # เผื่อวางสคริปต์ไว้ในโฟลเดอร์ย่อย
-    GAME = os.path.join(os.path.dirname(HERE), 'hanzi_hunter_tower_v3_1_intro.html')
+sys.path.insert(0, HERE)
+import embed_common
+# ตั้งแต่มีขั้นตอนย่อไฟล์ ต้องฝังลง "ต้นฉบับ" เสมอ แล้วสั่งย่อใหม่ปิดท้าย
+# (ฝังลงไฟล์แจกตรง ๆ จะถูกการย่อรอบถัดไปทับทิ้ง)
+GAME, DIST, ROOT = embed_common.resolve_game(HERE)
 
-BUDGET_KB = 1953    # เพดานไฟล์รวมตาม CLAUDE.md = 2,000,000 ไบต์ (~2MB แบบทศนิยม) — นักเรียนโหลดผ่านเน็ตมือถือ
+# เพดานฝั่งต้นฉบับที่เทียบเท่า 2,000,000 ไบต์ของไฟล์แจก (ดู embed_common.py)
+BUDGET_KB = embed_common.budget_kb(GAME, DIST)
 
 #   เดิมตั้งไว้ 2048 ซึ่งเป็น 2 MiB = 2,097,152 ไบต์ — หลวมกว่ากฎที่เขียนใน CLAUDE.md อยู่ ~97KB
 #   บันไดคุณภาพจึงไม่เคยถูกไล่ลงเลยทั้งที่ไฟล์ทะลุเพดานตามเอกสารไปแล้ว
@@ -128,6 +131,7 @@ def main(argv):
         out = CARD_RE.sub(lambda m: m.group(0)[:m.start('data') - m.start()] +
                           m.group(0)[m.end('data') - m.start():], src)
         io.open(GAME, 'w', encoding='utf-8').write(out)
+        embed_common.rebuild(ROOT)          # ต้นฉบับเปลี่ยนแล้ว → ย่อไฟล์แจกใหม่
         print('ถอดภาพออกครบทุกใบแล้ว — การ์ดกลับไปใช้อีโมจิเหมือนเดิม')
         return
 
@@ -186,6 +190,7 @@ def main(argv):
         sys.exit('หยุด: ไฟล์รวมทะลุเพดานแล้ว ไม่เขียนทับ')
 
     io.open(GAME, 'w', encoding='utf-8').write(out)
+    embed_common.rebuild(ROOT)          # ต้นฉบับเปลี่ยนแล้ว → ย่อไฟล์แจกใหม่
     print('ฝังภาพเรียบร้อย %d ใบ%s' % (len(jobs), (' · ยังขาดอีก %d ใบ' % len(missing)) if missing else ''))
     if kept:
         print('(ใบที่ไม่ได้สั่งฝังรอบนี้ ภาพเดิมยังอยู่ครบ)')

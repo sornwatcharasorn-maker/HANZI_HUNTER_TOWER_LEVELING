@@ -31,11 +31,14 @@ import sys
 from PIL import Image
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-GAME = os.path.join(HERE, 'hanzi_hunter_tower_v3_1_intro.html')
-if not os.path.exists(GAME):
-    GAME = os.path.join(os.path.dirname(HERE), 'hanzi_hunter_tower_v3_1_intro.html')
+sys.path.insert(0, HERE)
+import embed_common
+# ตั้งแต่มีขั้นตอนย่อไฟล์ ต้องฝังลง "ต้นฉบับ" เสมอ แล้วสั่งย่อใหม่ปิดท้าย
+# (ฝังลงไฟล์แจกตรง ๆ จะถูกการย่อรอบถัดไปทับทิ้ง)
+GAME, DIST, ROOT = embed_common.resolve_game(HERE)
 
-BUDGET_KB = 1953    # เพดานไฟล์รวมตาม CLAUDE.md = 2,000,000 ไบต์ (~2MB แบบทศนิยม)
+# เพดานฝั่งต้นฉบับที่เทียบเท่า 2,000,000 ไบต์ของไฟล์แจก (ดู embed_common.py)
+BUDGET_KB = embed_common.budget_kb(GAME, DIST)
 
 MASCOT_RE = re.compile(r'(const CHAR_IMG_SRC = ")data:image/webp;base64,([A-Za-z0-9+/=]+)(")')
 
@@ -85,6 +88,7 @@ def main(argv):
         return
 
     io.open(GAME, 'w', encoding='utf-8').write(out)
+    embed_common.rebuild(ROOT)          # ต้นฉบับเปลี่ยนแล้ว → ย่อไฟล์แจกใหม่
     print('เขียนทับเรียบร้อย — ขนาดภาพเท่าเดิม เลย์เอาต์ไม่ขยับ')
     print('⚠ นี่คือการบีบทับของที่ถูกบีบมาแล้ว ห้ามรันซ้ำโดยไม่ checkout ไฟล์กลับก่อน')
 

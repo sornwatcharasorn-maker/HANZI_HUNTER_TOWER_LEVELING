@@ -197,11 +197,18 @@ async function cfgOn(page, extra) {
     eq('ยังไม่ส่งภายใน ~1 วิ (หน่วงอยู่)', await page.evaluate(() => window.__FB.log.length), 0);
     ok('มีนาฬิกาหน่วงตั้งค้างไว้', await page.evaluate(() => FB_T !== null));
     await sleep(5800);
-    eq('ยิงรวดเดียวหลังครบ 6 วิ (ยุบ 3 ครั้งเป็น 1)', await page.evaluate(() => window.__FB.log.length), 1);
-    eq('เป็น PUT', await page.evaluate(() => window.__FB.log[0].m), 'PUT');
+    /* ตั้งแต่ชั้น v5.8 · CLOUD AUTH SYNC มี GET ของคีย์ pwh นำหน้า PUT ทุกครั้ง
+       (อ่านแฮชรหัสผ่านตัวจริงจากคลาวด์ก่อนเขียน ไม่งั้น PUT ซึ่งแทนที่ทั้งโหนดจะเอาแฮชเก่า
+       ทับรหัสที่ GM เพิ่งรีเซ็ตคืนภายใน 5 วินาที) — ตัวที่ต้องยุบเหลือครั้งเดียวคือ "การเขียน" */
+    eq('เขียนรวดเดียวหลังครบ 6 วิ (ยุบ 3 ครั้งเป็น 1)',
+      await page.evaluate(() => window.__FB.log.filter(l => l.m === 'PUT').length), 1);
+    eq('อ่าน pwh นำหน้าการเขียน 1 ครั้ง (v5.8)',
+      await page.evaluate(() => window.__FB.log.filter(l => l.m === 'GET' && /\/pwh\.json$/.test(l.url)).length), 1);
+    eq('ตัวเขียนเป็น PUT',
+      await page.evaluate(() => (window.__FB.log.filter(l => l.m === 'PUT')[0] || {}).m), 'PUT');
     ok('ยิงไปที่ /students/<รหัสฮันเตอร์>.json', await page.evaluate(() =>
-      /\/students\/stu001\.json$/.test(window.__FB.log[0].url)),
-      await page.evaluate(() => window.__FB.log[0].url));
+      /\/students\/stu001\.json$/.test((window.__FB.log.filter(l => l.m === 'PUT')[0] || {}).url)),
+      await page.evaluate(() => (window.__FB.log.filter(l => l.m === 'PUT')[0] || {}).url));
 
     const pay = await page.evaluate(() => window.__FB.rows.stu001);
     ok('payload มีครบทุกฟิลด์ที่จอครูต้องใช้', ['u','name','room','lv','exp','mexp','floor','mfloor','acc','gold','corr','wrong','words','weak','at']

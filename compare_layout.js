@@ -11,7 +11,12 @@
 const { chromium } = require('playwright');
 const path = require('path');
 
-const SRC  = 'file://' + path.resolve(__dirname, 'src/hanzi_hunter_tower_v3_1_intro.src.html');
+/* ต้นฉบับอยู่ที่ src/ ตามที่ตั้งใจไว้ แต่เจ้าของ repo อัปโหลดผ่านเว็บ GitHub ไฟล์จึงมาโผล่
+   ที่รากrepo ได้ — ลองทั้งสองที่ กติกาเดียวกับ build_minify.js และสคริปต์ฝังภาพ */
+const SRC  = 'file://' + [
+  path.resolve(__dirname, 'src/hanzi_hunter_tower_v3_1_intro.src.html'),
+  path.resolve(__dirname, 'hanzi_hunter_tower_v3_1_intro.src.html')
+].find(p => require('fs').existsSync(p));
 const DIST = 'file://' + path.resolve(__dirname, 'hanzi_hunter_tower_v3_1_intro.html');
 const WIDTHS = [320, 360, 390, 430, 768];
 

@@ -210,7 +210,12 @@ const FAKE = () => {
     ok('payload มี Gold', row && typeof row.gold === 'number');
     ok('payload มี Accuracy', row && typeof row.acc === 'number');
     ok('payload มี at (นาฬิกาให้ครูดูว่าใครออนไลน์)', row && typeof row.at === 'number');
-    ok('payload ไม่มีรหัสผ่าน', row && !('pw' in row) && !('pwh' in row), row && Object.keys(row));
+    /* ชั้น v5.8 · CLOUD AUTH SYNC เติม pwh (แฮช) ลงไปโดยตั้งใจ เพื่อให้ล็อกอินข้ามเครื่องได้
+       แต่ **รหัสผ่านตัวจริงยังต้องไม่หลุดขึ้นไปเด็ดขาด** — เช็กทั้งชื่อฟิลด์และค่าในก้อน */
+    ok('payload ไม่มีรหัสผ่านตัวจริง (มีได้แค่แฮช)',
+      row && !('pw' in row) && JSON.stringify(row).indexOf('"1234"') < 0, row && Object.keys(row));
+    ok('payload มีแฮชรหัสผ่านของ v5.8', row && typeof row.pwh === 'string' && row.pwh.length > 0,
+      row && row.pwh);
 
     // ค่าที่ขยับต้องตามขึ้นไปด้วย
     await page.evaluate(() => { G.gold = 4321; saveProgress(); });

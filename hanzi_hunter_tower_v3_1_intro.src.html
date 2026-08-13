@@ -18706,6 +18706,396 @@
       try { lrEnsureDom(); } catch (e) { lrErr(e, 'lrInstall'); }
     })();
 
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  ชั้นที่ยี่สิบเอ็ด — v5.8 · CLOUD AUTH SYNC
+    //  (ล็อกอินข้ามเครื่อง 100% ด้วยแฮชรหัสผ่านที่เดินทางไปกับสัญญาณสดของ v5.3)
+    // ══════════════════════════════════════════════════════════════════════════
+    /*  ชั้นนี้ไม่แก้โค้ด v4.0-v5.7 เลย — ห่อฟังก์ชันแบบเดียวกับยี่สิบชั้นก่อนหน้า
+        ฟังก์ชันที่ถูกห่อ: fbPayload · fbFetch · handleSubmit · withStudent · startGame
+
+        ── ปัญหาที่ชั้นนี้แก้ ────────────────────────────────────────────────────
+        บัญชีนักเรียนอยู่ใน localStorage ซึ่งแยกตาม origin และแยกตามเครื่อง (กับดักข้อ 27)
+        นักเรียนที่สมัครบนมือถือจึงล็อกอินบนคอมของโรงเรียนไม่ได้เลย — v4.0 เช็ก
+        store[id] ก่อนเสมอ เจอว่าไม่มีก็ตอบ "ไม่พบรหัสฮันเตอร์นี้ในฐานข้อมูล"
+
+        v5.2 · CLOUD SYNC เคยแก้เรื่องนี้ไว้แล้วด้วยตาราง hunters ที่มีคอลัมน์ pwh
+        แต่คอนฟิกของมัน (yao_cloud) ว่างเสมอโดยเจตนา ครูต้องกรอกเองทีละเครื่อง
+        ในทางปฏิบัติจึงไม่เคยถูกเปิดใช้ ส่วนโหนด /students ของ v5.3 ที่ v5.4 เปิดให้
+        อัตโนมัติทุกเครื่องนั้น "มีข้อมูลครบแต่ไม่มีรหัสผ่าน" จึงยืนยันตัวตนไม่ได้
+
+        ชั้นนี้เติมของที่ขาดไปชิ้นเดียว คือ **แฮชรหัสผ่าน (pwh)** ลงในโหนดเดียวกัน
+        แล้วทำให้หน้าล็อกอินรู้จักถามคลาวด์ก่อนตัดสินใจ
+
+        ── ทำไมถึงเป็นแฮชตัวเดียวกับ v5.2 ─────────────────────────────────────────
+        ใช้ csPwh() ของ v5.2 ตรง ๆ (ตกไปใช้สูตรเดียวกันเองถ้าชั้นนั้นถูกถอด)
+        สองชั้นจึงอ่านแฮชของกันและกันได้ ครูที่เปิด v5.2 ไว้ด้วยจะไม่เจอรหัสสองชุดที่ตีกัน
+
+        ── ระดับความปลอดภัย: เท่าเดิม ไม่ได้สูงขึ้น ─────────────────────────────────
+        csHash เป็น djb2 ไม่ใช่แฮชระดับ cryptographic และ RTDB Rules ของโหนดนี้เปิด
+        .read ไว้ ใครมีลิงก์ก็อ่านแฮชได้และเดารหัส 4 ตัวออกไม่ยาก — **เท่ากับ TEACHER_PIN
+        ที่ฝังในซอร์ส คือกันเด็กกดเล่น ไม่ได้กันคนตั้งใจ** (กติกาเดียวกับที่ v5.2/v5.3
+        ยอมรับไว้) ของจริงต้องมี Firebase Auth + Rules ผูก auth.uid ซึ่งกฎไฟล์เดียวจบห้ามไว้
+
+        ── แถวเก่าที่ยังไม่มีแฮช = คนแรกที่ล็อกอินสำเร็จได้สิทธิ์ไป ────────────────────
+        โหนดที่ใช้อยู่ตอนนี้มีแถวของนักเรียนที่ยิงขึ้นไปก่อนมีแพตช์นี้ ซึ่งไม่มี pwh
+        ยืนยันตัวตนไม่ได้ ชั้นนี้จึงยอมให้ล็อกอินผ่านแล้ว "จอง" แฮชไว้ให้ทันที
+        **ไม่ได้หย่อนกว่าของเดิม** เพราะก่อนแพตช์นี้ใครก็ตามที่พิมพ์รหัสฮันเตอร์ของเพื่อน
+        บนเครื่องใหม่จะได้บัญชีเปล่าแล้วยิงทับความคืบหน้าบนคลาวด์ทิ้งทั้งก้อนอยู่แล้ว
+        ตอนนี้ความคืบหน้าถูกดึงลงมาใช้ต่อ และล็อกไว้หลังคนแรกล็อกอินสำเร็จ                */
+
+    const CA_VER      = 'v5.8';
+    const CA_GUARD    = true;          /* เปิดการอ่านค่าจริงก่อนเขียนทุกครั้ง (ดูหัวข้อ 3) */
+
+    let CA_BUSY = false;               /* กำลังถามคลาวด์อยู่ — กันเรียกซ้อน */
+    let CA_KICK = false;               /* กำลังเด้งออกเพราะรหัสถูกเปลี่ยน */
+    let CA_PWH  = {};                  /* แฮชที่ "คลาวด์บอก" รายคน — ไม่ใช่ที่เครื่องนี้คิดเอง */
+
+    function caErr(e, w) {
+      try {
+        if (typeof gcErrPush === 'function')
+          gcErrPush('cauth', (w || '') + ': ' + ((e && e.message) || e), CA_VER, e && e.stack);
+      } catch (x) {}
+    }
+
+    // ── 1. ตัวช่วยพื้นฐาน ─────────────────────────────────────────────────────
+    /* ยืมแฮชของ v5.2 มาใช้ ถ้าชั้นนั้นถูกถอดก็คำนวณเองด้วยสูตรเดียวกันเป๊ะ */
+    function caHash(u, pw) {
+      if (typeof csPwh === 'function') return csPwh(u, pw);
+      let h = 5381 >>> 0, s = 'yao5:' + u + ':' + pw;
+      for (let i = 0; i < s.length; i++) h = (((h << 5) + h) ^ s.charCodeAt(i)) >>> 0;
+      return h.toString(36);
+    }
+
+    function caOn() {
+      try { return typeof fbOn === 'function' && fbOn(); } catch (e) { return false; }
+    }
+
+    function caLocal(u) {
+      try { return loadStore()[u] || null; } catch (e) { return null; }
+    }
+
+    /* แถวสดของ v5.7 มีรหัสผ่านที่พิมพ์ไม่ได้ ห้ามเอามาคิดแฮชเด็ดขาด */
+    function caMirror(a) { return !!(a && a.lrMirror); }
+
+    function caPwhOf(u, a) {
+      return (a && !caMirror(a) && a.pw) ? caHash(u, a.pw) : '';
+    }
+
+    function caVal(id) {
+      const el = document.getElementById(id);
+      return ((el && el.value) || '').trim();
+    }
+
+    /* อ่านแถวรายคน — แคชสดของครู (FB_LIVE) มาก่อน เพราะมาจากสาย SSE ที่สดอยู่แล้ว
+       เครื่องนักเรียนไม่เคยเปิดสาย SSE จึงตกมาที่ REST เสมอ ก้อนละราว 1KB
+
+       **ห้ามแคชผลของ REST ไว้ใช้ซ้ำ** ต่อให้แค่ไม่กี่วินาทีก็ตาม — ก้อนนี้เป็นตัวตัดสิน
+       ทั้งรหัสผ่านและสถานะถูกระงับ ถ้าแคชไว้ 6 วินาที นักเรียนที่ GM เพิ่งกดระงับจะกด
+       ล็อกอินซ้ำแล้วเข้าได้ด้วยข้อมูลเก่า (ชุดเทสต์บล็อก 5 จับได้ตอนเขียนรอบแรก)
+       การล็อกอินเป็นการกดของคนจริง ๆ ไม่ใช่ hot path จึงไม่ต้องประหยัดคำขอตรงนี้ */
+    /* **ก้อนที่ตอบกลับมาต้อง "หน้าตาเหมือน payload ของ v5.3" ถึงจะนับว่าเป็นแถวจริง**
+       RTDB ตอบ null เมื่อไม่มีโหนดก็จริง แต่พร็อกซี · หน้า error · หรือ Rules ที่ปฏิเสธ
+       ตอบ `{}` กลับมาได้ ถ้านับก้อนเปล่าเป็นแถว caAdopt จะปั้นบัญชีขึ้นจากอากาศแล้วพา
+       คนที่พิมพ์รหัสอะไรก็ได้เข้าเกม (เจอตอนรันชุดเทสต์ของ v5.2 — จอเข้าเกมได้จริง) */
+    function caRowOk(r) {
+      return !!(r && typeof r === 'object' &&
+                (typeof r.pwh === 'string' || typeof r.u === 'string' || typeof r.at === 'number'));
+    }
+
+    async function caGetRow(u) {
+      try {
+        const live = (typeof FB_LIVE === 'object' && FB_LIVE) ? FB_LIVE[u] : null;
+        if (live && typeof live === 'object' && live.pwh) return live;
+      } catch (e) {}
+      return (await fbFetch(fbUrl('/' + encodeURIComponent(u)))) || null;
+    }
+
+    // ── 2. เขียนแฮชขึ้นคลาวด์ ─────────────────────────────────────────────────
+    /* ใช้ PATCH ไม่ใช่ PUT — ผสานเฉพาะสองคีย์นี้ ของอื่นในแถวไม่ถูกแตะเลย
+       จึงเรียกได้จากเครื่องครู (ที่ไม่ได้เผยแพร่ข้อมูลของตัวเอง) โดยไม่ล้างแถวนักเรียนทิ้ง
+       **ห้ามเช็ก FB_CFG.pub ตรงนี้** เพราะ pub คือ "เครื่องนี้ส่งข้อมูลของตัวเองไหม"
+       ไม่ใช่ "เครื่องนี้มีสิทธิ์รีเซ็ตรหัสให้คนอื่นไหม" — เครื่องครูตั้ง pub เป็น false เป็นปกติ */
+    async function caPushPwh(u, pwh) {
+      if (!caOn() || !u || !pwh) return false;
+      CA_PWH[u] = pwh;
+      try {
+        const live = (typeof FB_LIVE === 'object' && FB_LIVE) ? FB_LIVE[u] : null;
+        if (live && typeof live === 'object') live.pwh = pwh;
+      } catch (e) {}
+      try {
+        await fbFetch(fbUrl('/' + encodeURIComponent(u)),
+          { method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pwh: pwh, pwAt: Date.now() }) });
+        return true;
+      } catch (e) { caErr(e, 'pushPwh'); return false; }
+    }
+
+    // ── 3. กันรหัสใหม่ถูกรหัสเก่าทับคืน ────────────────────────────────────────
+    /*  v5.3 เขียนแถวนักเรียนด้วย PUT ซึ่ง **แทนที่ทั้งโหนด** ถ้าเครื่องนักเรียนแนบแฮช
+        ที่ตัวเองคิดเองขึ้นไปทุกครั้ง รหัสใหม่ที่ GM เพิ่งรีเซ็ตจะถูกของเก่าทับคืนภายใน
+        5 วินาที (จังหวะหัวใจของ v5.4) แล้วการรีเซ็ตจะเหมือนไม่เคยเกิดขึ้น
+
+        ทางแก้คือ **อ่านค่าจริงจากคลาวด์ก่อนเขียนทุกครั้ง แล้วแนบ "ค่าที่คลาวด์บอก"
+        ไม่ใช่ "ค่าที่เครื่องนี้คิดเอง"** คำขอที่เพิ่มมาเป็น GET ของคีย์เดียวก้อนละไม่กี่สิบไบต์
+        (RTDB ตัดกิ่งให้ตั้งแต่ฝั่งเซิร์ฟเวอร์เมื่อชี้ path ลงไปถึงคีย์)
+
+        ทำที่ wrapper ของ fbFetch **ไม่ใช่เปลี่ยน PUT เป็น PATCH** เพราะชุดเทสต์ของ
+        v5.3/v5.4 ยืนยันว่าเครื่องนักเรียนต้องเขียนด้วย PUT (test_fb_realtime บล็อก 2
+        · test_auto_sync บล็อก 4) การเปลี่ยนเมธอดจะทำให้เคสพวกนั้นตกทั้งชุด
+
+        ผลพลอยได้: รู้ทันทีว่ารหัสถูกเปลี่ยนจากเครื่องอื่น → เด้งออกไปล็อกอินใหม่          */
+    function caIsRowPut(url, opt) {
+      try {
+        if (!opt || opt.method !== 'PUT' || typeof opt.body !== 'string') return '';
+        if (typeof url !== 'string' || url.indexOf('.json') < 0) return '';
+        const b = JSON.parse(opt.body);
+        return (b && typeof b.u === 'string' && b.u) ? b.u : '';
+      } catch (e) { return ''; }
+    }
+
+    async function caSealBody(u, opt) {
+      let body = null;
+      try { body = JSON.parse(opt.body); } catch (e) { return opt; }
+      const mine = caPwhOf(u, caLocal(u));
+      let cloud = null;
+
+      /* ตอนหน้าเพจกำลังถูกทำลาย (keepalive) ห้ามรอคำขอเพิ่ม รอบสุดท้ายจะหายไปทั้งก้อน */
+      if (CA_GUARD && !opt.keepalive) {
+        try { cloud = await _caFbFetch(fbUrl('/' + encodeURIComponent(u) + '/pwh')); }
+        catch (e) { cloud = null; }
+      }
+
+      if (typeof cloud === 'string' && cloud) {
+        CA_PWH[u] = cloud;
+        body.pwh = cloud;
+        if (mine && mine !== cloud) caKick(u);
+      } else if (mine) {
+        CA_PWH[u] = mine;                 /* ยังไม่มีบนคลาวด์ → เครื่องนี้จองไว้ */
+        body.pwh = mine;
+      } else if (CA_PWH[u]) {
+        body.pwh = CA_PWH[u];             /* ไม่มีรหัสจริงในมือ อย่างน้อยอย่าลบของเดิมทิ้ง */
+      }
+      return Object.assign({}, opt, { body: JSON.stringify(body) });
+    }
+
+    /* รหัสถูกเปลี่ยนจากที่อื่นระหว่างเล่นอยู่ — ต้องหยุดเกมจริง ๆ จึงเป็น gate ไม่ใช่ toast
+       (แบบเดียวกับ CLOUD 05/05 ของ v5.2 · v4.8.1 หยุดนาฬิกาให้เองตอนหน้าต่างระบบเปิด) */
+    function caKick(u) {
+      if (CA_KICK || !u || u !== CURRENT_USER) return;
+      CA_KICK = true;
+      caNotify('PWCHANGED', {}, function () {
+        try { exitGame(); } catch (e) { caErr(e, 'kick'); }
+        CA_KICK = false;
+      });
+    }
+
+    // ── 4. ดึงบัญชีจากคลาวด์ลงเครื่องนี้ ───────────────────────────────────────
+    /* ปั้นบัญชีจาก payload ของ v5.3 โดยยืมตัวแปลงของ v5.7 มาใช้ (lrGhost + lrApply)
+       จึงได้ทั้งชื่อ · ห้องเรียน · เลเวล · ชั้นสูงสุด · ทอง · คำที่ผิดซ้ำ ครบชุดเดียวกัน
+       **ไม่เขียนทับของที่ใหม่กว่าในเครื่อง** ถ้าเครื่องนี้เพิ่งเล่นออฟไลน์มา (at เก่ากว่า
+       lastActive) จะเอาแค่รหัสผ่านไปใช้ ไม่ไปย้อนความคืบหน้าของเขาทิ้ง */
+    function caAdopt(u, row, pw) {
+      const s = loadStore();
+      let a = s[u], fresh = false;
+      if (!a || caMirror(a)) {
+        a = (typeof lrGhost === 'function')
+              ? lrGhost(u, row || {})
+              : blankAccount(u, String((row && row.name) || u), pw, String((row && row.room) || ''));
+        fresh = true;
+      }
+      const at = Number(row && row.at) || 0;
+      if (row && (fresh || at > (Number(a.lastActive) || 0))) {
+        try { if (typeof lrApply === 'function') lrApply(a, row); } catch (e) { caErr(e, 'adoptApply'); }
+      }
+      a.pw = pw;
+      delete a.lrMirror;
+      delete a.lrAt;
+      s[u] = migrateAccount(a);
+      saveStore(s);
+      return s[u];
+    }
+
+    // ── 5. ตรวจตัวตนกับคลาวด์ ─────────────────────────────────────────────────
+    /* คืน true = ปล่อยให้ handleSubmit ของชั้นล่างทำงานต่อตามปกติ
+       คืน false = จบที่ชั้นนี้ (แสดงเหตุผลไว้ที่ช่องข้อความ หรือพาเข้าเกมไปแล้ว) */
+    async function caResolve(reg, id, pw) {
+      let row = null;
+      try { row = await caGetRow(id); }
+      catch (e) {
+        /* เน็ตหลุด → ใช้กติกาของเครื่องตามเดิม ห้ามปิดประตูใส่นักเรียนที่สัญญาณไม่ดี
+           (เหตุผลเดียวกับที่ v5.2 ไม่บังคับออนไลน์เป็นค่าเริ่มต้น) */
+        caErr(e, 'resolve');
+        showError('[คลาวด์] 📡 ต่อคลาวด์ไม่ได้ — ใช้ข้อมูลในเครื่องนี้ไปก่อน');
+        return true;
+      }
+
+      if (!caRowOk(row)) return true;    /* ยังไม่เคยขึ้นคลาวด์ → ให้ของเดิมตัดสิน */
+
+      const hash  = caHash(id, pw);
+      const cloud = (typeof row.pwh === 'string') ? row.pwh : '';
+
+      if (row.frozen === true) {
+        showError('[ระบบ] ❄️ สิทธิ์ฮันเตอร์ถูกระงับ — ติดต่อ GM ทันที');
+        return false;
+      }
+
+      if (cloud && cloud !== hash) {
+        showError(reg
+          ? '[คลาวด์] ⚠️ รหัสฮันเตอร์นี้มีเจ้าของแล้ว — ถ้าเป็นของคุณ ให้กดแท็บ "เข้าสู่เกท" แทน'
+          : '[คลาวด์] ⚠️ รหัสผ่านลับไม่ตรงกับข้อมูลบนคลาวด์ — รหัสบนคลาวด์เป็นตัวตัดสิน');
+        return false;
+      }
+
+      /* ถึงตรงนี้ = รหัสตรงกับคลาวด์ หรือเป็นแถวเก่าที่ยังไม่มีแฮชให้เทียบ */
+      const before = caLocal(id);
+      const need   = !before || caMirror(before) || before.pw !== pw;
+      if (need) caAdopt(id, row, pw);
+      if (!cloud) caPushPwh(id, hash);
+      CA_PWH[id] = cloud || hash;
+
+      if (reg) {
+        /* โหมดสมัคร แต่บัญชีมีอยู่แล้วบนคลาวด์ — ปล่อยให้ของเดิมทำงานจะได้แค่
+           "รหัสฮันเตอร์นี้มีผู้ใช้แล้ว" ส่วนการยอมให้สมัครทับจะเอาก้อนเปล่าไปล้าง
+           ความคืบหน้าบนคลาวด์ทิ้ง จึงพาเข้าเกมด้วยบัญชีเดิมแทน */
+        try {
+          showError('');                 /* ล้างบรรทัด "กำลังตรวจสอบ…" ก่อนเปลี่ยนหน้าจอ */
+          caToast(cloud ? 'BACK' : 'CLAIMED', { u: (row.name || id), f: (row.mfloor || 1) });
+          startGame(id);
+        } catch (e) { caErr(e, 'regStart'); return true; }
+        return false;
+      }
+
+      if (need) caToast(cloud ? 'PULLED' : 'CLAIMED', { u: (row.name || id), f: (row.mfloor || 1) });
+      return true;
+    }
+
+    /* ต้องถามคลาวด์ไหม — ถามทุกครั้งที่ล็อกอิน เพราะ "รหัสบนคลาวด์เป็นใหญ่"
+       ถ้าลัดเมื่อรหัสในเครื่องตรง เครื่องเก่าจะยังใช้รหัสเดิมเข้าได้หลัง GM รีเซ็ตไปแล้ว */
+    function caNeed(reg, id, pw) {
+      if (!caOn() || !id || !pw) return false;
+      if (!reg) return true;
+      /* โหมดสมัคร: ให้ของเดิมเตือนเรื่องรหัสสั้น/ยืนยันไม่ตรงก่อน จะได้ไม่ต้องรอเน็ตฟรี ๆ */
+      return pw.length >= 4 && pw === caVal('reg-pw2');
+    }
+
+    // ── 6. สารบัญแจ้งเตือน — AUTH 01/04-04/04 ─────────────────────────────────
+    /* แยกจาก SYS_NOTIF (ตรึง 25) · Q_NOTIF (6) · CX_NOTIF (4) · AB_NOTIF (9)
+       · CD_NOTIF (9) · NC_NOTIF (3) · TQ_NOTIF (5) · CS_NOTIF (5) ยืมแค่กลไกโชว์มาใช้
+       มี gate ใบเดียวคือ PWCHANGED ซึ่งต้องหยุดเกมจริง ๆ อยู่แล้ว (กับดักข้อ 18) */
+    const CA_NOTIF = {
+      PULLED:   { tag: 'AUTH 01/04', tone: 'good', title: d => '☁️ ยินดีต้อนรับกลับ ' + d.u,
+                  body: d => 'ยืนยันรหัสผ่านลับกับคลาวด์แล้ว และดึงความคืบหน้าลงเครื่องนี้ให้เรียบร้อย\n' +
+                             'ชั้นสูงสุดที่บันทึกไว้: <b>' + d.f + '</b>' },
+      CLAIMED:  { tag: 'AUTH 02/04', tone: '', title: d => '🔐 ผูกรหัสผ่านลับกับบัญชีแล้ว',
+                  body: d => 'บัญชีนี้ยังไม่เคยผูกรหัสผ่านไว้บนคลาวด์ ระบบจึงจองรหัสที่เพิ่งกรอกให้\n' +
+                             '<i>ครั้งต่อไปจะใช้รหัสนี้เข้าได้จากทุกเครื่อง</i>' },
+      BACK:     { tag: 'AUTH 03/04', tone: 'good', title: d => '⚔️ มีบัญชีนี้อยู่แล้ว — พากลับเข้าหอคอย',
+                  body: d => 'รหัสฮันเตอร์นี้เคยสมัครไว้และรหัสผ่านลับตรงกัน\n' +
+                             'ระบบจึงใช้บัญชีเดิมต่อ ไม่ได้สร้างใหม่ทับ — <i>ความคืบหน้าอยู่ครบ</i>' },
+      PWCHANGED:{ tag: 'AUTH 04/04', tone: 'danger', gate: true, btn: '🚪 ออกไปล็อกอินใหม่',
+                  title: () => '🔑 รหัสผ่านลับถูกเปลี่ยนแล้ว',
+                  body: () => 'GM เปลี่ยนรหัสผ่านลับของบัญชีนี้จากอีกเครื่อง\n' +
+                              'ระบบจะพาออกไปหน้าเกท เพื่อเข้าใหม่ด้วยรหัสล่าสุด\n' +
+                              '<i>ความคืบหน้าถูกบันทึกไว้แล้ว ไม่มีอะไรหาย</i>' }
+    };
+
+    function caNotify(key, data, onConfirm) {
+      const def = CA_NOTIF[key]; if (!def) return;
+      const d = data || {};
+      let t, b;
+      try { t = def.title(d); b = def.body(d); } catch (e) { return; }
+      if (def.gate) { snShowGate(def, t, b, onConfirm); return; }
+      snShowToast(def, t, b);
+    }
+    function caToast(k, d) { try { caNotify(k, d); } catch (e) { caErr(e, 'toast'); } }
+
+    // ── 7. ห่อฟังก์ชันของชั้นล่าง ─────────────────────────────────────────────
+    /* 7.1 payload ของ v5.3 — เติมแฮชลงไปโดยไม่แตะฟิลด์เดิมสักตัว
+       ค่าที่แนบคือ "ค่าที่คลาวด์บอก" ก่อนเสมอ แล้วค่อยตกมาที่แฮชของรหัสในเครื่อง */
+    const _caFbPayload = fbPayload;
+    fbPayload = function (user, a) {
+      const p = _caFbPayload.apply(this, arguments);
+      try {
+        const mine = caPwhOf(user, a);
+        const h = CA_PWH[user] || mine;
+        if (h) { p.pwh = h; if (!CA_PWH[user] && mine) CA_PWH[user] = mine; }
+      } catch (e) { caErr(e, 'payload'); }
+      return p;
+    };
+
+    /* 7.2 อ่านค่าจริงก่อนเขียนทุกครั้ง — เหตุผลเต็มอยู่ที่หัวข้อ 3 */
+    const _caFbFetch = fbFetch;
+    fbFetch = async function (url, opt) {
+      let o = opt;
+      try {
+        const u = caIsRowPut(url, o);
+        if (u && caOn()) o = await caSealBody(u, o);
+      } catch (e) { caErr(e, 'fetch'); o = opt; }
+      return _caFbFetch.call(this, url, o);
+    };
+
+    /* 7.3 หน้าล็อกอิน — ถามคลาวด์ก่อน แล้วค่อยเรียกของเดิม
+       handleSubmit ของ v4.0 ไม่ถูกแก้เลย และ wrapper ของ v5.2/v5.7 ยังทำงานครบตามลำดับเดิม */
+    const _caHandleSubmit = handleSubmit;
+    handleSubmit = function () {
+      if (CA_BUSY) return;
+      let reg = false, id = '', pw = '';
+      try {
+        reg = (typeof currentMode === 'string' && currentMode === 'register');
+        id  = caVal(reg ? 'reg-id' : 'login-id');
+        pw  = caVal(reg ? 'reg-pw' : 'login-pw');
+        if (!caNeed(reg, id, pw)) return _caHandleSubmit.apply(this, arguments);
+      } catch (e) { caErr(e, 'submit'); return _caHandleSubmit.apply(this, arguments); }
+
+      CA_BUSY = true;
+      showError('[คลาวด์] ⏳ กำลังตรวจสอบรหัสผ่านลับกับคลาวด์…');
+      caResolve(reg, id, pw).then(function (go) {
+        CA_BUSY = false;
+        if (go) { showError(''); _caHandleSubmit(); }
+      }).catch(function (e) {
+        CA_BUSY = false; caErr(e, 'resolve'); _caHandleSubmit();
+      });
+    };
+
+    /* 7.4 GM เปลี่ยนรหัสผ่าน — ดักที่ withStudent ซึ่งเป็นทางผ่านของเครื่องมือ GM ทุกตัว
+       จึงครอบทั้ง gmResetPw ปัจจุบันและเครื่องมือใหม่ในอนาคต โดยไม่ต้องไล่ห่อทีละปุ่ม
+       (gmResetProgress เก็บ pw เดิมไว้ แฮชจึงไม่ขยับ ตัวนี้ก็เงียบไปเองอย่างถูกต้อง) */
+    const _caWithStudent = withStudent;
+    withStudent = function (user) {
+      let before = '';
+      try { before = caPwhOf(user, caLocal(user)); } catch (e) { caErr(e, 'wsBefore'); }
+      const r = _caWithStudent.apply(this, arguments);
+      try {
+        const after = caPwhOf(user, caLocal(user));
+        if (after && after !== before) caPushPwh(user, after);
+      } catch (e) { caErr(e, 'wsAfter'); }
+      return r;
+    };
+
+    /* 7.5 สมัคร/ล็อกอินสำเร็จ = ส่งแฮชขึ้นไปทันที ไม่ต้องรอหน่วง 6 วินาทีของ v5.3
+       ผ่าน fbPush ตัวเดิม จึงได้ payload ครบก้อนและเคารพสวิตช์ pub ของเครื่องนั้นตามเดิม */
+    const _caStartGame = startGame;
+    startGame = function (user) {
+      const r = _caStartGame.apply(this, arguments);
+      try {
+        const h = caPwhOf(user, caLocal(user));
+        if (h) {
+          if (!CA_PWH[user]) CA_PWH[user] = h;
+          if (caOn() && typeof fbPush === 'function') fbPush(user);
+        }
+      } catch (e) { caErr(e, 'startGame'); }
+      return r;
+    };
+
+    /* 7.6 ออกจากเกท = ปลดธง "กำลังถามคลาวด์อยู่" กันค้างข้ามบัญชีบนเครื่องที่ใช้ร่วมกัน */
+    const _caExitGame = exitGame;
+    exitGame = function () {
+      const r = _caExitGame.apply(this, arguments);
+      try { CA_BUSY = false; } catch (e) {}
+      return r;
+    };
+
   </script>
 </body>
 </html>

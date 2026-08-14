@@ -258,7 +258,10 @@ async function enterGame(page) {
        ไปแล้ว เทสต์จะตกด้วยเหตุผลผิดทั้งที่โค้ดถูก — จึงต้องปั้นไฟล์ชั่วคราวที่ไม่มีภาพฝัง */
     const bareFile = path.join(require('os').tmpdir(), 'hh_menu_icons_bare.html');
     const html = fs.readFileSync(path.resolve(__dirname, 'hanzi_hunter_tower_v3_1_intro.html'), 'utf8');
-    const m = html.match(/MI_ART = \{[\s\S]*?\n\}/);
+    /* **ต้องทนได้ทั้งไฟล์แจกโหมด GENTLE และ HARD** — ตั้งแต่ v6.1 build สลับเป็น HARD
+       ให้เองเมื่อ GENTLE ทะลุเพดาน แล้ว `\n}` ที่เคยมีก็หายไปกับการยุบช่องว่าง
+       ก้อนนี้ไม่มีวงเล็บปีกกาซ้อนข้างใน จึงจับด้วย [^{}] ได้ตรง ๆ ทั้งสองโหมด */
+    const m = html.match(/MI_ART\s*=\s*\{[^{}]*\}/);
     if (!m) { ok('หาก้อน MI_ART ในไฟล์แจกเจอ', false); }
     else {
       fs.writeFileSync(bareFile,

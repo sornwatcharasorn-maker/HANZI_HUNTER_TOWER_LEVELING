@@ -5,8 +5,9 @@
 
    วิธีใช้
      npm install                 # ครั้งเดียว — ลง terser + clean-css
-     node build_minify.js        # ย่อแบบหลวม (GENTLE) แล้วเขียนทับไฟล์แจก
-     node build_minify.js --hard   # ย่อแบบเดิมที่รีดจนหมด (เล็กกว่าราว 430KB)
+     node build_minify.js        # ลอง GENTLE ก่อน · ไม่พอค่อยสลับเป็น HARD ให้เอง
+     node build_minify.js --hard   # บังคับ HARD ตั้งแต่ต้น (เล็กกว่าราว 466KB)
+     node build_minify.js --gentle # บังคับ GENTLE ล้วน ทะลุเพดานแล้วล้มไปเลย
      node build_minify.js --check  # ดูตัวเลขเฉย ๆ ไม่เขียนทับ
      node build_minify.js --size   # พิมพ์ขนาดไฟล์แจกที่จะได้ (ไบต์) บรรทัดเดียว
                                    # สคริปต์ฝังภาพเรียกโหมดนี้ไปเช็กเพดาน 2MB
@@ -53,8 +54,15 @@ const SRC = [
   path.join(HERE, 'hanzi_hunter_tower_v3_1_intro.src.html')
 ].find(p => fs.existsSync(p));
 
-/* GENTLE = ค่าเริ่มต้น · --hard = ของเดิมที่รีดจนหมด */
-const HARD = process.argv.includes('--hard');
+/* GENTLE = ค่าเริ่มต้น · --hard = ของเดิมที่รีดจนหมด
+   **เป็น let ไม่ใช่ const โดยจำเป็น** — ตั้งแต่ชั้น v6.1 ที่ฝังฉากหลัง 6 ภาพเข้ามา
+   GENTLE ทะลุเพดานแล้ว สคริปต์จึงย่อ GENTLE ก่อนเสมอ แล้ว **สลับเป็น HARD ให้เอง
+   อัตโนมัติเฉพาะตอนที่ GENTLE ไม่พอ** (ดูท้ายไฟล์) เจ้าของ repo จึงยังได้ไฟล์แจก
+   ที่อ่านง่ายทุกครั้งที่มันยังพอดีอยู่ และไม่มีวันเหลือไฟล์แจกที่ทะลุเพดานทิ้งไว้
+     --hard    บังคับ HARD ตั้งแต่ต้น (ข้ามการลอง GENTLE — เร็วขึ้นเท่าตัว)
+     --gentle  บังคับ GENTLE ล้วน ถ้าทะลุเพดานให้ล้มไปเลย ไม่ต้องสลับให้ */
+let HARD = process.argv.includes('--hard');
+const GENTLE_ONLY = process.argv.includes('--gentle');
 
 let terser, CleanCSS;
 try {
@@ -65,8 +73,9 @@ try {
   process.exit(1);
 }
 
-/* ตัวเลือกของ terser — ทุกบรรทัดที่ปิดไว้มีเหตุผล อย่าเปิดโดยไม่รันชุดเทสต์ครบ 10 ชุด */
-const MINIFY_OPTS = {
+/* ตัวเลือกของ terser — ทุกบรรทัดที่ปิดไว้มีเหตุผล อย่าเปิดโดยไม่รันชุดเทสต์ครบ 13 ชุด
+   **เป็นฟังก์ชันไม่ใช่ค่าคงที่** เพราะโหมดอาจถูกสลับกลางคันตอน GENTLE ไม่พอ */
+const MINIFY_OPTS = () => ({
   ecma: 2020,
   compress: {
     inline:        false,   /* ⭐ ห้ามเอาเนื้อฟังก์ชันไปแปะที่จุดเรียก — ชั้นบนจะห่อไม่ติด */
@@ -89,7 +98,7 @@ const MINIFY_OPTS = {
         indent_level: 2,
         inline_script: true /* หนี `</script` ในสตริงให้ ไม่งั้น HTML ขาดกลางคัน */
       }
-};
+});
 
 /* ── ยุบช่องว่างของ HTML แบบไม่ทำให้เลย์เอาต์ขยับ ─────────────────────────────
    สแกนเอง ไม่ใช้ regex ก้อนเดียว เพราะ `>` โผล่ในค่าแอตทริบิวต์ได้ (onclick="a>b")
@@ -170,7 +179,7 @@ async function build(srcText) {
   const js = srcText.slice(j, k);
   const tail = srcText.slice(k);
 
-  const res = await terser.minify(js, MINIFY_OPTS);
+  const res = await terser.minify(js, MINIFY_OPTS());
   if (res.error) throw res.error;
 
   const out = minifyHtml(head) + openTag + res.code + tail.replace(/\s+$/, '\n');
@@ -192,21 +201,39 @@ async function build(srcText) {
     process.exit(1);
   }
   const srcText = fs.readFileSync(SRC, 'utf8');
-  const out = await build(srcText);
   const before = Buffer.byteLength(srcText, 'utf8');
-  const after = Buffer.byteLength(out, 'utf8');
+
+  let out = await build(srcText);
+  let after = Buffer.byteLength(out, 'utf8');
+  let fell = 0;
+
+  /* GENTLE ไม่พอ → สลับเป็น HARD ให้เองแล้วย่อใหม่ทั้งรอบ
+     **ห้ามปล่อยให้เขียนไฟล์แจกที่ทะลุเพดานลงดิสก์เด็ดขาด** เพราะไม่มีอะไรเตือน
+     ตอนนักเรียนเปิดไฟล์ — มันจะช้าหรือโหลดไม่ขึ้นบนมือถือเฉย ๆ โดยไม่มี error */
+  if (after > BUDGET && !HARD && !GENTLE_ONLY) {
+    fell = after;
+    HARD = true;
+    out = await build(srcText);
+    after = Buffer.byteLength(out, 'utf8');
+  }
 
   if (process.argv.includes('--size')) { console.log(after); return; }
 
   const pct = ((1 - after / before) * 100).toFixed(1);
   console.log('โหมด     %s', HARD ? 'HARD (รีดจนหมด)' : 'GENTLE (คอมเมนต์ครบ · ไม่เปลี่ยนชื่อตัวแปร)');
+  if (fell) {
+    console.log('         ↑ สลับให้เองเพราะ GENTLE ได้ %s ไบต์ ซึ่งทะลุเพดานไป %s ไบต์',
+      fell.toLocaleString(), (fell - BUDGET).toLocaleString());
+    console.log('         (อยากได้ GENTLE ล้วนต้องคืนที่ก่อน — ลดคุณภาพภาพ ไม่ใช่ลบคอมเมนต์)');
+  }
   console.log('ต้นฉบับ  %s ไบต์  ← %s', before.toLocaleString(), path.relative(HERE, SRC));
   console.log('ไฟล์แจก  %s ไบต์  (−%s%% · เหลือถึงเพดาน 2,000,000 อีก %s ไบต์)',
     after.toLocaleString(), pct, (BUDGET - after).toLocaleString());
 
   if (after > BUDGET) {
     console.error('หยุด: ไฟล์แจกทะลุเพดาน 2,000,000 ไบต์');
-    if (!HARD) console.error('       ทางออกเร็วสุด: สั่ง `node build_minify.js --hard` คืนที่ได้ราว 430KB ทันที');
+    if (!HARD) console.error('       ทางออกเร็วสุด: สั่ง `node build_minify.js --hard` คืนที่ได้ราว 466KB ทันที');
+    else console.error('       HARD ก็ยังไม่พอ — ต้องคืนที่ที่ "ภาพ" อย่างเดียว (ดู CLAUDE.md)');
     process.exit(1);
   }
   if (process.argv.includes('--check')) { console.log('(--check: ไม่ได้เขียนทับไฟล์แจก)'); return; }

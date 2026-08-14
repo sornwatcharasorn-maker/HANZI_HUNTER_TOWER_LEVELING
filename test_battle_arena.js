@@ -103,7 +103,13 @@ async function arena(page, floor, opts) {
         pinyinIn: !!(a && a.contains(document.getElementById('gPinyin'))),
         avatarIn: !!(a && a.contains(document.getElementById('gAvatar'))),
         tagIn: !!(a && a.querySelector('.g-monster-tag')),
-        hero: !!(a && a.querySelector('.ba-hero svg')),
+        /* v6.1 — ฮีโร่กลายเป็นเฟรมจากสไปรต์ชีต · SVG เหลือเป็นทางสำรองตอนยังไม่ฝังภาพ
+           เช็ก "มีตัวฮีโร่จริง" ไม่ใช่ "เป็น SVG" ไม่งั้นเคสจะตกทุกครั้งที่ฝังเฟรมเข้าไป */
+        hero: !!(a && (a.querySelector('.ba-hero .ba-fig') || a.querySelector('.ba-hero svg'))),
+        heroFigs: a ? a.querySelectorAll('.ba-hero .ba-fig').length : 0,
+        heroOn: a ? a.querySelectorAll('.ba-hero .ba-fig.on').length : 0,
+        heroDecoded: a ? [].every.call(a.querySelectorAll('.ba-hero .ba-fig'),
+          i => i.complete && i.naturalWidth > 0) : true,
         heroLeft: (() => {
           const h = a && a.querySelector('.ba-hero'), f = a && a.querySelector('.ba-foe');
           return h && f ? h.getBoundingClientRect().left < f.getBoundingClientRect().left : null;
@@ -116,7 +122,13 @@ async function arena(page, floor, opts) {
     });
     ok(r.exists, 'สร้าง #baArena ตั้งแต่โหลดหน้า');
     ok(r.wordIn && r.pinyinIn && r.avatarIn && r.tagIn, 'ย้ายโหนดเดิมเข้าสนามครบทั้ง 4 (ไม่ได้สร้างใหม่ทับ)');
-    ok(r.hero, 'ฮีโร่เป็น SVG (คมทุก DPI · ไม่มีไฟล์ภาพภายนอก)');
+    ok(r.hero, r.heroFigs ? 'ฮีโร่เป็นเฟรมจากสไปรต์ชีต ' + r.heroFigs + ' เฟรม (v6.1)'
+                          : 'ฮีโร่เป็น SVG (ยังไม่ได้ฝังเฟรม — ทางสำรองของ v6.0)');
+    if (r.heroFigs) {
+      /* data URI เสียจะเงียบสนิท ไม่มี error ให้เห็น — ต้องเช็ก naturalWidth เสมอ */
+      ok(r.heroDecoded, 'เฟรมฮีโร่ decode ได้ครบทุกเฟรม');
+      ok(r.heroOn === 1, 'โชว์ทีละเฟรมเดียวเสมอ (เห็นอยู่ ' + r.heroOn + ' เฟรม)');
+    }
     ok(r.heroLeft === true, 'ฮีโร่อยู่ซ้าย · อสูรอยู่ขวา (มุมมองด้านข้าง)');
     ok(r.bars, 'มีหลอด HP ย่อยทั้งสองฝั่งในสนาม');
     ok(r.realBars, 'หลอดจริงของ v4.0 (#gHpBar · #gMhpBar) ยังอยู่ครบ ไม่ถูกแตะ');
@@ -127,13 +139,70 @@ async function arena(page, floor, opts) {
       for (let i = 0; i < 6; i++) baBuild();
       return {
         arenas: document.querySelectorAll('#baArena').length,
-        heroes: document.querySelectorAll('.ba-hero svg').length,
+        /* v6.1 — ตัวฮีโร่คือ SVG หนึ่งใบ หรือชุดเฟรมเท่าจำนวนที่ฝังไว้ ไม่ใช่ทั้งสองอย่าง */
+        heroes: document.querySelectorAll('.ba-hero svg').length
+                + (document.querySelectorAll('.ba-hero .ba-fig').length ? 1 : 0),
+        figs: document.querySelectorAll('.ba-hero .ba-fig').length,
+        want: (typeof BA_HERO !== 'undefined' && BA_HERO.length) ? BA_HERO.length : 0,
+        bgs: document.querySelectorAll('#baArena .ba-bg').length,
+        veils: document.querySelectorAll('#baArena .ba-veil').length,
         words: document.querySelectorAll('#gWord').length,
         styles: document.querySelectorAll('#baStyle').length
       };
     });
-    ok(dup.arenas === 1 && dup.heroes === 1 && dup.words === 1 && dup.styles === 1,
+    ok(dup.arenas === 1 && dup.heroes === 1 && dup.words === 1 && dup.styles === 1
+       && dup.figs === dup.want && dup.bgs <= 1 && dup.veils <= 1,
       'baBuild() idempotent — เรียกซ้ำ 6 รอบไม่งอกของซ้ำ');
+
+    /* ── v6.1 · ฉากหลังตามโซน ─────────────────────────────────────────
+       สลับด้วย G.floor + baSyncScene() ตรง ๆ ไม่ต้องไต่จริง */
+    const scenes = await page.evaluate(() => {
+      const out = [];
+      for (let f = 1; f <= FLOOR_MAX; f++) { G.floor = f; baSyncScene(); out.push(BA_SCENE); }
+      G.ab.abyss = true; baSyncScene();
+      const ab = BA_SCENE;
+      G.ab.abyss = false; G.floor = 1; baSyncScene();   /* ต้องคืนค่าให้เคสถัดไปเสมอ */
+      return { out, ab, back: BA_SCENE, bands: BA_BAND, zones: BA_ZONES };
+    });
+    const wantScene = [];
+    for (let f = 1; f <= 20; f++) wantScene.push('z' + Math.min(scenes.zones, Math.ceil(f / scenes.bands)));
+    ok(scenes.out.join(',') === wantScene.join(','),
+      'ฉากหลังเปลี่ยนตามโซนครบทั้ง 20 ชั้น (โซนละ ' + scenes.bands + ' ชั้น)');
+    ok(scenes.ab === 'abyss', 'โหมดเหวลึกใช้ฉากของตัวเอง');
+    ok(scenes.back === 'z1', 'ปิดโหมดเหวลึกแล้วกลับมาใช้ฉากตามชั้นเดิม');
+
+    const bg = await page.evaluate(() => {
+      const b = document.getElementById('baBg');
+      const v = document.querySelector('#baArena .ba-veil');
+      const cs = b ? getComputedStyle(b) : null;
+      const vs = v ? getComputedStyle(v) : null;
+      return {
+        has: !!(typeof BA_BG !== 'undefined' && BA_BG.z1),
+        size: cs ? cs.backgroundSize : '', pos: cs ? cs.position : '',
+        veil: vs ? (vs.display === 'none' ? 'none' : vs.backgroundColor) : '',
+        cls: document.getElementById('baArena').classList.contains('ba-has-bg')
+      };
+    });
+    if (bg.has) {
+      ok(bg.size === 'cover', 'ฉากหลังใช้ cover (เต็มกรอบโดยไม่บิดสัดส่วน)');
+      ok(bg.pos === 'absolute', 'ฉากหลังวางแบบ absolute (ไม่ดันเลย์เอาต์)');
+      ok(/rgba\(0,\s*0,\s*0,\s*0?\.35\)/.test(bg.veil),
+        'ม่านดำเป็น rgba(0,0,0,.35) ตามสเปก — ได้ ' + bg.veil);
+    } else {
+      ok(bg.veil === 'none' && !bg.cls, 'ยังไม่ฝังฉาก → ม่านดำต้องไม่โผล่มาหรี่จอเปล่า ๆ');
+    }
+
+    /* ── v6.1 · สุ่มท่าห้ามกิน Math.random ของชุดเทสต์ชั้นล่าง (กับดักข้อ 32) ── */
+    const rnd = await page.evaluate(() => {
+      const real = Math.random;
+      let n = 0;
+      Math.random = function () { n++; return real(); };
+      try { for (let i = 0; i < 12; i++) { BA_ACT_TO = 0; baAct(200); } }
+      finally { Math.random = real; }
+      return n;
+    });
+    ok(rnd === 0, 'baAct() ไม่เรียก Math.random สักครั้ง (เรียกไป ' + rnd + ')');
+
     ok(errs.length === 0, 'ไม่มี pageerror' + (errs.length ? ' → ' + errs[0] : ''));
     await ctx.close();
   }

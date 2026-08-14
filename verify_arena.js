@@ -143,6 +143,30 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✅ ' + m); } else { fail
         avatarIn: !!(arena && arena.contains(document.getElementById('gAvatar'))),
         tagIn: !!(arena && arena.querySelector('.g-monster-tag')),
         heroSvg: !!(arena && arena.querySelector('.ba-hero svg')),
+        /* v6.1 — ฮีโร่กลายเป็นเฟรมจากสไปรต์ชีต · SVG เหลือเป็นทางสำรองตอนยังไม่ฝังภาพ */
+        heroFigs: arena ? arena.querySelectorAll('.ba-hero .ba-fig').length : 0,
+        heroOn: arena ? arena.querySelectorAll('.ba-hero .ba-fig.on').length : 0,
+        heroDecoded: arena ? [].every.call(
+          arena.querySelectorAll('.ba-hero .ba-fig'), i => i.complete && i.naturalWidth > 0) : false,
+        heroAbs: (function () {
+          const f = arena && arena.querySelector('.ba-hero .ba-fig');
+          return f ? getComputedStyle(f).position : '';
+        })(),
+        bgOn: !!(arena && arena.classList.contains('ba-has-bg')),
+        bgImg: (function () {
+          const b = document.getElementById('baBg');
+          return b ? (getComputedStyle(b).backgroundImage || '') : '';
+        })(),
+        bgSize: (function () {
+          const b = document.getElementById('baBg');
+          return b ? getComputedStyle(b).backgroundSize : '';
+        })(),
+        veil: (function () {
+          const v = arena && arena.querySelector('.ba-veil');
+          if (!v) return '';
+          const cs = getComputedStyle(v);
+          return cs.display === 'none' ? 'none' : cs.backgroundColor;
+        })(),
         heroHp: !!(arena && arena.querySelector('#baHeroHp span')),
         foeHp: !!(arena && arena.querySelector('#baFoeHp span')),
         overlap, clipped, btns, hits, focusOk,
@@ -154,8 +178,28 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✅ ' + m); } else { fail
 
     ok(r.hasArena, 'สนามรบถูกสร้าง (#baArena)');
     ok(r.tagIn && r.pinyinIn && r.avatarIn, 'ย้ายโหนดเดิมเข้าสนามครบ (ป้าย · พินอิน · อสูร)');
-    ok(r.heroSvg, 'ฮีโร่เป็น SVG จริง (คมทุก DPI · ไม่มีไฟล์ภาพ)');
+    /* v6.1 — ฝังเฟรมแล้วต้องได้เฟรม · ยังไม่ฝังต้องตกกลับไปเป็น SVG ของ v6.0 ไม่ใช่กล่องว่าง */
+    ok(r.heroFigs > 0 || r.heroSvg,
+      r.heroFigs ? 'ฮีโร่เป็นเฟรมจากสไปรต์ชีต ' + r.heroFigs + ' เฟรม'
+                 : 'ฮีโร่ตกกลับไปเป็น SVG (ยังไม่ได้ฝังเฟรม)');
+    if (r.heroFigs) {
+      /* data URI เสียจะเงียบสนิท ไม่มี error ให้เห็น — ต้องเช็ก naturalWidth เสมอ */
+      ok(r.heroDecoded, 'เฟรมฮีโร่ decode ได้ครบทุกเฟรม');
+      ok(r.heroOn === 1, 'โชว์ทีละเฟรมเดียวเสมอ (เห็นอยู่ ' + r.heroOn + ' เฟรม)');
+      /* absolute = ไม่อยู่ในสายเลย์เอาต์ → กล่อง .ba-sprite จึงไม่ยืดตามท่าที่กว้างกว่า */
+      ok(r.heroAbs === 'absolute', 'เฟรมฮีโร่วางแบบ absolute (ไม่ดันเลย์เอาต์)');
+    }
     ok(r.heroHp && r.foeHp, 'มีหลอด HP ทั้งฝั่งฮีโร่และฝั่งอสูร');
+
+    /* v6.1 — ฉากหลังตามโซน */
+    if (r.bgOn) {
+      ok(/^url\(/.test(r.bgImg), 'ฉากหลังถูกใส่เป็นภาพจริง');
+      ok(r.bgSize === 'cover', 'ฉากหลังใช้ cover (เต็มกรอบโดยไม่บิดสัดส่วน)');
+      ok(/rgba\(0,\s*0,\s*0,\s*0?\.35\)/.test(r.veil.replace(/\s/g, m => m)),
+        'ม่านดำทับฉากเป็น rgba(0,0,0,.35) ตามสเปก — ได้ ' + r.veil);
+    } else {
+      ok(r.veil === 'none', 'ยังไม่ได้ฝังฉาก → ม่านดำต้องไม่โผล่มาหรี่จอเปล่า ๆ');
+    }
 
     const base = BASE_CARD[c.w];
     ok(r.card && r.card.h <= base + 0.6,

@@ -19877,11 +19877,113 @@
           '#baArena .ba-fig{width:116px}' +
           '#baArena .ba-unit{width:124px}}' +
 
+        /* ══ v6.3 · BATTLE SYSTEM REVAMP ═══════════════════════════════
+           ทุกกฎในก้อนนี้เกาะกับลูกของ #baArena ที่เป็น absolute หรือกับ overlay
+           ที่เป็น fixed ล้วน จึงไม่มีทางดันเลย์เอาต์ได้เลยแม้แต่พิกเซลเดียว */
+
+        /* ระยะพุ่งตามสเปก — ประกาศ @keyframes ชื่อเดิมซ้ำอีกครั้ง ตัวหลังชนะ
+           จึงไม่ต้องไปแก้ก้อน CSS ของ v6.0 ที่อยู่ข้างบน */
+        '@keyframes baAtk{0%{transform:translateX(0)}' +
+          '36%{transform:translateX(' + BA_DASH + 'px) scale(1.06)}100%{transform:translateX(0)}}' +
+        '@keyframes baAtkL{0%{transform:translateX(0)}' +
+          '36%{transform:translateX(-' + BA_DASH + 'px) scale(1.06)}100%{transform:translateX(0)}}' +
+        '#baArena .ba-sprite.ba-atk2{animation:baAtk2 ' + BA_LUNGE + 'ms ease-out}' +
+        '@keyframes baAtk2{0%{transform:translateX(0)}' +
+          '34%{transform:translateX(' + BA_DASH_CRIT + 'px) scale(1.14)}100%{transform:translateX(0)}}' +
+
+        /* Hit Stun 150ms — ความจำเพาะสูงกว่ากฎของ .ba-hurt เฉย ๆ จึงชนะ
+           **ยังใส่คลาส ba-hurt ควบไว้เสมอ** เพราะชุดตรวจอ่านคลาสนั้นเป็นหลักฐาน
+           ว่า "อสูรสั่นตอนโดน" และการถอดออกจะเป็นการเปลี่ยนสัญญาโดยไม่จำเป็น */
+        '#baArena .ba-sprite.ba-hurt.ba-stun{animation:baStun ' + BA_STUN + 'ms ease-out}' +
+        '@keyframes baStun{0%,100%{transform:translateX(0);filter:none}' +
+          '34%{transform:translateX(-4px);filter:brightness(2.3) sepia(1) hue-rotate(-38deg) saturate(6)}' +
+          '68%{transform:translateX(4px);filter:brightness(1.6) sepia(1) hue-rotate(-38deg) saturate(5)}}' +
+
+        /* Screen Shake 2-3px — สั่นเฉพาะลูกที่เป็น absolute ข้างในกรอบ overflow:hidden
+           **ห้ามใส่ transform ที่ #gameScreen หรือที่ตัว #baArena เอง** ของแรกทำให้
+           แบดจ์การ์ด #cdBadge (position:fixed) ของ v4.7 หลุดตำแหน่ง ของหลังไปเพิ่ม
+           พื้นที่เลื่อนแนวนอนของหน้า แล้วกติกา body.scrollWidth <= innerWidth พังทันที */
+        '#baArena.ba-quake .ba-bg,#baArena.ba-quake .ba-sky,#baArena.ba-quake .ba-star,' +
+          '#baArena.ba-quake .ba-ground,#baArena.ba-quake .ba-row,#baArena.ba-quake .ba-fx{' +
+          'animation:baQuake ' + BA_QUAKE_MS + 'ms ease-out}' +
+        '@keyframes baQuake{0%,100%{transform:translate(0,0)}' +
+          '18%{transform:translate(-3px,2px)}38%{transform:translate(3px,-2px)}' +
+          '58%{transform:translate(-2px,-3px)}78%{transform:translate(2px,2px)}}' +
+
+        /* ตัวเลขดาเมจ — ปกติขาว-ฟ้า · คริตทองตัวโต · ท่าไม้ตายทองยักษ์ · ดูดเลือดเขียว
+           ประกาศทับกฎของ v6.0 ที่อยู่ข้างบน (ความจำเพาะเท่ากัน ตัวหลังชนะ) */
+        '.ba-dmg.good{color:#e8f6ff;' +
+          'text-shadow:0 0 10px rgba(127,215,255,.9),0 2px 5px rgba(0,0,0,.95)}' +
+        '.ba-dmg.crit{color:#ffd34a;font-size:29px;' +
+          'text-shadow:0 0 12px #ffc845,0 0 26px rgba(255,200,69,.9),0 2px 5px rgba(0,0,0,.95)}' +
+        '.ba-dmg.crit.sup{font-size:34px;color:#fff2ad}' +
+        '.ba-dmg.heal{color:#8ef0b6}' +
+
+        /* เกจคริตของฮีโร่ + เกจ ATB ของอสูร — absolute ที่ top:100% ของแผ่นป้าย
+           จึงไปนั่งในช่องว่าง 4px ใต้ .ba-row (bottom:4px) พอดี
+           **ห้ามเอาเข้าสายเลย์เอาต์ปกติ** แถวนักสู้จะสูงขึ้น แล้วขอบบนของแถวจะไปชน
+           ขอบล่างของแถบโจทย์ ซึ่ง verify_arena.js วัดระยะนี้ไว้ที่ ≤ 0 ทุกความกว้าง */
+        '#baArena .ba-plate{position:relative}' +
+        /* box-sizing:border-box โดยจำเป็น — ช่องว่างใต้ .ba-row มีแค่ 4px พอดี
+           ถ้าปล่อยเป็น content-box ขอบ 1px จะบวกเป็น 5px แล้วหลอดถูกกรอบสนามตัดหัวท้าย */
+        '#baArena .ba-crit-bar,#baArena .ba-atb-bar{position:absolute;left:0;right:0;top:100%;' +
+          'box-sizing:border-box;margin-top:1px;height:3px;border-radius:2px;overflow:hidden;' +
+          'background:rgba(0,0,0,.62);border:1px solid rgba(255,255,255,.14)}' +
+        '#baArena .ba-crit-bar span,#baArena .ba-atb-bar span{display:block;height:100%;width:0;' +
+          'border-radius:2px;transition:width .18s linear}' +
+        '#baArena .ba-crit-bar span{background:linear-gradient(90deg,#8a5a1e,#ffc845 58%,#fff6c9)}' +
+        '#baArena .ba-crit-bar.full{border-color:rgba(255,214,102,.95);' +
+          'box-shadow:0 0 10px rgba(255,200,69,.95)}' +
+        '#baArena .ba-atb-bar span{background:linear-gradient(90deg,#3a2b7a,#a06bff 58%,#ff9aa4)}' +
+        '#baArena .ba-atb-bar.hot{border-color:rgba(255,60,80,.9)}' +
+        '#baArena .ba-atb-bar.hot span{background:linear-gradient(90deg,#7a1420,#ff3b52)}' +
+
+        /* แบนเนอร์ประกาศสกิล — absolute ทับกลางสนาม อยู่ใต้แถบโจทย์เสมอ (top:76px)
+           **ไม่ได้อยู่ใน #baFx** เพราะชุดตรวจนับลูกของ #baFx ว่าต้องเหลือศูนย์หลังเล่นจบ */
+        '#baArena .ba-skill{position:absolute;left:6px;right:6px;top:76px;z-index:8;' +
+          'pointer-events:none;text-align:center;opacity:0}' +
+        '#baArena .ba-skill.on{animation:baSkl ' + BA_BANNER_MS + 'ms ease-out}' +
+        '#baArena .ba-skill-t{font-size:12px;font-weight:800;letter-spacing:.4px;color:#ffd9a8;' +
+          'text-shadow:0 0 9px rgba(255,60,80,.95),0 2px 4px rgba(0,0,0,.95)}' +
+        '#baArena .ba-skill-s{font-size:9.5px;color:#ffeede;margin-top:1px;' +
+          'text-shadow:0 2px 4px rgba(0,0,0,.95)}' +
+        '@keyframes baSkl{0%{opacity:0;transform:scale(.84)}' +
+          '12%{opacity:1;transform:scale(1.05)}78%{opacity:1;transform:scale(1)}' +
+          '100%{opacity:0;transform:scale(1)}}' +
+
+        /* สถานะผิดปกติที่เกาะกับปุ่มตัวเลือก — เปลี่ยนแค่สี/ความทึบ
+           **ไม่แตะขนาดปุ่มสักพิกเซล** ปุ่มยังสูง ≥ 56px ตามกติกาเดิมของ v4.0 */
+        '#gChoices .g-choice.ba-jail{position:relative;opacity:.4;filter:grayscale(1)}' +
+        '#gChoices .g-choice.ba-jail::after{content:"⛓️";position:absolute;right:7px;top:50%;' +
+          'transform:translateY(-50%);font-size:14px}' +
+        '#gChoices .g-choice.ba-stone{opacity:.5;filter:grayscale(.85) brightness(.72);' +
+          'border-color:rgba(180,180,190,.5)}' +
+        '#gChoices .g-choice.ba-mirage{letter-spacing:3px;color:#9fb3c8}' +
+        /* ปิดพินอินด้วย visibility ไม่ใช่ display — กล่องต้องคงความสูงไว้
+           ไม่งั้นการ์ดโจทย์หดแล้วเลย์เอาต์ขยับ ซึ่งเป็นข้อห้ามหลักของทั้งชั้นนี้ */
+        '#gameScreen.ba-silence #gPinyin{visibility:hidden}' +
+        /* Blind Knowledge ปิด "คำแปลไทย" ที่ซื้อมาด้วย — พินอินที่ 👁️ เนตรพินอิน เปิดไว้
+           ใต้ตัวเลือก · บรรทัดใบ้ของ 🔍 แว่นขยายสัจธรรม · แถบคำใบ้สกิล
+           **ใช้ visibility ไม่ใช่ display ทุกจุด** display:none จะทำให้ปุ่มตัวเลือกหดลง
+           แล้วความสูงแถวตัวเลือกขยับ ซึ่งเป็นข้อห้ามหลักของทั้งชั้นนี้ */
+        '#gameScreen.ba-blind .g-choice-py,#gameScreen.ba-blind #gItemMsg,' +
+          '#gameScreen.ba-blind #gSkillTip{visibility:hidden}' +
+
+        /* จอมืดของโหมดเหวลึก — fixed + pointer-events:none จึงไม่กินเลย์เอาต์และ
+           ไม่ขวางการกดปุ่ม (elementFromPoint มองข้ามของที่ pointer-events:none)
+           z-index 145 อยู่ใต้ม่านหยุดเกม (190) และใต้หน้าต่างระบบ (200) เสมอ */
+        '#baBlack{position:fixed;inset:0;z-index:145;pointer-events:none;opacity:0;' +
+          'background:#02040a;transition:opacity .3s ease}' +
+        '#baBlack.on{opacity:.96}' +
+
         /* เครื่องที่ผู้ใช้ขอลดการเคลื่อนไหว — ตัดการเคลื่อนที่ทิ้ง เหลือแต่ตัวเลขดาเมจ
            ซึ่งเป็นข้อมูลที่ผู้เล่นต้องได้อ่าน ไม่ใช่ของประดับ */
         '@media (prefers-reduced-motion:reduce){' +
-          '#baArena .ba-sprite.ba-atk,#baArena .ba-sprite.ba-atk-l,' +
-          '#baArena .ba-sprite.ba-hurt{animation:none}' +
+          '#baArena .ba-sprite.ba-atk,#baArena .ba-sprite.ba-atk2,' +
+          '#baArena .ba-sprite.ba-atk-l,#baArena .ba-sprite.ba-hurt,' +
+          '#baArena.ba-quake .ba-bg,#baArena.ba-quake .ba-sky,#baArena.ba-quake .ba-star,' +
+          '#baArena.ba-quake .ba-ground,#baArena.ba-quake .ba-row,' +
+          '#baArena.ba-quake .ba-fx{animation:none}' +
           '.ba-slash,.ba-bolt,.ba-hit{display:none}}';
 
       const st = document.createElement('style');
@@ -20030,14 +20132,15 @@
       return n > 0 ? BA_SEED % n : 0;
     }
 
-    /* สุ่มท่าโจมตีหนึ่งท่า ค้างไว้แล้วกลับไปยืนเอง
-       ไม่สุ่มซ้ำท่าเดิมติดกันถ้ามีให้เลือกมากกว่าหนึ่งท่า */
+    /* ── ท่าโจมตีของฮีโร่ — **ไล่วนครบทุกเฟรมตามลำดับ ไม่สุ่ม** (ข้อกำหนดข้อ 5 ของ v6.3)
+       ของเดิม (v6.1) สุ่มเลือกทีละท่า ซึ่งแปลว่าเฟรมบางท่าอาจไม่เคยถูกเห็นเลยทั้งรอบ
+       การเดินคิวแบบวนรอบรับประกันว่าเฟรมทั้ง 7 ท่าถูกใช้จริงครบ 100%
+       และเป็นผลพลอยได้ว่าไม่ต้องแตะเครื่องสุ่มเลย (กับดักข้อ 32 — Math.random เป็น
+       ทรัพยากรร่วมที่ชุดเทสต์ของ v4.7 ยึดไว้แล้ว) */
     function baAct(ms) {
       if (!BA_ACTS.length || !baCanPlay()) return;
-      let i = BA_ACTS[baRand(BA_ACTS.length)];
-      if (i === BA_FRAME && BA_ACTS.length > 1) {
-        i = BA_ACTS[(BA_ACTS.indexOf(i) + 1) % BA_ACTS.length];
-      }
+      BA_ACT_K = (BA_ACT_K + 1) % BA_ACTS.length;
+      const i = BA_ACTS[BA_ACT_K];
       const life = ms || BA_ACT_MS;
       baShowFrame(i);
       BA_ACT_TO = Date.now() + life;
@@ -20185,21 +20288,32 @@
       baFoeIdleFrame();
     }
 
-    /* ท่าฟาดของอสูร — กติกาเดียวกับ baAct() ของฮีโร่เป๊ะ รวมถึงเครื่องสุ่มด้วย
-       (baRand ไม่ใช่ Math.random — กับดักข้อ 32) */
+    /* ── ชุดท่าฟาดของอสูร — **เล่นเฟรมท่าโจมตีทุกเฟรมตามลำดับจนครบชุด**
+       (ข้อกำหนดข้อ 5 ของ v6.3 · ของเดิมสุ่มโชว์ทีละเฟรมเดียว)
+       เฟรมท่าปล่อยพลัง/ระเบิดออร่า/ยิงลำแสงของอสูรแต่ละตัวจึงถูกใช้จริงครบ 100%
+
+       ความยาวชุดถูกหารจากงบเวลาที่ให้มา จึงจบก่อนที่ scheduleTurn ของ v4.0 จะ
+       พาไปข้อถัดไปเสมอ (ตอบผิดรอ 900-1600ms · ตอบถูกที่ล้มมอนสเตอร์รอ 1100ms)
+       และแต่ละเฟรมกินอย่างน้อย 90ms เพื่อให้ตาเห็นทัน */
     function baFoeAct(ms) {
       const fr = baFrames(BA_FOE_ID);
       if (!fr || !baCanPlay()) return;
       const acts = baFoeIdx(fr, 'act');
       if (!acts.length) return;
-      let i = acts[baRand(acts.length)];
-      if (i === BA_FOE_FR && acts.length > 1) i = acts[(acts.indexOf(i) + 1) % acts.length];
-      const life = ms || BA_ACT_MS;
-      baFoeShow(i);
-      BA_FOE_TO = Date.now() + life;
+      const step = Math.max(90, Math.min(BA_SEQ_MS, Math.round((ms || BA_ACT_MS) / acts.length)));
+      BA_FOE_TO = Date.now() + step * acts.length + 30;
+      baFoeSeq(acts, 0, step);
+    }
+
+    /* เดินทีละเฟรมด้วยนาฬิกาที่จดไว้ใน BA_T — ถูกล้างพร้อมกันตอนขึ้นข้อใหม่/ออกจากเกม
+       **ไม่ใช้ animation:infinite** (กับดักข้อ 31) และเช็กสถานะทุกก้าวเผื่อจอถูกพับกลางชุด */
+    function baFoeSeq(acts, i, step) {
+      if (i >= acts.length) { BA_FOE_TO = 0; baFoeIdleFrame(); return; }
+      baFoeShow(acts[i]);
       baLater(function () {
-        if (Date.now() >= BA_FOE_TO) { BA_FOE_TO = 0; baFoeIdleFrame(); }
-      }, life + 30);
+        if (!baCanPlay()) { BA_FOE_TO = 0; baFoeIdleFrame(); return; }
+        baFoeSeq(acts, i + 1, step);
+      }, step);
     }
 
     /* โดนฟัน = ตัดท่าฟาดทิ้งแล้วสแนปกลับท่ายืนทันที ก่อนให้ .ba-hurt กระพริบทับ
@@ -20226,6 +20340,700 @@
         BA_FOE_IK = (BA_FOE_IK + 1) % idles.length;
         baFoeShow(idles[BA_FOE_IK]);
       }
+    }
+
+    /* ══════════════════════════════════════════════════════════════════
+       Patch v6.3 · BATTLE SYSTEM REVAMP & HARDCORE MECHANICS
+       ══════════════════════════════════════════════════════════════════
+       อยู่ในเนมสเปซ ba ของชั้น v6.0 เดิม **ไม่ได้ตั้งพรีฟิกซ์ใหม่** เพราะเป็นการ
+       ต่อยอดชั้นเดียวกัน (กติกาเดียวกับ Patch v6.1 · v6.2 ที่เติมฉากหลัง/เฟรมอสูร
+       และ Patch v5.3.1 ที่ต่อยอดชั้น 16 ในเนมสเปซ fb)
+       **ไม่แตะโค้ดของ v4.0-v5.9 เลยแม้แต่บรรทัดเดียว** ทุกอย่างยังเป็นการห่อฟังก์ชัน
+
+       หกเรื่องในแพตช์เดียว
+         1) อนิเมชันพุ่ง-ฟัน (Dash & Strike) ทั้งฝั่งฮีโร่และฝั่งอสูร
+         2) เกจ ATB เดินจริงแบบเรียลไทม์ + สมดุล Extreme Pressure
+         3) ทักษะเฉพาะตัว 19 ตัว พร้อมสถานะผิดปกติที่ผูกกับ UI จริง
+         4) เกจคริติคอลของฮีโร่ (ba_crit) + ท่าไม้ตาย Super Dash Strike
+         5) เครื่องเล่นเฟรมครบชุด — ทุกเฟรมที่สกัดไว้ถูกใช้จริง 100%
+         6) ห้ามเฉลยคำตอบตอนตอบผิด (Anti-Cheat)
+
+       **ข้อจำกัดที่ตัดสินรูปร่างของทั้งแพตช์ ยังเป็นข้อเดิมของ v6.0:
+       ห้ามให้ความสูงการ์ดโจทย์ขยับแม้แต่พิกเซลเดียว (340.8px · 354.8px ที่จอ 320)**
+       ของใหม่ทุกชิ้นจึงเป็น position:absolute หรือ position:fixed ล้วน —
+       เกจคริต/เกจ ATB ไปนั่งในช่องว่าง 4px ใต้ .ba-row ที่มีอยู่แล้ว ไม่กินความสูงเพิ่ม
+       (เหตุผลเต็มอยู่ที่หัวข้อ BA_H — การ์ดโตขึ้นเมื่อไหร่ เกมจะค้างในสภาพ
+       "หยุดเวลาให้แล้ว" โดยไม่มี error ให้เห็นเลย · กับดักข้อ 23) */
+
+    /* ── 1) จังหวะและระยะของอนิเมชันพุ่ง ─────────────────────────────────
+       ระยะพุ่งมาจากสเปกตรง ๆ · ตัวละครวิ่งอยู่ในกรอบ overflow:hidden จึงล้นไม่ได้ */
+    const BA_DASH      = 60;    /* ฮีโร่พุ่งปกติ ΔX +60px */
+    const BA_DASH_CRIT = 90;    /* คริติคอล/ท่าไม้ตาย ΔX +90px */
+    const BA_STUN      = 150;   /* Hit Stun ของอสูร — สั่น/กระพริบแดง 150ms */
+    const BA_QUAKE_MS  = 260;   /* Screen Shake 2-3px */
+    const BA_SEQ_MS    = 200;   /* คาบเปลี่ยนเฟรมตอนเล่นชุดท่าโจมตี */
+
+    /* ── 2) เกจ ATB ของอสูร — เวลาที่ใช้เติมจาก 0 ถึง 100% (ms) ───────────
+       เรียงตามโซนหอคอย 1-5 แล้วปิดท้ายด้วยโหมดเหวลึกซึ่งเร็วที่สุด
+       **ไม่มีเลขชั้นฮาร์ดโค้ด** — อ่านโซนผ่าน baBandOf() ของ v6.1 ซึ่งคำนวณจาก
+       FLOOR_MAX เอง ถ้าหอคอยสูงขึ้น ตารางนี้ขยับตามโดยไม่ต้องแก้อะไร */
+    const BA_ATB_MS    = [12000, 10000, 9000, 7000, 6000];
+    const BA_ATB_ABYSS = 5000;
+    const BA_ATB_TICK  = 200;   /* คาบนาฬิกาเกจ — 200ms พอให้หลอดลื่นโดยไม่กินแบต
+                                   **ห้ามลดลงต่ำกว่านี้โดยไม่รัน test_dual_warp_gate
+                                   ซ้ำ 3 รอบ** (กับดักข้อ 31 — งานที่วิ่งถี่ตลอดเวลา
+                                   ทำให้ชุดเทสต์ที่รอเวลาแกว่ง) */
+
+    /* Minimal ATB Pushback — ตอบถูกดันเกจถอยได้นิดเดียว อสูรจึงได้ออกสกิลแน่นอน
+       ตัวเลขมาจากสเปกตรง ๆ · แก้ที่ก้อนนี้ก้อนเดียว */
+    const BA_PUSH = { normal: 20, elite: 15, boss: 10 };
+
+    /* ── 4) เกจคริติคอลของฮีโร่ ─────────────────────────────────────────
+       **ชื่อ ba_crit มาจากสเปกตรง ๆ ห้ามเปลี่ยน** — mangle.toplevel ของ build
+       เป็น false ตลอดกาล ชื่อระดับบนสุดจึงรอดผ่านการย่อไฟล์ไปครบ */
+    const BA_CRIT_MAX   = 100;
+    const BA_CRIT_FAST  = 35;   /* ตอบถูกไว (≤ 3 วิ) */
+    const BA_CRIT_SLOW  = 15;   /* ตอบถูกปกติ */
+    const BA_CRIT_COMBO = 5;    /* โบนัสตอนคอมโบ ≥ 3 */
+    const BA_CRIT_MISS  = 25;   /* ตอบผิดหักคืน */
+    const BA_COMBO_MIN  = 3;
+    const BA_FAST_MS    = 3000; /* เส้นแบ่ง "ตอบไว" ของทั้งแพตช์ */
+    const BA_SUPER_MUL  = 2.5;  /* ท่าไม้ตาย — ตัวคูณดาเมจ */
+    const BA_SUPER_PUSH = 30;   /* ท่าไม้ตายดันเกจ ATB ถอย 30% */
+
+    /* ── 3) ค่าคงที่ของสถานะผิดปกติ — ข้อความบนแบนเนอร์ประกอบจากค่าพวกนี้เอง
+       จึงไม่มีทางที่ตัวเลขบนจอกับตัวเลขที่ทำงานจริงจะเพี้ยนกัน
+       (กติกาเดียวกับข้อความราคาร้านค้าของ v4.7.9.1) ───────────────────── */
+    const BA_FORT_CUT   = 0.60;  /* Heavy Fortress — ลดดาเมจฮีโร่ 60% */
+    const BA_CUT_MS     = 5000;  /* Brutal Shield Slam — ตัดเวลาข้อ 5 วิ */
+    const BA_STONE_MS   = 3000;  /* Petrifying Roar — ล็อกปุ่ม 3 วิ */
+    const BA_JAIL_N     = 2;     /* Thorn Prison — ล็อกปิดกี่ปุ่ม */
+    const BA_TOX_PCT    = 8;     /* Deadly Neurotoxin — พิษต่อจังหวะ (%) */
+    const BA_TOX_N      = 5;     /* จำนวนจังหวะ → รวม 40% ตามสเปก */
+    const BA_TOX_MS     = 2000;  /* ทุก 2 วินาที */
+    const BA_TOXB_PCT   = 10;    /* พิษของบอสพฤกษา */
+    const BA_TOXB_N     = 4;     /* 10% x 4 = 40% เท่ากับสายพิษปกติ ไม่ให้บอสเกินกรอบ */
+    const BA_GLITCH     = 2.5;   /* Hyper Clock Glitch — เร่งเวลาข้อ 2.5 เท่า */
+    const BA_CHAOS_MS   = 1500;  /* Chaotic Inversion — สลับปุ่มทุก 1.5 วิ */
+    const BA_MIRAGE_N   = 3;     /* Mirrored Mirage — ซ่อนช้อยส์กี่ปุ่ม */
+    const BA_BLACK_MS   = 4000;  /* Abyssal Devourer — จอมืดกี่มิลลิวินาที */
+    const BA_DRAIN_PCT  = 40;    /* Abyssal Devourer — ดูดเลือดกี่เปอร์เซ็นต์ */
+    const BA_BANNER_MS  = 1600;  /* แบนเนอร์ประกาศสกิลอยู่บนจอกี่มิลลิวินาที */
+
+    /* ── สถานะของ "รอบการเล่น" ทั้งหมด ไม่ต้องเซฟสักตัว ───────────────────
+       (กฎเดียวกับ AB_LIVE ของ v4.6 · HD_TIMEOUT ของ v4.8 · AC_HELD ของ v4.8.1) */
+    let ba_crit    = 0;      /* เกจคริติคอลของฮีโร่ 0-100 — ชื่อตามสเปก */
+    let BA_ATB     = 0;      /* เกจ ATB ของอสูร 0-100 */
+    let BA_ATB_T   = null;   /* นาฬิกาเกจ */
+    let BA_ATB_LAST= 0;      /* เวลาที่ tick รอบก่อนทำงาน — ใช้คิดส่วนต่างจริง */
+    let BA_FAST    = false;  /* ข้อนี้ตอบไวไหม (ล็อกค่าไว้ตอนเข้า resolveAnswer) */
+    let BA_SUPER   = false;  /* ข้อนี้เป็นท่าไม้ตายไหม */
+    let BA_FORT    = false;  /* Heavy Fortress ติดอยู่ไหม */
+    let BA_CONDEMN = false;  /* Instant Condemnation — ตอบผิดข้อถัดไปตายทันที */
+    let BA_FIGHT_M = null;   /* อ้างอิงมอนสเตอร์ตัวที่กำลังสู้ ใช้จับ "ไฟต์ใหม่" */
+    let BA_TOX_T   = null;   /* นาฬิกาพิษ */
+    let BA_CHAOS_T = null;   /* นาฬิกาสลับปุ่ม */
+    let BA_STONE_T = null;   /* นาฬิกาปลดล็อกปุ่ม */
+    let BA_ACT_K   = -1;     /* ท่าโจมตีของฮีโร่ถึงคิวเฟรมที่เท่าไร (วนครบทุกเฟรม) */
+
+    /* ── ตัวช่วยเล็ก ๆ ───────────────────────────────────────────────── */
+    function baPct(p) {
+      const g = baG();
+      return Math.max(1, Math.round((g && g.maxHp ? g.maxHp : 100) * p / 100));
+    }
+
+    function baChoices() {
+      return Array.prototype.slice.call(document.querySelectorAll('#gChoices .g-choice'));
+    }
+
+    function baScreen() { return document.getElementById('gameScreen'); }
+
+    /* อยู่ในสถานะ "กำลังสู้จริง" ไหม — ตัวตัดสินเดียวของทั้งเกจ ATB และการปล่อยสกิล
+       อ่านสถานะสดทุกครั้ง ไม่เก็บธงซ้อน (กติกาเดียวกับ acOverlayOpen ของ v4.8.1) */
+    function baFighting() {
+      const g = baG();
+      if (!g || g.practiceMode) return false;
+      if (!baCanPlay() || baPaused()) return false;
+      if (g.locked || g.warpOpen) return false;
+      if (!g.currentMonster) return false;
+      if (typeof FREEZE_TIMER !== 'undefined' && FREEZE_TIMER) return false;   /* ❄️ แช่แข็งอยู่ */
+      if (typeof QUESTION_TIMER === 'undefined' || !QUESTION_TIMER) return false;
+      return true;
+    }
+
+    // ══ เกจคริติคอลของฮีโร่ (ba_crit) ═══════════════════════════════════
+    function baCritPaint() {
+      const box = document.getElementById('baCritBar');
+      if (!box) return;
+      const fill = box.firstElementChild;
+      if (fill) fill.style.width = Math.max(0, Math.min(100, ba_crit)) + '%';
+      box.classList.toggle('full', ba_crit >= BA_CRIT_MAX);
+    }
+
+    function baCritAdd(n) {
+      ba_crit = Math.max(0, Math.min(BA_CRIT_MAX, ba_crit + n));
+      baCritPaint();
+    }
+
+    // ══ เกจ ATB ของอสูร ════════════════════════════════════════════════
+    /* ความเร็วเกจของชั้นที่ยืนอยู่ — โหมดเหวลึกทับทุกชั้นเสมอ */
+    function baAtbFull() {
+      const g = baG();
+      if (!g) return BA_ATB_MS[0];
+      if (typeof abyssOn === 'function' && !g.practiceMode && abyssOn(g)) return BA_ATB_ABYSS;
+      return BA_ATB_MS[Math.min(BA_ATB_MS.length - 1, baBandOf(g.floor))];
+    }
+
+    function baAtbPaint() {
+      const box = document.getElementById('baAtbBar');
+      if (!box) return;
+      const fill = box.firstElementChild;
+      const v = Math.max(0, Math.min(100, BA_ATB));
+      if (fill) fill.style.width = v + '%';
+      box.classList.toggle('hot', v >= 80);
+    }
+
+    function baAtbPush(p) {
+      BA_ATB = Math.max(0, BA_ATB - Math.max(0, p));
+      baAtbPaint();
+    }
+
+    /* หนึ่งจังหวะของเกจ — **จดเวลาไว้ก่อนเช็กสถานะเสมอ** ไม่งั้นตอนกลับมาจาก
+       สถานะหยุด/สลับแท็บ ส่วนต่างจะกลายเป็นหลายวินาทีแล้วเกจกระโดดเต็มทีเดียว */
+    function baAtbTick() {
+      const now = Date.now();
+      const dt = Math.min(1000, Math.max(0, now - BA_ATB_LAST));
+      BA_ATB_LAST = now;
+      if (!baFighting()) return;
+      const full = baAtbFull() || 12000;
+      BA_ATB += dt / full * 100;
+      if (BA_ATB >= 100) { BA_ATB = 100; baAtbPaint(); baFire(); return; }
+      baAtbPaint();
+    }
+
+    function baAtbArm() {
+      if (BA_ATB_T) return;
+      BA_ATB_LAST = Date.now();
+      BA_ATB_T = setInterval(function () {
+        try { baAtbTick(); } catch (e) { baErr(e, 'atb'); }
+      }, BA_ATB_TICK);
+    }
+
+    function baAtbStop() {
+      if (BA_ATB_T) { clearInterval(BA_ATB_T); BA_ATB_T = null; }
+    }
+
+    // ══ ตัวกลางทำร้ายฮีโร่ — ทุกสกิลต้องผ่านที่นี่ที่เดียว ══════════════
+    /* **ห้ามลบ HP ตรง ๆ ในโค้ดของสกิลเด็ดขาด** (กติกาเดียวกับ cdHurt ของ v4.7)
+       เพราะสกิลยิงนอกจังหวะ resolveAnswer ถ้าฮีโร่ตายตรงนี้ จะไม่มีใครสั่งคิวเทิร์นให้
+       แล้วจอจะค้างอยู่กับข้อที่ตอบไม่ได้อีกต่อไป (กับดักข้อ 19) */
+    function baHurtHero(amount) {
+      const g = baG();
+      if (!g || g.practiceMode) return 0;
+      const amt = Math.max(1, Math.round(amount));
+      g.hp = Math.max(0, g.hp - amt);
+      try { renderStats(); } catch (e) {}
+      try { baSyncHero(); } catch (e) {}
+      const t = baSpot('baHero');
+      if (t) baFloat('-' + amt, 'bad', t);
+      baFlash('radial-gradient(circle at 26% 60%,rgba(255,60,80,.5),transparent 62%)');
+      if (g.hp <= 0) baFell();
+      return amt;
+    }
+
+    /* ฮีโร่ร่วงจากสกิล (ไม่ได้ร่วงจากการตอบผิด) — ต้องดับนาฬิกาข้อและสั่งคิวเองครบ */
+    function baFell() {
+      const g = baG();
+      if (!g) return;
+      g.locked = true;
+      baClearFight();
+      try { clearQuestionTimer(); } catch (e) {}
+      try { baPose('baHero', 'ba-down', 900); } catch (e) {}
+      if (typeof scheduleTurn === 'function' && typeof onHunterDown === 'function') {
+        scheduleTurn(onHunterDown, 900);
+      }
+    }
+
+    // ══ แบนเนอร์ประกาศสกิล — absolute จึงไม่ดันเลย์เอาต์ ════════════════
+    /* **ไม่ยิง toast และไม่ยิง gate สักใบ** — gate ห้ามเด็ดขาดเพราะนาฬิกาต่อข้อ
+       เดินอยู่ (กับดักข้อ 18) ส่วน toast จะไปแย่งโควตา Single Active Replace
+       ของ v4.9.1 แล้วกลืนแจ้งเตือนของชั้นอื่นทิ้ง จึงใช้แบนเนอร์ในสนามแทน
+       และไม่ได้อยู่ใน #baFx เพราะชุดตรวจนับลูกของ #baFx ว่าต้องเหลือศูนย์ */
+    function baBannerText(title, sub) {
+      const el = document.getElementById('baSkill');
+      if (!el) return;
+      el.innerHTML = '';
+      const a = document.createElement('div');
+      a.className = 'ba-skill-t';
+      a.textContent = title;
+      el.appendChild(a);
+      if (sub) {
+        const b = document.createElement('div');
+        b.className = 'ba-skill-s';
+        b.textContent = sub;
+        el.appendChild(b);
+      }
+      el.classList.remove('on');
+      void el.offsetWidth;
+      el.classList.add('on');
+      baLater(function () { el.classList.remove('on'); }, BA_BANNER_MS + 40);
+    }
+
+    function baBanner(sk) {
+      if (!sk) return;
+      baBannerText('☠️ ' + sk.name + ' · ' + sk.en, sk.desc);
+    }
+
+    // ══ สถานะผิดปกติ — ทุกตัวผูกกับ UI จริง ════════════════════════════
+    /* Petrifying Roar — ล็อกทุกปุ่มชั่วคราว แล้วปลดคืนเอง
+       ปลดคืนก็ต่อเมื่อข้อยังไม่จบ (G.locked เป็นเท็จ) ไม่งั้นจะไปปลดปุ่มที่
+       v4.0 ตั้งใจปิดไว้หลังตัดสินผลแล้ว */
+    function baStone(ms) {
+      const list = baChoices();
+      for (let i = 0; i < list.length; i++) {
+        list[i].disabled = true;
+        list[i].classList.add('ba-stone');
+      }
+      if (BA_STONE_T) clearTimeout(BA_STONE_T);
+      BA_STONE_T = setTimeout(function () {
+        BA_STONE_T = null;
+        try {
+          const g = baG();
+          const now = baChoices();
+          for (let i = 0; i < now.length; i++) {
+            now[i].classList.remove('ba-stone');
+            /* ปุ่มที่ถูกหนามรัดไว้ (Thorn Prison) ต้องยังปิดอยู่ — ปลดคืนเฉพาะปุ่มที่
+               ถูกปิดด้วยสถานะกลายเป็นหินเท่านั้น ไม่งั้นสองสถานะจะล้างกันเอง */
+            if (g && !g.locked && !now[i].classList.contains('ba-jail')) now[i].disabled = false;
+          }
+        } catch (e) { baErr(e, 'stone'); }
+      }, ms);
+    }
+
+    /* Thorn Prison — ล็อกปิดปุ่มถาวรจนกว่าจะขึ้นข้อใหม่
+       **สุ่มโดยไม่เว้นปุ่มเฉลย โดยตั้งใจ** ถ้าเว้นให้ ผู้เล่นจะเหลือ 2 ตัวเลือก
+       ที่การันตีว่ามีเฉลยอยู่ = กลายเป็นบัฟช่วยตอบแทนที่จะเป็นสถานะผิดปกติ */
+    function baJail(n) {
+      const list = baChoices();
+      const pool = [];
+      for (let i = 0; i < list.length; i++) if (!list[i].disabled) pool.push(i);
+      /* **เหลือให้เลือกอย่างน้อย 2 ปุ่มเสมอ** — 🧠 สัมผัสฮันเตอร์ของ v4.0 ตัดตัวลวง
+         ให้เองได้ตั้งแต่ A-RANK ทำให้บางข้อเหลือ 3 ปุ่ม ถ้าปิดดื้อ ๆ 2 ปุ่มจะเหลือ 1
+         แล้วข้อนั้นแพ้แน่นอนโดยไม่มีอะไรให้ตัดสินใจเลย ซึ่งเป็นการลงโทษที่ไม่มีทางเล่น
+         ไม่ใช่สถานะผิดปกติ · เพดานนี้ไม่ทำให้ผ่อนลงเลยในกรณีปกติ (4 ปุ่ม ปิด 2 เหลือ 2) */
+      const take = Math.max(0, Math.min(n, pool.length - 2));
+      for (let k = 0; k < take && pool.length; k++) {
+        const p = pool.splice(baRand(pool.length), 1)[0];
+        list[p].disabled = true;
+        list[p].classList.add('ba-jail');
+      }
+    }
+
+    /* Mirrored Mirage — ปิดข้อความช้อยส์เป็น ??? แต่ยังกดได้ตามปกติ
+       ค่าที่ส่งเข้า answer() คือค่าที่ผูกไว้ใน closure ของ v4.0 ไม่ได้อ่านจากข้อความ
+       การเปลี่ยนข้อความจึงไม่ทำให้การตัดสินผลเพี้ยน */
+    function baMirage(n) {
+      const list = baChoices();
+      const pool = [];
+      for (let i = 0; i < list.length; i++) pool.push(i);
+      for (let k = 0; k < n && pool.length; k++) {
+        const p = pool.splice(baRand(pool.length), 1)[0];
+        list[p].classList.add('ba-mirage');
+        list[p].textContent = '???';
+      }
+    }
+
+    /* Chaotic Inversion — สลับตำแหน่งปุ่มเรื่อย ๆ แบบเรียลไทม์
+       ย้ายโหนดเดิม ไม่ได้สร้างปุ่มใหม่ onclick ของ v4.0 จึงยังติดอยู่ครบ */
+    function baChaosShuffle() {
+      const box = document.getElementById('gChoices');
+      if (!box) return;
+      const list = baChoices();
+      if (list.length < 2) return;
+      for (let i = list.length - 1; i > 0; i--) {
+        const j = baRand(i + 1);
+        const t = list[i]; list[i] = list[j]; list[j] = t;
+      }
+      for (let i = 0; i < list.length; i++) box.appendChild(list[i]);
+    }
+
+    function baChaos(ms) {
+      baChaosStop();
+      baChaosShuffle();
+      BA_CHAOS_T = setInterval(function () {
+        try {
+          if (!baFighting()) return;
+          baChaosShuffle();
+        } catch (e) { baErr(e, 'chaos'); }
+      }, ms);
+    }
+
+    function baChaosStop() {
+      if (BA_CHAOS_T) { clearInterval(BA_CHAOS_T); BA_CHAOS_T = null; }
+    }
+
+    /* Deadly Neurotoxin / Corrupted Overgrowth — พิษต่อเนื่อง
+       จังหวะที่เกมหยุดอยู่จะ "ข้าม" ไม่ใช่ "ทบ" — ไม่งั้นนักเรียนที่สลับแอปไปตอบ
+       คำถามครูแล้วกลับมาจะโดนพิษถล่มทีเดียวหมดหลอดโดยไม่ได้ทำอะไรผิด */
+    function baToxin(pct, ticks, everyMs) {
+      baToxinStop();
+      let n = 0;
+      BA_TOX_T = setInterval(function () {
+        try {
+          const g = baG();
+          if (!g || g.practiceMode) { baToxinStop(); return; }
+          if (!baCanPlay() || baPaused() || g.warpOpen) return;   /* ข้าม ไม่นับจังหวะ */
+          n++;
+          baHurtHero(baPct(pct));
+          if (n >= ticks || g.hp <= 0) baToxinStop();
+        } catch (e) { baErr(e, 'toxin'); baToxinStop(); }
+      }, everyMs);
+    }
+
+    function baToxinStop() {
+      if (BA_TOX_T) { clearInterval(BA_TOX_T); BA_TOX_T = null; }
+    }
+
+    /* Blind Knowledge — ลบวรรณยุกต์พินอินทิ้ง + ซ่อนคำแปลใต้ตัวเลือก
+       ตัดเฉพาะเครื่องหมายเสียงวรรณยุกต์ (combining mark) ตัวอักษรยังอยู่ครบ
+       ไม่ต้องคืนค่าเอง เพราะ renderMonster ของ v4.0 เขียน #gPinyin ใหม่ทุกข้อ */
+    function baStripTone(s) {
+      try { return String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').normalize('NFC'); }
+      catch (e) { return String(s); }
+    }
+
+    function baBlind() {
+      const gs = baScreen();
+      if (gs) gs.classList.add('ba-blind');
+      const py = document.getElementById('gPinyin');
+      if (py) py.textContent = baStripTone(py.textContent || '');
+    }
+
+    /* Grand Absolute Silence — ซ่อนพินอินทั้งไฟต์
+       ใช้ visibility:hidden ไม่ใช่ display:none เพราะกล่องต้องคงความสูงไว้
+       ไม่งั้นการ์ดโจทย์จะหดแล้วเลย์เอาต์ขยับ (ข้อจำกัดหลักของทั้งชั้น) */
+    function baSilence() {
+      const gs = baScreen();
+      if (gs) gs.classList.add('ba-silence');
+    }
+
+    /* Hyper Clock Glitch — บีบเวลาที่เหลือของข้อปัจจุบันลง 2.5 เท่า
+       เรียก resumeQuestionTimer() ของ v4.0 ครั้งเดียวจบ หลอด · ตัวเลข · ตัวตัดเวลา
+       จึงถูกตั้งใหม่พร้อมกันครบ **ไม่แตะ G.questionStart** ตัววัด "ตอบไว" จึงยังซื่อสัตย์ */
+    function baWarpClock(mul) {
+      if (typeof QUESTION_ENDS === 'undefined' || typeof resumeQuestionTimer !== 'function') return;
+      const left = Math.max(0, QUESTION_ENDS - Date.now());
+      if (!left) return;
+      resumeQuestionTimer(Math.max(600, Math.round(left / (mul || 1))));
+    }
+
+    /* Brutal Shield Slam — ตัดเวลาข้อทิ้งเป็นก้อน */
+    function baCutClock(ms) {
+      if (typeof QUESTION_ENDS === 'undefined' || typeof resumeQuestionTimer !== 'function') return;
+      const left = Math.max(0, QUESTION_ENDS - Date.now());
+      if (!left) return;
+      resumeQuestionTimer(Math.max(600, left - ms));
+    }
+
+    /* Streak Purge / Monarch's Cataclysm — ล้างคอมโบ */
+    function baPurgeStreak() {
+      const g = baG();
+      if (!g) return;
+      g.streak = 0;
+      try { renderStats(); } catch (e) {}
+    }
+
+    /* Abyssal Devourer — จอมืด
+       position:fixed + pointer-events:none จึงไม่กินเลย์เอาต์และไม่ขวางการกดปุ่ม
+       (elementFromPoint มองข้าม pointer-events:none ชุดตรวจของชั้นอื่นจึงไม่กระทบ)
+       z-index 145 = เหนือ #abDanger(120)/#gVfx(150 ยังต่ำกว่า) แต่ต่ำกว่าม่านหยุดเกม(190)
+       และต่ำกว่าหน้าต่างระบบ(200) เสมอ */
+    function baBlackEl() {
+      let el = document.getElementById('baBlack');
+      if (el) return el;
+      el = document.createElement('div');
+      el.id = 'baBlack';
+      el.setAttribute('aria-hidden', 'true');
+      document.body.appendChild(el);
+      return el;
+    }
+
+    function baBlackout(ms) {
+      const el = baBlackEl();
+      if (!el) return;
+      el.classList.add('on');
+      baLater(function () { el.classList.remove('on'); }, ms);
+    }
+
+    /* Abyssal Devourer — ดูดเลือด: ฮีโร่เสีย HP แล้วอสูรฟื้นเท่ากัน */
+    function baDrain(pct) {
+      const g = baG();
+      if (!g) return;
+      const amt = baHurtHero(baPct(pct));
+      if (!amt) return;
+      g.monsterHp = Math.min(g.monsterMaxHp || amt, (g.monsterHp || 0) + amt);
+      try { renderMonsterHp(); } catch (e) {}
+      try { baSyncFoe(); } catch (e) {}
+      const t = baSpot('baFoe');
+      if (t) baFloat('+' + amt, 'heal', t);
+    }
+
+    // ══ คลังทักษะเฉพาะตัว — สารบัญอยู่ที่ก้อนนี้ก้อนเดียว ══════════════
+    /* คีย์ตรงกับ id ของ BA_FOES ทุกตัว จึงไม่มีแผนที่ชุดที่สองให้ต้องซิงก์
+       (กติกาเดียวกับที่ embed_monster_art.py อ่าน BA_FOES[].file เป็นสารบัญ)
+       ตัวสุดท้าย void เป็นของโหมดเหวลึกซึ่งทับทุกชั้นเสมอ
+
+       tier มีสามระดับตามสเปก — normal / elite / boss ใช้ตัดสินแรงดันเกจกลับ
+       elite คือตัวสุดท้ายก่อนบอสประจำโซนของแต่ละโซน (ชั้น 3/7/11/15/19)
+       **และชั้นบอสจริงของ v4.0 (ทุก 5 ชั้น) ถูกนับเป็น boss เสมอด้วย** ดู baTierNow() */
+    const BA_SKILLS = {
+      /* โซน 1 · คุกใต้ดินและทางเดินหิน (ชั้น 1-4) */
+      m11: { tier: 'normal', name: 'ถล่มสุสาน', en: 'Catacomb Collapse',
+             desc: 'เพดานสุสานถล่มใส่ -' + 20 + '% HP',
+             run: function () { baHurtHero(baPct(20)); } },
+      m12: { tier: 'normal', name: 'ป้อมปราการเหล็ก', en: 'Heavy Fortress',
+             desc: 'ตั้งการ์ดหนา — ดาเมจฮีโร่ลดลง ' + Math.round(BA_FORT_CUT * 100) + '% ตลอดการต่อสู้',
+             run: function () { BA_FORT = true; } },
+      m13: { tier: 'normal', name: 'โล่กระแทกโหด', en: 'Brutal Shield Slam',
+             desc: 'ตัดเวลาข้อนี้ ' + (BA_CUT_MS / 1000) + ' วิ และ -15% HP',
+             run: function () { baCutClock(BA_CUT_MS); baHurtHero(baPct(15)); } },
+      m14: { tier: 'normal', name: 'ทิ่มเพชฌฆาต', en: 'Executioner Thrust',
+             desc: 'แทงทะลุการ์ด -35% HP',
+             run: function () { baHurtHero(baPct(35)); } },
+      m15: { tier: 'elite',  name: 'ชำระสายสตรีค', en: 'Streak Purge',
+             desc: 'ล้างคอมโบที่สะสมไว้ทิ้งทั้งหมด',
+             run: function () { baPurgeStreak(); } },
+      m16: { tier: 'boss',   name: 'คำรามศิลาสาป', en: 'Petrifying Roar',
+             desc: 'ร่างกลายเป็นหิน — กดปุ่มไม่ได้ ' + (BA_STONE_MS / 1000) + ' วิ และ -25% HP',
+             run: function () { baStone(BA_STONE_MS); baHurtHero(baPct(25)); } },
+
+      /* โซน 2 · โถงศิลาเขียวเรืองแสง (ชั้น 5-8) */
+      m21: { tier: 'normal', name: 'พิษประสาทมรณะ', en: 'Deadly Neurotoxin',
+             desc: 'พิษกัดกร่อน -' + BA_TOX_PCT + '% ทุก ' + (BA_TOX_MS / 1000) + ' วิ รวม ' + (BA_TOX_PCT * BA_TOX_N) + '%',
+             run: function () { baToxin(BA_TOX_PCT, BA_TOX_N, BA_TOX_MS); } },
+      m22: { tier: 'elite',  name: 'คุกหนามพันธนาการ', en: 'Thorn Prison',
+             desc: 'หนามรัดปิดตัวเลือก ' + BA_JAIL_N + ' ปุ่ม',
+             run: function () { baJail(BA_JAIL_N); } },
+      m23: { tier: 'boss',   name: 'พฤกษาเน่าลุกลาม', en: 'Corrupted Overgrowth',
+             desc: 'ปิดตัวเลือก ' + BA_JAIL_N + ' ปุ่ม + พิษ -' + BA_TOXB_PCT + '% ทุก ' + (BA_TOX_MS / 1000) + ' วิ',
+             run: function () { baJail(BA_JAIL_N); baToxin(BA_TOXB_PCT, BA_TOXB_N, BA_TOX_MS); } },
+
+      /* โซน 3 · คลังตำราโบราณและห้องสมุดเวท (ชั้น 9-12) */
+      m31: { tier: 'normal', name: 'ปิดตาปัญญา', en: 'Blind Knowledge',
+             desc: 'ลบวรรณยุกต์พินอินและซ่อนคำแปลใต้ตัวเลือก',
+             run: function () { baBlind(); } },
+      m32: { tier: 'elite',  name: 'เผาผลาญมานา', en: 'Mana Burn',
+             desc: 'ล้างเกจคริติคอลเหลือ 0% และ -30% HP',
+             run: function () { ba_crit = 0; baCritPaint(); baHurtHero(baPct(30)); } },
+      m33: { tier: 'boss',   name: 'มหาสุญนิ่งสัมบูรณ์', en: 'Grand Absolute Silence',
+             desc: 'ปิดพินอินสนิทตลอดการต่อสู้ครั้งนี้',
+             run: function () { baSilence(); } },
+
+      /* โซน 4 · ห้องทดลองอักขระเวท (ชั้น 13-16) */
+      m41: { tier: 'normal', name: 'นาฬิกาเร่งวิปริต', en: 'Hyper Clock Glitch',
+             desc: 'เวลาข้อนี้เดินเร็วขึ้น ' + BA_GLITCH + ' เท่า',
+             run: function () { baWarpClock(BA_GLITCH); } },
+      m42: { tier: 'elite',  name: 'ระดมยิงเลเซอร์', en: 'Laser Barrage',
+             desc: 'ยิงกราดเต็มลำ -45% HP',
+             run: function () { baHurtHero(baPct(45)); } },
+      m43: { tier: 'boss',   name: 'สลับความโกลาหล', en: 'Chaotic Inversion',
+             desc: 'สลับตำแหน่งปุ่มคำตอบทุก ' + (BA_CHAOS_MS / 1000) + ' วิ',
+             run: function () { baChaos(BA_CHAOS_MS); } },
+
+      /* โซน 5 · บัลลังก์ทองคำและมหาวิหารผลึกแก้ว (ชั้น 17-20) */
+      m51: { tier: 'normal', name: 'ภาพลวงกระจกเงา', en: 'Mirrored Mirage',
+             desc: 'ปิดข้อความตัวเลือก ' + BA_MIRAGE_N + ' ปุ่มเป็น ???',
+             run: function () { baMirage(BA_MIRAGE_N); } },
+      m52: { tier: 'elite',  name: 'พิพากษาฉับพลัน', en: 'Instant Condemnation',
+             desc: 'ตอบผิดข้อถัดไป = ตายทันที',
+             run: function () { BA_CONDEMN = true; } },
+      m53: { tier: 'boss',   name: 'มหาวินาศราชัน', en: 'Monarch Cataclysm',
+             desc: 'สลับปุ่ม + ปิดพินอิน + ล้างคอมโบ + -50% HP',
+             run: function () {
+               baChaos(BA_CHAOS_MS); baSilence(); baPurgeStreak(); baHurtHero(baPct(50));
+             } },
+
+      /* โซนพิเศษ · เหวลึกไร้ก้นบึ้ง — ทับทุกชั้นเมื่อเปิดโหมดเหวลึก */
+      void: { tier: 'boss', name: 'เขมือบเหวลึก', en: 'Abyssal Devourer',
+              desc: 'ดูดเลือด ' + BA_DRAIN_PCT + '% แล้วดับจอ ' + (BA_BLACK_MS / 1000) + ' วิ',
+              run: function () { baDrain(BA_DRAIN_PCT); baBlackout(BA_BLACK_MS); } }
+    };
+
+    /* ── ใครเป็นเจ้าของสกิลตอนนี้ ─────────────────────────────────────
+       **ต่างจาก baFoeIdOf() ของ v6.2 ตรงที่ไม่สนว่าฝังภาพไว้หรือยัง** —
+       สกิลเป็นเรื่องของกติกา ไม่ใช่เรื่องของภาพ ถอดภาพออกหมดแล้วอสูรก็ยังออกสกิล */
+    function baFoeSlot(g) {
+      if (!g) return '';
+      const f = Math.max(1, Math.min(FLOOR_MAX, Math.round(g.floor || 1)));
+      const list = BA_FOE_FLOOR[f];
+      if (!list || !list.length) return '';
+      const m = g.currentMonster;
+      const k = (m && typeof m.id === 'number') ? Math.abs(m.id) : 0;
+      return list[k % list.length];
+    }
+
+    function baSkillNow() {
+      const g = baG();
+      if (!g) return null;
+      if (typeof abyssOn === 'function' && !g.practiceMode && abyssOn(g)) return BA_SKILLS.void;
+      return BA_SKILLS[baFoeSlot(g)] || null;
+    }
+
+    /* ระดับของอสูรตัวที่ยืนอยู่ตรงหน้า — ชั้นบอสจริงของ v4.0 (ทุก 5 ชั้น) นับเป็น
+       boss เสมอ ต่อให้ภาพที่ใช้จะเป็นอสูรธรรมดาของโซนนั้นก็ตาม
+       (ภาพจับคู่ตามโซนละ 4 ชั้น ส่วนบาลานซ์จับคู่ตามชั้นบอสจริง — คนละเรื่องกัน) */
+    function baTierNow() {
+      const g = baG();
+      if (!g) return 'normal';
+      if (typeof isBossFloor === 'function' && !g.practiceMode && isBossFloor(g.floor)) return 'boss';
+      const sk = baSkillNow();
+      return (sk && sk.tier) || 'normal';
+    }
+
+    /* ── ปล่อยสกิล — จุดเดียวของทั้งระบบ ─────────────────────────────── */
+    function baFire() {
+      BA_ATB = 0;
+      baAtbPaint();
+      if (!baFighting()) return;
+      const sk = baSkillNow();
+      if (!sk) return;
+      baBanner(sk);
+      baPose('baFoe', 'ba-atk-l', BA_LUNGE);
+      baFoeAct(BA_ACT_MS);                 /* เล่นเฟรมท่าปล่อยพลังให้ครบทั้งชุด */
+      baQuake();
+      baFlash('radial-gradient(circle at 74% 58%,rgba(255,60,80,.5),transparent 62%)');
+      try { sk.run(); } catch (e) { baErr(e, 'skill:' + sk.en); }
+    }
+
+    /* ── ล้างสถานะ ───────────────────────────────────────────────────
+       แยกสองระดับโดยจำเป็น — ของที่ผูกกับ "ข้อ" ต้องหายทุกข้อ
+       ส่วนของที่ผูกกับ "การต่อสู้ตัวนี้" ต้องอยู่ข้ามข้อจนกว่าจะเปลี่ยนตัว */
+    function baClearQ() {
+      baChaosStop();
+      if (BA_STONE_T) { clearTimeout(BA_STONE_T); BA_STONE_T = null; }
+      const gs = baScreen();
+      if (gs) gs.classList.remove('ba-blind');
+      const list = baChoices();
+      for (let i = 0; i < list.length; i++) {
+        list[i].classList.remove('ba-jail', 'ba-stone', 'ba-mirage');
+      }
+    }
+
+    function baClearFight() {
+      baClearQ();
+      baToxinStop();
+      BA_FORT = false;
+      BA_CONDEMN = false;
+      const gs = baScreen();
+      if (gs) gs.classList.remove('ba-silence');
+      const bl = document.getElementById('baBlack');
+      if (bl) bl.classList.remove('on');
+    }
+
+    /* เปลี่ยนมอนสเตอร์ = ไฟต์ใหม่ → ล้างสถานะทั้งชุดและรีเซ็ตเกจ ATB
+       เทียบด้วย "ตัวอ็อบเจกต์" ไม่ใช่ id เพราะ renderMonster ถูกเรียกซ้ำหลายรอบ
+       ต่อมอนสเตอร์ตัวเดียว (ทุกครั้งที่ตอบผิดแล้วสับตำแหน่งตัวเลือกใหม่) */
+    function baFightSync() {
+      const g = baG();
+      if (!g) return;
+      const m = g.currentMonster || null;
+      if (m === BA_FIGHT_M) return;
+      BA_FIGHT_M = m;
+      baClearFight();
+      BA_ATB = 0;
+      baAtbPaint();
+      baCritPaint();
+    }
+
+    /* ── สรุปผลหลังตัดสินข้อ — เรียกจาก wrapper ของ resolveAnswer จุดเดียว ── */
+    function baAfterAnswer(correct, sup, fast, m, taken) {
+      const g = baG();
+      if (!g) return;
+      baHideAnswer(m, correct, taken);        /* ข้อกำหนดข้อ 6 — ห้ามเฉลย */
+      if (g.practiceMode) return;
+
+      if (correct) {
+        if (sup) {
+          ba_crit = 0;
+          baCritPaint();
+          baAtbPush(BA_SUPER_PUSH);
+          baBannerText('⚡ SUPER DASH STRIKE', 'ดาเมจ x' + BA_SUPER_MUL + ' · ดันเกจอสูรถอย ' + BA_SUPER_PUSH + '%');
+        } else {
+          let add = fast ? BA_CRIT_FAST : BA_CRIT_SLOW;
+          if ((g.streak || 0) >= BA_COMBO_MIN) add += BA_CRIT_COMBO;
+          baCritAdd(add);
+        }
+        baAtbPush(BA_PUSH[baTierNow()] || BA_PUSH.normal);
+      } else {
+        baCritAdd(-BA_CRIT_MISS);
+        /* Instant Condemnation — ตอบผิดข้อถัดไปตายทันที
+           v4.0 สั่งคิว "ไปข้อถัดไป" ไว้แล้วเพราะตอนนั้น HP ยังเหลือ
+           การสั่ง scheduleTurn ใหม่ใน baFell() จะล้างคิวเดิมทิ้งให้เอง (กับดักข้อ 19) */
+        if (BA_CONDEMN && g.hp > 0) {
+          BA_CONDEMN = false;
+          baBannerText('⚖️ พิพากษาฉับพลัน', 'คำพิพากษาบังคับใช้ทันที — HP เหลือ 0');
+          g.hp = 0;
+          try { renderStats(); } catch (e) {}
+          try { baSyncHero(); } catch (e) {}
+          baFell();
+        }
+      }
+      baAtbPaint();
+    }
+
+    /* ── ข้อกำหนดข้อ 6 · ห้ามเฉลยคำตอบตอนตอบผิด ───────────────────────
+       ทำที่ wrapper ชั้นนอกสุด **ไม่ได้แก้ resolveAnswer ของ v4.0 สักบรรทัด**
+       ตัดเฉพาะสตริงเฉลยแบบตรงตัว ไม่ใช่ตัดตั้งแต่ตำแหน่งที่เจอไปจนจบข้อความ
+       เพราะชั้นบน ๆ (เช่นเพดานความเสียหายของ v4.8) ต่อท้ายข้อความไว้หลังจากนั้น
+       ถ้าตัดยาวจะกลืนของเขาหายไปด้วย */
+    function baHideAnswer(m, correct, taken) {
+      if (correct || !m) return;
+      const fb = document.getElementById('gFeedback');
+      if (fb) {
+        let t = fb.textContent || '';
+        const mark = ' | จุดอ่อนที่ถูกต้อง: ' + m.answer;
+        if (t.indexOf(mark) !== -1) t = t.split(mark).join('');
+        if (taken > 0) {
+          t = t.replace('โจมตีพลาด!', 'โจมตีพลาด! โดนสวนกลับ')
+               .replace('ถือเป็นโจมตีพลาด', 'ถือเป็นโจมตีพลาด โดนสวนกลับ');
+        }
+        if (t !== fb.textContent) fb.textContent = t;
+      }
+      /* และห้ามระบายเขียวบอกว่าปุ่มไหนคือคำตอบ */
+      const list = baChoices();
+      for (let i = 0; i < list.length; i++) list[i].classList.remove('right');
+    }
+
+    /* ── Screen Shake 2-3px ───────────────────────────────────────────
+       **สั่นเฉพาะลูกที่เป็น absolute ข้างใน #baArena ซึ่ง overflow:hidden**
+       ห้ามใส่ transform ที่ #gameScreen หรือที่ตัว #baArena เอง — ของแรกจะทำให้
+       แบดจ์การ์ด #cdBadge (position:fixed) หลุดตำแหน่ง ของหลังจะไปเพิ่มพื้นที่
+       เลื่อนแนวนอนของหน้า แล้วกติกา document.body.scrollWidth <= innerWidth พัง */
+    function baQuake() {
+      const a = baArena();
+      if (!a) return;
+      a.classList.remove('ba-quake');
+      void a.offsetWidth;
+      a.classList.add('ba-quake');
+      baLater(function () { a.classList.remove('ba-quake'); }, BA_QUAKE_MS + 40);
+    }
+
+    /* ── ข้อกำหนดข้อ 5 · ตรวจว่าเฟรมถูกใช้ครบจริง ─────────────────────
+       ทางเข้าสาธารณะสำหรับชุดเทสต์ — คืนจำนวนเฟรมทั้งหมด/ยืน/โจมตี รายตัว
+       เฟรมยืนถูกใช้โดยลูปท่ายืน · เฟรมโจมตีถูกใช้โดยชุดท่าโจมตีซึ่งเล่นครบทุกเฟรม
+       ผลรวมจึงเท่ากับจำนวนเฟรมที่ฝังไว้เสมอ */
+    function baFrameAudit() {
+      const out = {};
+      const ids = Object.keys(BA_MON);
+      for (let i = 0; i < ids.length; i++) {
+        const fr = BA_MON[ids[i]] || [];
+        const idle = baFoeIdx(fr, 'idle').length;
+        const act = baFoeIdx(fr, 'act').length;
+        out[ids[i]] = { total: fr.length, idle: idle, act: act, used: idle + act };
+      }
+      out._hero = { total: BA_HERO.length, idle: BA_IDLES.length, act: BA_ACTS.length,
+                    used: BA_IDLES.length + BA_ACTS.length };
+      return out;
     }
 
     // ══ สร้างสนามรบ — ย้ายโหนดเดิม ไม่ได้สร้างโหนดใหม่ทับ ═══════════════
@@ -20263,6 +21071,8 @@
             '<div class="ba-plate">' +
               '<div class="ba-name" id="baHeroName">HUNTER</div>' +
               '<div class="ba-hp" id="baHeroHp"><span style="width:100%"></span></div>' +
+              /* v6.3 — เกจคริติคอลของฮีโร่ (absolute · ไม่กินความสูงของแถว) */
+              '<div class="ba-crit-bar" id="baCritBar"><span style="width:0%"></span></div>' +
             '</div>' +
           '</div>' +
           '<div class="ba-unit ba-foe">' +
@@ -20270,11 +21080,14 @@
             '<div class="ba-plate">' +
               '<div class="ba-name" id="baFoeName">อสูรอักขระ</div>' +
               '<div class="ba-hp" id="baFoeHp"><span style="width:100%"></span></div>' +
+              /* v6.3 — เกจ ATB ของอสูร (absolute · ไม่กินความสูงของแถว) */
+              '<div class="ba-atb-bar" id="baAtbBar"><span style="width:0%"></span></div>' +
             '</div>' +
           '</div>' +
         '</div>' +
         '<div class="ba-fx" id="baFx"></div>' +
-        '<div class="ba-flash" id="baFlash"></div>';
+        '<div class="ba-flash" id="baFlash"></div>' +
+        '<div class="ba-skill" id="baSkill"></div>';
 
       area.insertBefore(arena, area.firstChild);
 
@@ -20292,6 +21105,8 @@
       BA_FRAME = -1;
       baIdleFrame();     /* ตั้งท่ายืนตัวแรกให้เห็นทันที ไม่ต้องรอนาฬิการอบแรก */
       baSyncAll();
+      baCritPaint();     /* v6.3 — วาดเกจให้ตรงกับค่าที่ถืออยู่ตั้งแต่วินาทีแรก */
+      baAtbPaint();
       return true;
     }
 
@@ -20368,8 +21183,13 @@
       if (fx) fx.innerHTML = '';
       const h = document.getElementById('baHero');
       const f = document.getElementById('baFoe');
-      if (h) h.classList.remove('ba-atk', 'ba-hurt', 'ba-down');
-      if (f) f.classList.remove('ba-atk-l', 'ba-hurt', 'ba-down');
+      if (h) h.classList.remove('ba-atk', 'ba-atk2', 'ba-hurt', 'ba-stun', 'ba-down');
+      if (f) f.classList.remove('ba-atk-l', 'ba-hurt', 'ba-stun', 'ba-down');
+      /* v6.3 — แบนเนอร์สกิลกับการสั่นจอไม่ได้อยู่ใน #baFx ต้องล้างเอง */
+      const ar = baArena();
+      if (ar) ar.classList.remove('ba-quake');
+      const sk = document.getElementById('baSkill');
+      if (sk) sk.classList.remove('on');
       BA_ACT_TO = 0;
       baIdleFrame();
       BA_FOE_TO = 0;
@@ -20378,13 +21198,17 @@
 
     /* ใส่คลาสท่าทางแล้วถอดคืนเอง — ต้องถอดก่อนใส่เสมอ ไม่งั้นกดรัว ๆ
        แล้วอนิเมชันจะไม่รีสตาร์ต (เบราว์เซอร์ถือว่าคลาสไม่เปลี่ยน) */
+    /* v6.3 — รับได้ทั้งคลาสเดียวและหลายคลาสคั่นเว้นวรรค (เช่น 'ba-hurt ba-stun')
+       จำเป็นเพราะ Hit Stun ต้องใส่ควบกับคลาสเดิมที่ชุดตรวจอ่านเป็นหลักฐานอยู่ */
     function baPose(id, cls, ms) {
       const el = document.getElementById(id);
       if (!el) return;
-      el.classList.remove(cls);
+      const list = String(cls).split(' ').filter(function (x) { return x; });
+      if (!list.length) return;
+      el.classList.remove.apply(el.classList, list);
       void el.offsetWidth;          /* บังคับ reflow ให้อนิเมชันเริ่มใหม่จริง */
-      el.classList.add(cls);
-      baLater(function () { el.classList.remove(cls); }, ms + 40);
+      el.classList.add.apply(el.classList, list);
+      baLater(function () { el.classList.remove.apply(el.classList, list); }, ms + 40);
     }
 
     function baSpawn(html, life) {
@@ -20444,13 +21268,19 @@
       return true;
     }
 
-    /* ── ตอบถูก: ฮีโร่พุ่งโจมตี → เวทพุ่งใส่อสูร → อสูรสั่น → ตัวเลขดาเมจ ── */
-    function baStrike(dmg, crit) {
+    /* ── ตอบถูก: ฮีโร่พุ่ง → ฟันดาบ → อสูรชะงัก (Hit Stun) → ตัวเลขดาเมจ → ดีดกลับ ──
+       v6.3 แยกจังหวะออกเป็นสองระดับตามสเปก
+         Normal Hit   (> 3 วิ)              พุ่ง ΔX +BA_DASH · เลขขาว-ฟ้า
+         Critical/Super (≤ 3 วิ หรือเกจเต็ม) พุ่ง ΔX +BA_DASH_CRIT · สั่นจอ · เลขทองยักษ์
+       ท่าดีดตัวกลับอยู่ในคีย์เฟรมเดียวกัน (100% กลับมาที่ translateX(0)) จึงไม่ต้อง
+       ตั้งนาฬิกาเพิ่มให้เปลืองเครื่องนักเรียน */
+    function baStrike(dmg, crit, sup) {
       if (!baCanPlay()) return;
-      baPose('baHero', 'ba-atk', BA_LUNGE);
-      /* สุ่มท่าฟันใหม่ทุกครั้งที่ตอบถูก (ข้อกำหนดข้อ 2 ของสเปก)
-         ค้างยาวกว่าจังหวะพุ่งเล็กน้อย ผู้เล่นจะได้ทันเห็นท่าหลังดาเมจขึ้น */
+      const big = !!crit || !!sup;
+      baPose('baHero', big ? 'ba-atk2' : 'ba-atk', BA_LUNGE);
+      /* เดินคิวท่าฟันใหม่ทุกครั้งที่ตอบถูก — วนครบทุกเฟรมตามข้อกำหนดข้อ 5 */
       baAct(BA_ACT_MS);
+      if (big) baQuake();
 
       const from = baSpot('baHero');
       const to   = baSpot('baFoe');
@@ -20467,25 +21297,32 @@
       baLater(function () {
         if (!baCanPlay()) return;
         baFoeHurt();
-        baPose('baFoe', 'ba-hurt', BA_FLASH);
+        /* Hit Stun 150ms — ใส่ ba-stun ควบ ba-hurt เสมอ (ดูเหตุผลที่ก้อน CSS) */
+        baPose('baFoe', 'ba-hurt ba-stun', BA_STUN);
         const t = baSpot('baFoe');
         if (t) {
           const s = baSpawn('<div class="ba-slash"></div>', 380);
           if (s) { s.style.left = (t.x - 37) + 'px'; s.style.top = (t.y - 37) + 'px'; }
           const h = baSpawn('<div class="ba-hit"></div>', 360);
           if (h) { h.style.left = (t.x - 28) + 'px'; h.style.top = (t.y - 28) + 'px'; }
-          if (dmg > 0) baFloat((crit ? '⚡ ' : '') + '-' + dmg, crit ? 'crit' : 'good', t);
+          if (dmg > 0) {
+            baFloat((sup ? '💥 ' : crit ? '⚡ ' : '') + '-' + dmg,
+                    sup ? 'crit sup' : crit ? 'crit' : 'good', t);
+          }
         }
-        if (crit) baFlash('radial-gradient(circle at 72% 60%,rgba(255,200,69,.5),transparent 62%)');
+        if (big) baFlash('radial-gradient(circle at 72% 60%,rgba(255,200,69,.5),transparent 62%)');
         baSyncFoe();
       }, BA_IMPACT);
     }
 
-    /* ── ตอบผิด: อสูรพุ่งเข้าใส่ → ฮีโร่กระพริบแดง → ตัวเลขดาเมจสีแดง ── */
+    /* ── ตอบผิด: อสูรพุ่งเข้าใส่ (ΔX -BA_DASH) → ปล่อยชุดท่าฟาดจนครบเฟรม
+          → ฮีโร่เสียเลือดทันที → อสูรถอยกลับ ──
+       นี่คือ "เคาน์เตอร์สวนกลับเต็มแรง" ตามข้อ 2 ของสเปก — ยอดดาเมจคือยอดที่
+       v4.0/v4.8 หักไปแล้วจริง ชั้นนี้ไม่ได้หักซ้ำอีกก้อน (ไม่งั้นจะลงโทษสองต่อ) */
     function baCounter(dmg, blocked) {
       if (!baCanPlay()) return;
       baPose('baFoe', 'ba-atk-l', BA_LUNGE);
-      baFoeAct(BA_ACT_MS);   /* สุ่มท่าฟาดใหม่ทุกครั้งที่อสูรสวนกลับ */
+      baFoeAct(BA_ACT_MS);   /* เดินชุดท่าฟาดให้ครบทุกเฟรมทุกครั้งที่อสูรสวนกลับ */
 
       baLater(function () {
         if (!baCanPlay()) return;
@@ -20507,6 +21344,7 @@
           if (h) { h.style.left = (t.x - 28) + 'px'; h.style.top = (t.y - 28) + 'px'; }
           if (dmg > 0) baFloat('-' + dmg, 'bad', t);
         }
+        if (dmg > 0) baQuake();
         baFlash('radial-gradient(circle at 26% 60%,rgba(255,60,80,.5),transparent 62%)');
         baSyncHero();
       }, BA_IMPACT);
@@ -20521,7 +21359,11 @@
         const r = _baRenderMonster.apply(this, arguments);
         try {
           baBuild(); baClearFx(); baSyncAll();
-          /* ขึ้นข้อใหม่ = สุ่มท่าหนึ่งครั้ง (ข้อกำหนดข้อ 2 ของสเปก) แล้วกลับไปยืนเอง */
+          /* v6.3 — เปลี่ยนมอนสเตอร์เมื่อไหร่ = ไฟต์ใหม่ ล้างสถานะผิดปกติทั้งชุด
+             แล้วรีเซ็ตเกจ ATB · เทียบด้วยตัวอ็อบเจกต์ ไม่ใช่ id เพราะ renderMonster
+             ถูกเรียกซ้ำหลายรอบต่อมอนสเตอร์ตัวเดียว (ทุกครั้งที่สับตำแหน่งตัวเลือกใหม่) */
+          baFightSync();
+          /* ขึ้นข้อใหม่ = เดินคิวท่าหนึ่งครั้ง (ข้อกำหนดข้อ 2 ของสเปก) แล้วกลับไปยืนเอง */
           baIdleArm(); baAct(BA_ACT_MS);
         } catch (e) { baErr(e, 'renderMonster'); }
         return r;
@@ -20572,6 +21414,15 @@
         const correct = !!(m && !timedOut && choice === m.answer);
         const b = g ? { hp: g.hp, mhp: g.monsterHp, sh: g.shield || 0 } : null;
 
+        /* ── v6.3 — ตัดสิน "ตอบไว" กับ "เกจคริตเต็ม" **ก่อน** เข้าไปข้างใน ──
+           ตัวคูณดาเมจต้องมีผลตั้งแต่ตอน v4.0 คำนวณ ไม่ใช่มาบวกทีหลัง เพราะ v4.0
+           ใช้ยอดนั้นตัดสินว่ามอนสเตอร์ตายหรือยังแล้วสั่งคิวเทิร์นค้างไว้เลย
+           (บวกทีหลัง = มอนสเตอร์ยืนรอที่ HP 0 อีกหนึ่งข้อเต็ม ๆ · กับดักข้อ 19)
+           ตัวคูณจริงถูกใส่ที่ wrapper ของสูตร hunterAtk/critChance ตามกฎของ v4.4/v4.6 */
+        const spent = g ? Math.max(0, Date.now() - (g.questionStart || Date.now())) : 0;
+        BA_FAST  = correct && spent <= BA_FAST_MS;
+        BA_SUPER = correct && !!(g && !g.practiceMode) && ba_crit >= BA_CRIT_MAX;
+
         BA_LIVE = true;
         BA_CRIT = false;
         let r;
@@ -20580,6 +21431,9 @@
         try { r = _baResolveAnswer.apply(this, arguments); }
         finally { BA_LIVE = false; }
 
+        const fast = BA_FAST, sup = BA_SUPER;
+        BA_FAST = false; BA_SUPER = false;
+
         try {
           if (b && g) {
             const dealt = Math.max(0, Math.round(b.mhp - g.monsterHp));
@@ -20587,8 +21441,12 @@
             /* เกราะกินดาเมจทั้งก้อนก่อน HP จะขยับ — taken จึงเป็น 0
                แต่ G.shield ลดลง ซึ่งคือเคสที่ต้องขึ้น 🛡️ BLOCK ไม่ใช่เงียบไปเฉย ๆ */
             const blocked = !correct && taken === 0 && (b.sh > (g.shield || 0));
-            if (correct) baStrike(dealt, BA_CRIT);
+            /* ท่าไม้ตายไม่ผ่านคริตของ v4.0 (จะได้ตัวคูณ 2.5 เป๊ะ ไม่ใช่ 5 เท่า)
+               จึงต้องปั๊มธงคริตเองเพื่อให้ตัวเลขดาเมจขึ้นเป็นทองยักษ์ */
+            if (sup) BA_CRIT = true;
+            if (correct) baStrike(dealt, BA_CRIT, sup);
             else baCounter(taken, blocked);
+            baAfterAnswer(correct, sup, fast, m, taken);
           }
         } catch (e) { baErr(e, 'resolveAnswer'); }
         return r;
@@ -20614,7 +21472,12 @@
       const _baStartGame = startGame;
       startGame = function () {
         const r = _baStartGame.apply(this, arguments);
-        try { baBuild(); baClearFx(); baSyncAll(); baIdleArm(); } catch (e) { baErr(e, 'startGame'); }
+        try {
+          baBuild(); baClearFx(); baSyncAll(); baIdleArm();
+          /* v6.3 — เข้าเกมใหม่ = เริ่มนับเกจใหม่ทั้งคู่ ไม่ยกยอดข้ามรอบการเล่น */
+          ba_crit = 0; BA_ATB = 0; BA_FIGHT_M = null;
+          baClearFight(); baCritPaint(); baAtbPaint();
+        } catch (e) { baErr(e, 'startGame'); }
         return r;
       };
     }
@@ -20627,8 +21490,68 @@
         try {
           baIdleStop(); baClearFx();
           BA_SCENE = ''; BA_FOE_ID = ''; BA_FOE_TO = 0;
+          /* v6.3 — นาฬิกาเกจ · พิษ · สลับปุ่ม · ล็อกปุ่ม ต้องหยุดให้ครบ
+             ไม่งั้นจะเดินค้างอยู่หลังออกจากเกมแล้วไปทำร้ายบัญชีที่ล็อกอินเข้ามาใหม่ */
+          baAtbStop(); baClearFight();
+          ba_crit = 0; BA_ATB = 0; BA_FIGHT_M = null;
+          baCritPaint(); baAtbPaint();
         } catch (e) { baErr(e, 'exitGame'); }
         return _baExitGame.apply(this, arguments);
+      };
+    }
+
+
+    // ══ v6.3 · wrapper เพิ่มอีกสี่ตัว ═══════════════════════════════════
+    /* ── นาฬิกาต่อข้อ = สวิตช์ของเกจ ATB ────────────────────────────────
+       ติดเกจตอนข้อเริ่ม · ถอดตอนข้อจบ **จึงไม่มีนาฬิกาเดินค้างตอนยืนอยู่ที่
+       ประตูวาปหรือหน้าจอสรุปเลย** (กับดักข้อ 31 — งานที่วิ่งตลอดเวลาทำให้
+       ชุดเทสต์ที่รอเวลาแกว่ง) · ค่าในเกจไม่ถูกล้าง จึงเดินต่อข้ามข้อได้ตามสเปก */
+    if (typeof startQuestionTimer === 'function') {
+      const _baStartQ = startQuestionTimer;
+      startQuestionTimer = function () {
+        const r = _baStartQ.apply(this, arguments);
+        try { baClearQ(); baAtbArm(); baAtbPaint(); baCritPaint(); }
+        catch (e) { baErr(e, 'startQuestionTimer'); }
+        return r;
+      };
+    }
+
+    if (typeof clearQuestionTimer === 'function') {
+      const _baClearQ = clearQuestionTimer;
+      clearQuestionTimer = function () {
+        try { baAtbStop(); } catch (e) { baErr(e, 'clearQuestionTimer'); }
+        return _baClearQ.apply(this, arguments);
+      };
+    }
+
+    /* ── ตัวคูณดาเมจของฮีโร่ใส่ที่ "wrapper ของสูตร" ไม่ไล่แก้ตามจุดเรียก ──
+       (กฎเดียวกับ maxMpOf/goldMul ของ v4.4 · questionMs ของ v4.6/v4.7)
+       **มีผลเฉพาะตอน BA_LIVE เท่านั้น** คือระหว่างตัดสินข้ออยู่จริง ๆ
+       จึงไม่ไปกวน HP มอนสเตอร์ตอน nextMonster · เกราะผนึกของ v4.6 · สกิล ⚔️ ของ v4.0
+         · ท่าไม้ตาย  ×2.5 เป๊ะ (คริตของ v4.0 ถูกกดเป็น 0 ไว้แล้วในสูตรคริตข้างล่าง)
+         · Heavy Fortress ลดลง 60% */
+    if (typeof hunterAtk === 'function') {
+      const _baHunterAtk = hunterAtk;
+      hunterAtk = function () {
+        const base = _baHunterAtk.apply(this, arguments);
+        if (!BA_LIVE) return base;
+        let v = base;
+        if (BA_SUPER) v *= BA_SUPER_MUL;
+        if (BA_FORT)  v *= (1 - BA_FORT_CUT);
+        return Math.max(1, Math.round(v));
+      };
+    }
+
+    /* ── สูตรคริต ────────────────────────────────────────────────────
+       ตอบไว (≤ 3 วิ) = คริติคอลแน่นอน → v4.0 คูณ 2 ให้เอง ตรงกับสเปก "2x"
+       ท่าไม้ตาย = กดคริตเป็น 0 แล้วให้ hunterAtk คูณ 2.5 แทน จะได้ 2.5 เป๊ะ
+       ไม่ใช่ 5 เท่า (2.5 × 2) ซึ่งจะทำให้บอสตายในหมัดเดียว */
+    if (typeof critChance === 'function') {
+      const _baCritChance = critChance;
+      critChance = function () {
+        if (BA_LIVE && BA_SUPER) return 0;
+        if (BA_LIVE && BA_FAST)  return 100;
+        return _baCritChance.apply(this, arguments);
       };
     }
 

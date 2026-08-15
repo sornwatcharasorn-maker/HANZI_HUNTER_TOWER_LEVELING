@@ -21555,6 +21555,1353 @@
       };
     }
 
+
+    /* ══════════════════════════════════════════════════════════════════
+       Patch v6.4 · DYNAMIC AUDIO & VISUAL ATTACK ENGINE
+                  + ELITE & BOSS HEAVY BARRIER
+       ══════════════════════════════════════════════════════════════════
+       อยู่ในเนมสเปซ ba ของชั้น v6.0 เดิม **ไม่ได้ตั้งพรีฟิกซ์ใหม่** เพราะเป็นการ
+       ต่อยอดชั้นเดียวกัน (กติกาเดียวกับ Patch v6.1 · v6.2 · v6.3)
+       **ไม่แตะโค้ดของ v4.0-v5.9 เลยแม้แต่บรรทัดเดียว** ทุกอย่างยังเป็นการห่อฟังก์ชัน
+
+       สี่เรื่องในแพตช์เดียว
+         1) แผนผังหอคอยแหล่งเดียว — ชั้นบอส/ประตูบอส/จุดเซฟ ล็อกที่ 4/8/12/16/20
+         2) อสูรอีลีท (3/7/11/15/19) + เกราะบอสหนาพิเศษ + Armor Break Stun
+         3) เครื่องเสียงสังเคราะห์ล้วน — BGM รายโซน + SFX ฮีโร่ (ไม่มีไฟล์เสียงสักไฟล์)
+         4) เอฟเฟกต์ภาพ+เสียงเฉพาะตัวของอสูรทั้ง 19 ตัว
+
+       **ข้อจำกัดที่ตัดสินรูปร่างของทั้งแพตช์ ยังเป็นข้อเดิมของ v6.0:
+       ห้ามให้ความสูงการ์ดโจทย์ขยับแม้แต่พิกเซลเดียว (340.8px · 354.8px ที่จอ 320)**
+       ของใหม่ทุกชิ้นจึงเป็น position:absolute หรือ position:fixed ล้วน —
+       แถบเกราะวาดทับหลอดเลือดอสูรใบเดิม ไม่ได้เพิ่มหลอดใหม่เข้าสายเลย์เอาต์
+       (เหตุผลเต็มอยู่ที่หัวข้อ BA_H — การ์ดโตขึ้นเมื่อไหร่ เกมจะค้างในสภาพ
+       "หยุดเวลาให้แล้ว" โดยไม่มี error ให้เห็นเลย · กับดักข้อ 23) */
+
+    // ══ 1) แผนผังหอคอย — แหล่งความจริงเดียว ═══════════════════════════
+    /* ก่อนแพตช์นี้ isBossFloor ของ v4.0 คือ "ทุก 5 ชั้น" (5/10/15/20) ขณะที่ภาพอสูร
+       ของ v6.2 จับคู่ตามโซนฉากหลังซึ่งกว้างโซนละ 4 ชั้น (บอสอยู่ที่ 4/8/12/16/20)
+       สองชุดนี้ไม่ตรงกันมาตลอด — การ์กอยล์หินยักษ์ยืนอยู่ชั้น 4 ที่ไม่ใช่ชั้นบอส
+       ส่วนชั้น 5 ซึ่งเป็นชั้นบอสจริงกลับใช้ภาพแมงมุมมอสของโซน 2
+
+       แพตช์นี้ยุบให้เหลือชุดเดียว โดยย้าย "ชั้นบอส" มาหาภาพ ไม่ใช่ย้ายภาพมาหาชั้น
+       เพราะฉากหลัง · สไปรต์ · สกิลประจำตัว · ยุคสมัยของเรดาร์ (TR_ERAS) ผูกกับ
+       โซนละ 4 ชั้นอยู่แล้วทั้งหมด มีแค่ตัวเลข "ทุก 5 ชั้น" ตัวเดียวที่ผิดแถว
+
+       **เขียนทับ isBossFloor ที่ระดับ binding ไม่ได้แก้ตัวฟังก์ชันของ v4.0**
+       ทุกจุดเรียกในเกม (23 จุด · ทุกชั้นตั้งแต่ v4.0 ถึง v6.3) อ้างถึงด้วยชื่อล้วน
+       จึงได้ชุดใหม่พร้อมกันหมดทันที ไม่ต้องไล่แก้สักจุด — ป้ายบอส 👑 ในเรดาร์ ·
+       เวลาต่อข้อของชั้นบอส · HP มอนสเตอร์ · ประตูวาปก่อนบอสของ v4.9.2 (ซึ่งอ่าน
+       isBossFloor(f+1) จึงขยับเป็น 3/7/11/15/19 เอง) · เกราะผนึกของ v4.6 */
+    const BA_BOSS_FLOORS  = [4, 8, 12, 16, 20];
+    const BA_ELITE_FLOORS = [3, 7, 11, 15, 19];
+
+    function baIsBossFloor(f)  { return BA_BOSS_FLOORS.indexOf(Math.round(f)) !== -1; }
+    function baIsEliteFloor(f) { return BA_ELITE_FLOORS.indexOf(Math.round(f)) !== -1; }
+
+    /* จุดเซฟ (Checkpoint) — ร่วงแล้วกลับมายืนที่ชั้นถัดจากประตูบอสบานล่าสุดที่ผ่านมาได้
+       ของเดิมของ v4.0 ดึงกลับ "ต้นโซนคำศัพท์" (ชั้น 1 / 7 / 14) ซึ่งเป็นคนละชุด
+       กับประตูบอสโดยสิ้นเชิง นักเรียนที่ร่วงจากชั้น 19 จึงถูกส่งกลับไปชั้น 14
+       ทั้งที่ผ่านประตูบอสชั้น 16 มาแล้ว · ตอนนี้จุดเซฟ = ประตูบอส แหล่งเดียวกัน */
+    function baCheckpointOf(floor) {
+      let cp = 0;
+      for (let i = 0; i < BA_BOSS_FLOORS.length; i++) {
+        if (BA_BOSS_FLOORS[i] < floor) cp = BA_BOSS_FLOORS[i];
+      }
+      return Math.max(1, Math.min(FLOOR_MAX, cp + 1));
+    }
+
+    /* ── ซิงก์ของที่ "อ่านชั้นบอสไปเก็บไว้ตั้งแต่ตอนติดตั้ง" ──────────────────
+       สามที่ในเกมไม่ได้อ่าน isBossFloor สด ๆ แต่จำผลไว้เป็นค่าคงที่/ข้อความ
+       ตั้งแต่ตอนชั้นนั้นติดตั้ง ถ้าไม่ตามไปแก้ให้ ตัวเลขบนจอจะค้างเป็นชุดเก่า
+       ซึ่งเป็นบั๊คแบบเงียบที่หาไม่เจอ (ผิดกติกา "แก้ที่เดียว" ของทั้ง repo)
+
+         1. AB_SEAL_FLOORS ของ v4.6 — เป็น const **อาร์เรย์** จึงแก้ในที่ได้
+            สำคัญมาก เพราะ abEnsure() ใช้มันกวาดคีย์ seals ทิ้งทุกครั้งที่อ่าน store
+            ถ้าไม่ย้ายตาม ผนึกที่ทลายบนชั้น 4/8/12/16 จะถูกลบทิ้งทุกครั้งที่ล็อกอิน
+            แล้วฉายา 🔓 ผู้ทลายผนึก จะไม่มีวันได้
+         2. TITLES ของฉายานั้น — ข้อความเงื่อนไขถูกประกอบไว้ตั้งแต่ abInstall()
+         3. TQ_BY_ID.T8 ของ v4.9.3 — goal/cond ถูกเติมไว้ตั้งแต่ tqFixT8()
+
+       ต้องเรียก **หลัง** เขียนทับ isBossFloor แล้วเท่านั้น (tqScarFloors อ่านสด) */
+    function baTowerSync() {
+      try {
+        if (typeof AB_SEAL_FLOORS !== 'undefined' && AB_SEAL_FLOORS && AB_SEAL_FLOORS.length !== undefined) {
+          AB_SEAL_FLOORS.length = 0;
+          for (let i = 0; i < BA_BOSS_FLOORS.length; i++) AB_SEAL_FLOORS.push(BA_BOSS_FLOORS[i]);
+        }
+        /* ระลอกเกราะผนึกของ v4.6 ไล่ขึ้นตามความสูง — ชั้นบนใช้ระลอกมากกว่า
+           (ของเดิมมีแค่คีย์ 5/10/15/20 ชั้นใหม่จะตกไปใช้ค่าปริยาย 2 ทุกชั้น) */
+        if (typeof AB_SEAL_HITS !== 'undefined' && AB_SEAL_HITS) {
+          for (let i = 0; i < BA_BOSS_FLOORS.length; i++) {
+            AB_SEAL_HITS[BA_BOSS_FLOORS[i]] = 2 + Math.floor(i / 2);
+          }
+        }
+        if (typeof TITLES !== 'undefined' && TITLES && TITLES.length) {
+          for (let i = 0; i < TITLES.length; i++) {
+            if (TITLES[i] && TITLES[i].key === 'sealbreaker') {
+              TITLES[i].cond = 'ทลายประตูผนึกครบทั้ง ' + BA_BOSS_FLOORS.length +
+                               ' บาน (ชั้น ' + BA_BOSS_FLOORS.join('/') + ')';
+            }
+          }
+        }
+        if (typeof TQ_BY_ID !== 'undefined' && TQ_BY_ID && TQ_BY_ID.T8 &&
+            typeof tqScarFloors === 'function') {
+          const list = tqScarFloors();
+          const pot  = (typeof itemOf === 'function') ? itemOf('potion') : null;
+          TQ_BY_ID.T8.goal = list.length;
+          TQ_BY_ID.T8.cond = 'ผ่านชั้นบอส (ชั้น ' + list.join(', ') + ') โดยไม่กดใช้ ' +
+                             (pot ? pot.icon + ' ' + pot.name : 'ยาฟื้นพลัง') + ' แม้แต่ขวดเดียว';
+        }
+      } catch (e) { baErr(e, 'towerSync'); }
+    }
+
+    // ══ 2) อสูรอีลีท + เกราะบอสหนาพิเศษ ═══════════════════════════════
+    /* **เกราะของแพตช์นี้เป็นชั้นนอกอีกชั้นหนึ่ง วางทับเกราะผนึกของ v4.6 อีกที**
+       เรียงจากนอกเข้าใน: เกราะ v6.4 → ผนึก v4.6 → HP เนื้อของบอส
+       ทั้งสามชั้นใช้ตัวเลขก้อนเดียวกันคือ G.monsterHp เหมือนที่ v4.6 ทำมาตลอด
+       จึงไม่ต้องแตะสูตร monsterHpFor ของ v4.0 เลยสักบรรทัด
+
+       ที่ต้องซ้อนแทนที่จะรวมเป็นก้อนเดียว เพราะกติกาสองชั้นต่างกันคนละเรื่อง —
+       ผนึกของ v4.6 ซ่อมตัวเองเมื่อตอบผิด (AB_SEAL_REBIND) และให้ 💎 กับฉายาตอนทลาย
+       ส่วนเกราะของแพตช์นี้ไม่ซ่อมตัว (ยกเว้นพฤกษาพิษที่สเปกสั่งไว้) แต่แตกแล้ว
+       ทำให้บอสชะงัก 4 วินาที ถ้าเอาไปบวกรวมกับ AB_SEAL.max ตรง ๆ การซ่อมตัว 34%
+       จะกลายเป็น 34% ของเกราะทั้งกอง แล้วบอสชั้น 20 จะซ่อมคืนทีละ 40% ของหลอดเลือด
+       ซึ่งไม่มีนักเรียน A1 คนไหนทลายได้เลย */
+    const BA_ELITE_HP   = 1.8;    /* อีลีท — Max HP คูณเท่านี้ */
+    const BA_ELITE_BAR  = 0.25;   /* อีลีท — Mini-Barrier เท่านี้ของ Max HP */
+    const BA_ELITE_ATB  = 1000;   /* อีลีท — เกจ ATB เต็มเร็วขึ้นกี่มิลลิวินาที */
+    const BA_BOSS_BAR   = { 4: 0.40, 8: 0.50, 12: 0.60, 16: 0.70, 20: 1.00 };
+    const BA_BOSS_REGEN = { 8: { pct: 0.05, ms: 3000 } };   /* พฤกษาพิษ — รีเจนเกราะ */
+    const BA_BREAK_MS   = 4000;   /* เกราะแตก → บอสชะงักกี่มิลลิวินาที */
+    const BA_BREAK_MUL  = 1.5;    /* ระหว่างชะงัก บอสรับดาเมจแรงขึ้นเท่านี้ */
+
+    /* สถานะของ "การต่อสู้ตัวที่ยืนอยู่" ทั้งหมด ไม่ต้องเซฟสักตัว
+       (กฎเดียวกับ AB_SEAL ของ v4.6 · BA_FIGHT_M ของ v6.3) */
+    let BA_BAR   = null;   /* { m, floor, base, max, tier, broken } */
+    let BA_BAR_T = null;   /* นาฬิการีเจนเกราะ (พฤกษาพิษเท่านั้น) */
+    let BA_BREAK_UNTIL = 0;
+
+    function baStunned() { return Date.now() < BA_BREAK_UNTIL; }
+
+    /* เกราะที่เหลือ = HP ส่วนที่เกิน "เพดานก่อนเกราะของแพตช์นี้ถูกบวกเข้าไป"
+       ท่าเดียวกับ abSealLeft() ของ v4.6 เป๊ะ ต่างกันแค่เส้นฐานอยู่สูงกว่าหนึ่งชั้น */
+    function baBarLeft() {
+      const g = baG();
+      if (!BA_BAR || !g || BA_BAR.m !== g.currentMonster) return 0;
+      return Math.max(0, Math.round(g.monsterHp - BA_BAR.base));
+    }
+
+    function baBarRegenStop() {
+      if (BA_BAR_T) { clearInterval(BA_BAR_T); BA_BAR_T = null; }
+    }
+
+    function baBarClear() {
+      baBarRegenStop();
+      BA_BAR = null;
+      BA_BREAK_UNTIL = 0;
+      baBarPaint();
+    }
+
+    /* รีเจนเกราะ — ข้ามจังหวะที่เกมหยุดอยู่ ไม่ใช่ทบ (กติกาเดียวกับพิษของ v6.3)
+       ไม่งั้นนักเรียนที่สลับแอปไปสองนาทีจะกลับมาเจอเกราะเต็มบานเหมือนไม่เคยตีเลย */
+    function baBarRegenArm(rg) {
+      baBarRegenStop();
+      BA_BAR_T = setInterval(function () {
+        try {
+          const g = baG();
+          if (!BA_BAR || !g || BA_BAR.m !== g.currentMonster || BA_BAR.broken) { baBarRegenStop(); return; }
+          if (!baFighting()) return;
+          const room = Math.max(0, BA_BAR.base + BA_BAR.max - g.monsterHp);
+          if (!room) return;
+          const add = Math.min(room, Math.max(1, Math.round(BA_BAR.max * rg.pct)));
+          g.monsterHp += add;
+          try { renderMonsterHp(); } catch (e) {}
+          baSyncFoe(); baBarPaint();
+          const t = baSpot('baFoe');
+          if (t) baFloat('🛡️+' + add, 'heal', t);
+        } catch (e) { baErr(e, 'barRegen'); baBarRegenStop(); }
+      }, rg.ms);
+    }
+
+    /* ติดตั้งเกราะ/ดัน HP ของอีลีท — เรียกจาก wrapper ของ nextMonster **หลัง**
+       ทุกชั้นล่างทำงานจบ จึงมาทีหลัง abSealSetup() ของ v4.6 และ
+       cdInfernoSealStrike() ของ v4.7 เสมอ (ba เป็นชั้นนอกสุด)
+       ต้อง idempotent ต่อมอนสเตอร์หนึ่งตัว — เทียบด้วย "ตัวอ็อบเจกต์" ไม่ใช่ id
+       เพราะ nextMonster ถูกเรียกซ้ำได้ (กติกาเดียวกับ baFightSync ของ v6.3) */
+    function baBarSetup() {
+      const g = baG();
+      if (!g) return;
+      if (g.practiceMode || !g.currentMonster) { baBarClear(); return; }
+      if (BA_BAR && BA_BAR.m === g.currentMonster) return;
+      baBarClear();
+
+      const f     = Math.max(1, Math.min(FLOOR_MAX, Math.round(g.floor || 1)));
+      const boss  = baIsBossFloor(f);
+      const elite = !boss && baIsEliteFloor(f);
+      if (!boss && !elite) return;
+
+      /* อีลีทหนากว่าเดิม 1.8 เท่าก่อน แล้วค่อยคิดเกราะจากยอดที่หนาแล้ว
+         (บอสไม่ต้องดัน — HP ของชั้นบอสถูก hitsForFloor ของ v4.0 ดันให้แล้ว) */
+      if (elite) {
+        const bump = Math.max(1, Math.round((g.monsterMaxHp || 1) * (BA_ELITE_HP - 1)));
+        g.monsterMaxHp += bump;
+        g.monsterHp    += bump;
+      }
+
+      const pct  = boss ? (BA_BOSS_BAR[f] || 0.4) : BA_ELITE_BAR;
+      const base = g.monsterMaxHp;
+      const max  = Math.max(1, Math.round(base * pct));
+
+      g.monsterMaxHp += max;
+      g.monsterHp    += max;
+      BA_BAR = { m: g.currentMonster, floor: f, base: base, max: max,
+                 tier: boss ? 'boss' : 'elite', broken: false };
+
+      const rg = boss ? BA_BOSS_REGEN[f] : null;
+      if (rg) baBarRegenArm(rg);
+
+      try { renderMonsterHp(); } catch (e) {}
+      baSyncFoe(); baBarPaint();
+    }
+
+    /* เฝ้าดูว่าเกราะแตกหรือยัง — เรียกจาก wrapper ของ renderMonsterHp จึงครอบ
+       **ทุกทางที่ทำให้ HP อสูรลด** พร้อมกันหมดโดยไม่ต้องไล่ดักทีละทาง
+       (ตอบถูก · สกิล ⚔️ · ไอเทมทลายผนึกของ v4.6 · การ์ด 🔥/🗡️ ของ v4.7) */
+    function baBarSync() {
+      const g = baG();
+      if (BA_BAR && (!g || BA_BAR.m !== g.currentMonster)) { baBarClear(); return; }
+      if (BA_BAR && !BA_BAR.broken && baBarLeft() <= 0) {
+        BA_BAR.broken = true;
+        baBarRegenStop();
+        BA_BREAK_UNTIL = Date.now() + BA_BREAK_MS;
+        baBreakFx();
+      }
+      baBarPaint();
+    }
+
+    /* วาดเกราะทับหลอดเลือดอสูรใบเดิม — **ไม่ได้เพิ่มหลอดใหม่**
+       ช่องว่างใต้แถวนักสู้มีแค่ 4px และถูกเกจ ATB ของ v6.3 จองไปแล้วทั้งหมด
+       การเพิ่มหลอดที่สามจะดันแถวนักสู้ให้สูงขึ้นแล้วไปชนขอบล่างของแถบโจทย์
+       (verify_arena.js วัดระยะนั้นไว้ที่ ≤ 0 ทุกความกว้าง) จึงวาดเป็นแถบสีผลึก
+       แบบ absolute ทับอยู่ในรางหลอดเดิม = ไม่กินความสูงเพิ่มแม้แต่พิกเซลเดียว */
+    function baBarPaint() {
+      const hp = document.getElementById('baFoeHp');
+      if (!hp) return;
+      let seg = hp.querySelector('.ba-shield');
+      const g = baG();
+      const left = baBarLeft();
+      if (!BA_BAR || !g || left <= 0) {
+        if (seg) seg.style.width = '0%';
+        hp.classList.remove('ba-guard');
+        return;
+      }
+      if (!seg) {
+        seg = document.createElement('i');
+        seg.className = 'ba-shield';
+        hp.appendChild(seg);
+      }
+      const total = g.monsterMaxHp || 1;
+      const l0 = Math.max(0, Math.min(100, BA_BAR.base / total * 100));
+      const l1 = Math.max(0, Math.min(100, g.monsterHp / total * 100));
+      seg.style.left  = l0 + '%';
+      seg.style.width = Math.max(0, l1 - l0) + '%';
+      hp.classList.add('ba-guard');
+    }
+
+    /* เกราะแตก — เสียงกระจกแตก + สะเก็ดผลึก + ป้ายบอกว่าบอสชะงัก */
+    function baBreakFx() {
+      baSfx('BA_SHATTER');
+      if (!baCanPlay()) return;
+      const t = baSpot('baFoe');
+      if (t) {
+        for (let i = 0; i < 6; i++) {
+          const sh = baSpawn('<div class="ba-shard"></div>', 620);
+          if (!sh) break;
+          sh.style.left = (t.x - 4 + (baRand(46) - 23)) + 'px';
+          sh.style.top  = (t.y - 6 + (baRand(34) - 17)) + 'px';
+          sh.style.setProperty('--bx', (baRand(70) - 35) + 'px');
+          sh.style.setProperty('--by', (-18 - baRand(34)) + 'px');
+        }
+        baFloat('🛡️ BREAK', 'crit', t);
+      }
+      baPose('baFoe', 'ba-hurt ba-stun', 620);
+      baQuake();
+      baFlash('radial-gradient(circle at 74% 58%,rgba(150,240,255,.55),transparent 62%)');
+      baBannerText('💥 ARMOR BREAK — เกราะแตกสลาย',
+                   'อสูรชะงัก ' + (BA_BREAK_MS / 1000) + ' วิ · รับดาเมจแรงขึ้น x' + BA_BREAK_MUL);
+    }
+
+    /* ป้ายระดับของอสูร — เขียนลงโหนดข้อความที่มีอยู่แล้ว ไม่ได้เพิ่มโหนดใหม่ */
+    function baTierLabel(g) {
+      const f = Math.round(g.floor || 1);
+      if (typeof abyssOn === 'function' && !g.practiceMode && abyssOn(g)) return '🕳️ [SECRET BOSS]';
+      if (baIsBossFloor(f)) return f >= FLOOR_MAX ? '👑 [FINAL BOSS]' : '👑 [BOSS]';
+      if (baIsEliteFloor(f)) return '🟣 [ELITE]';
+      return '';
+    }
+
+    function baTagSync() {
+      const g = baG();
+      const arena = baArena();
+      if (!g || !arena) return;
+      const f = Math.round(g.floor || 1);
+      const elite = !g.practiceMode && !baIsBossFloor(f) && baIsEliteFloor(f);
+      arena.classList.toggle('ba-elite', !!elite);
+      /* แผ่นป้ายกว้างแค่ 104px และตัดคำด้วย ellipsis อยู่แล้ว **ห้ามยัดชื่ออสูรลงไป**
+         ชื่อเต็มอย่าง "มังกรจักรพรรดิผลึกแก้ว" จะเหลือแค่ "มังกร…" ซึ่งอ่านไม่ได้ความ
+         ชื่อตัวเต็มถูกประกาศอยู่แล้วที่ป้าย .g-monster-tag บนหัวสนามซึ่งกว้างเต็มกรอบ
+         ป้ายนี้จึงเหลือแค่ "ระดับ" ตัวเดียว — วัดจริงแล้ว 👑 [FINAL BOSS] ยาวเต็มกรอบพอดี
+         ถ้าต่อเลขชั้นเข้าไปอีกจะโดน ellipsis ตัดจนอ่านไม่ออก (เลขชั้นมีอยู่แล้วสองที่
+         คือแถบชั้นบนหัวจอกับป้าย .g-monster-tag) · ชั้นธรรมดาไม่มีระดับให้โชว์
+         จึงใช้ "อสูรอักขระ ชั้น N" ตามของเดิมของ v6.0 */
+      const nm = document.getElementById('baFoeName');
+      if (nm) {
+        const lab = g.practiceMode ? '' : baTierLabel(g);
+        const t = lab || ('อสูรอักขระ ชั้น ' + f);
+        if (nm.textContent !== t) nm.textContent = t;
+      }
+      baBarPaint();
+    }
+
+    /* ชื่ออสูรรายตัว — อ่านจาก BA_FOES ที่เป็นสารบัญอยู่แล้ว ไม่สร้างตารางชุดที่สอง */
+    const BA_FOE_NAME = {};
+    for (let i = 0; i < BA_FOES.length; i++) BA_FOE_NAME[BA_FOES[i].id] = BA_FOES[i].name;
+    BA_FOE_NAME.void = 'ราชันสุญนิรันดร์';
+
+    /* ใครยืนอยู่ตรงหน้า — คืน id ของ BA_FOES หรือ 'void' ตอนเปิดโหมดเหวลึก
+       **ไม่สนว่าฝังภาพไว้หรือยัง** (กติกาเดียวกับ baFoeSlot ของ v6.3) */
+    function baSlotNow() {
+      const g = baG();
+      if (!g) return '';
+      if (typeof abyssOn === 'function' && !g.practiceMode && abyssOn(g)) return 'void';
+      return baFoeSlot(g);
+    }
+
+    // ══ 3) เครื่องเสียงสังเคราะห์ล้วน (Procedural Web Audio) ═══════════
+    /* **ไม่มีไฟล์เสียงแนบสักไฟล์** — กฎไฟล์เดียวจบห้ามอ้าง path ภายนอก และการฝัง
+       เสียงเป็น data URI จะทะลุเพดาน 2MB ทันที (เพลงลูปที่บีบดี ๆ กินราว 60-80KB
+       ต่อเพลง แต่ไฟล์แจกเหลือที่ไม่ถึงนั้น) ทั้งหัวข้อนี้จึงเป็นตัวโค้ดล้วน
+
+       **ยืมกราฟเสียงของ v5.1 มาทั้งชุด ไม่ได้สร้าง AudioContext ใบที่สอง**
+       สองใบจะแย่งฮาร์ดแวร์เสียงกันบนมือถือ (บทเรียนที่ v5.1 เขียนไว้เรื่อง chime
+       ของ v4.0) · SFX ทุกตัวไปลง AU_SFX_DEF ของ v5.1 แล้วยิงผ่าน auPlay()
+       จึงได้ Audio Pooling 16 ช่อง · throttle รายคีย์ · สวิตช์ 🔊 มาฟรีทั้งหมด */
+
+    /* ── 3.1 SFX — เติมคีย์ลงคลังของ v5.1 (const เป็น object จึงเติมคีย์ได้) ──
+       รูปแบบพารามิเตอร์เป็นชุดเดียวกับ AU_SFX_DEF ทุกตัว:
+       w รูปคลื่น · f/f2 ความถี่ต้น-ปลาย · t หน่วง · d ความยาว · g ความดัง
+       · a ขาขึ้น · lp/lp2 โลว์พาส · hp ไฮพาส · q ความชัน (หน่วยเป็นวินาที) */
+    const BA_SFX_DEF = {
+      /* ฮีโร่ — ฟันดาบ: ลมเสียดสี (noise) + คมดาบ (saw) ตามสเปกข้อ 3 */
+      BA_SLASH: { gap: 60, v: [
+        { w:'noise', hp:1500, lp:7000, d:0.13, g:0.20, a:0.004 },
+        { w:'saw',   f:900, f2:180, d:0.11, g:0.15, lp:3800 } ] },
+
+      /* ฮีโร่ — คริติคอล: คลื่นกระแทก (sine sweep ลง) + ระฆังฮาร์โมนิก */
+      BA_CRIT_HIT: { gap: 90, v: [
+        { w:'sine',   f:1200, f2:70,  d:0.34, g:0.30 },
+        { w:'sine',   f:1568, t:0.03, d:0.42, g:0.16 },
+        { w:'sine',   f:2349, t:0.05, d:0.38, g:0.11 },
+        { w:'noise',  hp:2600, d:0.10, g:0.16 } ] },
+
+      /* ฮีโร่ — ท่าไม้ตาย: คริติคอลที่หนักกว่าเดิมหนึ่งชั้น */
+      BA_SUPER_HIT: { gap: 120, v: [
+        { w:'sine',   f:1600, f2:52, d:0.46, g:0.34 },
+        { w:'saw',    f:180,  f2:1400, d:0.24, g:0.22, lp:5600 },
+        { w:'sine',   f:2093, t:0.06, d:0.52, g:0.16 },
+        { w:'noise',  hp:1400, lp:8000, d:0.20, g:0.22 } ] },
+
+      /* ฮีโร่ — เกจคริตเต็ม 100%: ระฆังไต่ขึ้นสามชั้น */
+      BA_CRIT_READY: { gap: 300, v: [
+        { w:'sine', f:784,  d:0.20, g:0.20 },
+        { w:'sine', f:1047, t:0.09, d:0.22, g:0.20 },
+        { w:'sine', f:1568, t:0.18, d:0.44, g:0.22 },
+        { w:'tri',  f:3136, t:0.18, d:0.30, g:0.08 } ] },
+
+      /* เกราะแตก — กระจกแตก: เสียงแตกกรอบ + สะเก็ดปลิว */
+      BA_SHATTER: { gap: 200, v: [
+        { w:'noise', hp:3200, d:0.30, g:0.28, a:0.002 },
+        { w:'noise', hp:6000, t:0.05, d:0.34, g:0.18 },
+        { w:'tri',   f:2637, f2:520, d:0.24, g:0.16 },
+        { w:'sine',  f:120,  f2:44,  d:0.36, g:0.18 } ] },
+
+      /* ── เสียงประจำตัวของอสูรทั้ง 19 ตัว (สเปกข้อ 4) ────────────────── */
+      /* 1.1 หินถล่ม — Low Pitch Rumble 60Hz */
+      BA_M11: { gap: 140, v: [
+        { w:'sine',  f:64, f2:38, d:0.72, g:0.32 },
+        { w:'noise', lp:420, lp2:110, d:0.66, g:0.26, a:0.05 },
+        { w:'saw',   f:96, f2:40, d:0.40, g:0.14, lp:340 } ] },
+      /* 1.2 กระแทกหินตัน — Thud Impact */
+      BA_M12: { gap: 140, v: [
+        { w:'sine',  f:140, f2:52, d:0.26, g:0.34, a:0.002 },
+        { w:'noise', lp:900, lp2:220, d:0.18, g:0.20 } ] },
+      /* 1.3 โล่กระแทก — Mid Punch Wave */
+      BA_M13: { gap: 140, v: [
+        { w:'square', f:320, f2:110, d:0.22, g:0.24, lp:1800 },
+        { w:'noise',  lp:1600, lp2:300, d:0.26, g:0.22 },
+        { w:'sine',   f:82,  f2:48,  d:0.34, g:0.22 } ] },
+      /* 1.4 กรีดอากาศ — High Sine Sweep */
+      BA_M14: { gap: 140, v: [
+        { w:'sine',  f:420, f2:3200, d:0.24, g:0.22 },
+        { w:'noise', hp:3000, d:0.14, g:0.16, t:0.14 },
+        { w:'saw',   f:1800, f2:300, t:0.16, d:0.16, g:0.14, lp:4200 } ] },
+      /* 1.5 เฉือนสั้น — Fast Noise Slice */
+      BA_M15: { gap: 110, v: [
+        { w:'noise', hp:2200, lp:9000, d:0.09, g:0.24, a:0.002 },
+        { w:'noise', hp:1600, t:0.07, d:0.09, g:0.20 },
+        { w:'saw',   f:1400, f2:420, d:0.10, g:0.12, lp:5000 } ] },
+      /* 1.6 คำรามสะท้อน — Echo Roar */
+      BA_M16: { gap: 220, v: [
+        { w:'saw',   f:110, f2:56, d:0.80, g:0.28, lp:900, lp2:260 },
+        { w:'saw',   f:82,  f2:44, t:0.22, d:0.70, g:0.18, lp:700 },
+        { w:'noise', lp:600, lp2:160, d:0.90, g:0.18, a:0.06 },
+        { w:'sine',  f:54,  f2:34, d:1.00, g:0.24 } ] },
+      /* 2.1 พ่นพิษฟู่ — Hissing Noise */
+      BA_M21: { gap: 160, v: [
+        { w:'noise', hp:2400, lp:9000, d:0.66, g:0.20, a:0.08 },
+        { w:'noise', hp:5200, t:0.10, d:0.50, g:0.12 },
+        { w:'sine',  f:220, f2:96, d:0.30, g:0.10 } ] },
+      /* 2.2 ไม้หัก — Snapping Wood */
+      BA_M22: { gap: 140, v: [
+        { w:'noise', hp:1200, lp:6000, d:0.10, g:0.26, a:0.002 },
+        { w:'square', f:180, f2:70, d:0.14, g:0.18, lp:1400 },
+        { w:'noise', hp:900, t:0.12, d:0.14, g:0.18 } ] },
+      /* 2.3 พฤกษาคำราม — เสียงต่ำผสมกิ่งไม้บิด */
+      BA_M23: { gap: 220, v: [
+        { w:'saw',   f:88, f2:46, d:0.86, g:0.26, lp:760, lp2:200 },
+        { w:'noise', lp:1800, lp2:300, d:0.70, g:0.20, a:0.05 },
+        { w:'sine',  f:46, f2:30, d:1.00, g:0.24 },
+        { w:'square', f:240, f2:90, t:0.18, d:0.30, g:0.10, lp:1200 } ] },
+      /* 3.1 เปิดหน้ากระดาษ — Flutter Noise */
+      BA_M31: { gap: 150, v: [
+        { w:'noise', hp:1800, lp:7000, d:0.09, g:0.18, a:0.002 },
+        { w:'noise', hp:1800, lp:7000, t:0.09, d:0.09, g:0.16 },
+        { w:'noise', hp:1800, lp:7000, t:0.19, d:0.09, g:0.14 },
+        { w:'noise', hp:1800, lp:7000, t:0.29, d:0.11, g:0.12 } ] },
+      /* 3.2 ดูดพลัง — Reverse Sawtooth */
+      BA_M32: { gap: 160, v: [
+        { w:'saw',  f:70,  f2:900, d:0.56, g:0.26, lp:1200, lp2:4200 },
+        { w:'sine', f:1200, f2:180, t:0.40, d:0.26, g:0.16 },
+        { w:'noise', hp:2600, t:0.34, d:0.20, g:0.14 } ] },
+      /* 3.3 ลูกแก้วเพลิงปะทุ — ระเบิดไฟผสมคำรามลิช */
+      BA_M33: { gap: 220, v: [
+        { w:'noise', lp:5200, lp2:340, d:0.70, g:0.28, a:0.02 },
+        { w:'saw',   f:150, f2:48, d:0.52, g:0.22, lp:900 },
+        { w:'sine',  f:660, f2:120, t:0.04, d:0.34, g:0.14 },
+        { w:'sine',  f:44,  f2:30, d:0.90, g:0.22 } ] },
+      /* 4.1 คลื่นแทรก — Glitch Pulse */
+      BA_M41: { gap: 130, v: [
+        { w:'square', f:1400, f2:180, d:0.07, g:0.20 },
+        { w:'square', f:640,  f2:2200, t:0.08, d:0.07, g:0.18 },
+        { w:'square', f:2600, f2:300, t:0.16, d:0.07, g:0.16 },
+        { w:'noise',  hp:4000, t:0.24, d:0.10, g:0.14 } ] },
+      /* 4.2 เลเซอร์ 3 จังหวะ */
+      BA_M42: { gap: 150, v: [
+        { w:'saw', f:2600, f2:420, d:0.13, g:0.22, lp:6000 },
+        { w:'saw', f:2600, f2:420, t:0.15, d:0.13, g:0.22, lp:6000 },
+        { w:'saw', f:2600, f2:380, t:0.30, d:0.17, g:0.24, lp:6000 },
+        { w:'sine', f:120, f2:52, t:0.30, d:0.30, g:0.16 } ] },
+      /* 4.3 บิดมิติ — FM Wobble */
+      BA_M43: { gap: 200, v: [
+        { w:'sine', f:300, f2:70,  d:0.30, g:0.24, lp:1600 },
+        { w:'sine', f:90,  f2:420, t:0.24, d:0.30, g:0.22, lp:1600 },
+        { w:'sine', f:420, f2:80,  t:0.50, d:0.34, g:0.20, lp:1600 },
+        { w:'noise', lp:1200, lp2:260, d:0.80, g:0.12, a:0.10 } ] },
+      /* 5.1 คริสตัลกระทบ — Chime 1300Hz ตามสเปก */
+      BA_M51: { gap: 150, v: [
+        { w:'sine', f:1300, d:0.42, g:0.24 },
+        { w:'sine', f:1950, t:0.03, d:0.34, g:0.13 },
+        { w:'sine', f:2600, t:0.06, d:0.28, g:0.09 },
+        { w:'tri',  f:650,  d:0.30, g:0.10 } ] },
+      /* 5.2 ระฆังตัดสิน — Deep Death Bell */
+      BA_M52: { gap: 260, v: [
+        { w:'sine', f:110, d:1.10, g:0.30 },
+        { w:'sine', f:165, d:0.90, g:0.18 },
+        { w:'sine', f:262, t:0.02, d:0.80, g:0.12 },
+        { w:'noise', lp:1400, lp2:200, d:0.60, g:0.12, a:0.04 } ] },
+      /* 5.3 คำรามมังกร — ต่ำลึกผสมพายุผลึก */
+      BA_M53: { gap: 300, v: [
+        { w:'saw',   f:74, f2:38, d:1.10, g:0.32, lp:820, lp2:200 },
+        { w:'saw',   f:56, f2:30, t:0.10, d:1.00, g:0.22, lp:640 },
+        { w:'noise', lp:6000, lp2:400, d:0.90, g:0.24, a:0.03 },
+        { w:'sine',  f:2093, f2:520, t:0.30, d:0.50, g:0.12 } ] },
+      /* ABYSS หลุมดำ — Sub-bass */
+      BA_VOID: { gap: 300, v: [
+        { w:'sine',  f:44, f2:22, d:1.40, g:0.36 },
+        { w:'sine',  f:33, f2:18, t:0.10, d:1.30, g:0.24 },
+        { w:'noise', lp:300, lp2:60, d:1.20, g:0.20, a:0.20 },
+        { w:'saw',   f:150, f2:26, d:0.70, g:0.14, lp:500 } ] }
+    };
+
+    /* เติมเข้าคลังของ v5.1 ครั้งเดียวตอนโหลด — ไม่เขียนทับคีย์เดิมของใครเลย */
+    (function baSfxRegister() {
+      try {
+        if (typeof AU_SFX_DEF === 'undefined' || !AU_SFX_DEF) return;
+        const k = Object.keys(BA_SFX_DEF);
+        for (let i = 0; i < k.length; i++) {
+          if (!AU_SFX_DEF[k[i]]) AU_SFX_DEF[k[i]] = BA_SFX_DEF[k[i]];
+        }
+      } catch (e) { baErr(e, 'sfxReg'); }
+    })();
+
+    /* ยิงเสียง — เงียบทันทีตอนเกมหยุดหรือจอมืด ตามข้อกำหนดข้อ 3 ของสเปก
+       (auPlay ของ v5.1 ดูแลสวิตช์ 🔊 กับ throttle ให้อยู่แล้ว) */
+    function baSfx(key) {
+      try {
+        if (typeof auPlay !== 'function') return false;
+        if (baPaused()) return false;
+        return auPlay(key);
+      } catch (e) { baErr(e, 'sfx'); return false; }
+    }
+
+    // ── 3.2 BGM สังเคราะห์รายโซน ────────────────────────────────────
+    /* **ต่อเข้า AU_MASTER ตรง ๆ ไม่ผ่าน AU_BGM_BUS ของ v5.1**
+       บัสนั้นเป็นของเครื่องเล่นไฟล์เพลง (AU_BGM_SRC) ซึ่งมีสเตตแมชชีนเฟดเข้า-ออก
+       ของตัวเองอยู่แล้ว ถ้าไปใช้ร่วมกัน สองตัวจะแย่งกันตั้งค่า gain
+       ต่อที่ AU_MASTER แทน = สวิตช์ 🔊 ยังปิดได้ในคลิกเดียวเหมือนเดิม
+       (AU_MASTER คือจุดเดียวที่ v5.1 หรี่ตอนกดปิดเสียง) */
+    const BA_BGM_KEY  = 'yao_bgm';
+    const BA_BGM_VOL  = 0.085;   /* เบากว่า SFX มาก — เป็นเสียงบรรยากาศ ไม่ใช่ตัวนำ */
+    const BA_BGM_TICK = 250;     /* คาบตัวจัดคิวโน้ต — จัดล่วงหน้า 0.7 วิ จึงไม่ต้องถี่
+                                    **ห้ามลดต่ำกว่านี้โดยไม่รัน test_dual_warp_gate
+                                    ซ้ำ 3 รอบ** (กับดักข้อ 31) */
+    const BA_BGM_AHEAD = 0.7;
+
+    /* บันไดเสียงของแต่ละโซน — เลขคือครึ่งเสียงนับจากโน้ตราก
+       root เป็นเฮิรตซ์ · bpm คือจังหวะต่อนาที · w คือรูปคลื่นของเบส/อาร์เพจจิโอ */
+    const BA_BGM_DEF = {
+      /* โซน 1 · คุกใต้ดิน — ไมเนอร์เพนทาโทนิกช้า ๆ ทุ้มลึก */
+      z1:    { bpm: 62,  root: 55.00, sc: [0, 3, 5, 7, 10], bw:'triangle', aw:'sine',   lp: 620,  bg:0.34, ag:0.13, pg:0.16 },
+      /* โซน 2 · โถงตะไคร่ — ลอย ๆ ชื้น ๆ */
+      z2:    { bpm: 70,  root: 61.74, sc: [0, 2, 3, 7, 8],  bw:'triangle', aw:'sine',   lp: 780,  bg:0.32, ag:0.13, pg:0.16 },
+      /* โซน 3 · ห้องสมุดเวท — โหมดโดเรียนเคร่งขรึม */
+      z3:    { bpm: 58,  root: 65.41, sc: [0, 2, 3, 5, 9],  bw:'sine',     aw:'triangle', lp: 900, bg:0.30, ag:0.12, pg:0.18 },
+      /* โซน 4 · ห้องทดลอง — ซอว์กระด้าง จังหวะเร็ว */
+      z4:    { bpm: 92,  root: 73.42, sc: [0, 1, 5, 6, 10], bw:'sawtooth', aw:'square', lp: 700,  bg:0.24, ag:0.09, pg:0.12 },
+      /* โซน 5 · มหาวิหารผลึก — เมเจอร์เปิดกว้าง สว่าง */
+      z5:    { bpm: 76,  root: 82.41, sc: [0, 4, 7, 11, 14],bw:'sine',     aw:'triangle', lp: 1200, bg:0.26, ag:0.12, pg:0.18 },
+      /* ห้องบอส — เร่งจังหวะกดดัน มีกลองทุกจังหวะคี่ */
+      boss:  { bpm: 126, root: 49.00, sc: [0, 1, 5, 6, 8],  bw:'sawtooth', aw:'square', lp: 820,  bg:0.30, ag:0.10, pg:0.14, drum: 1 },
+      /* เหวลึก — ช้าและต่ำจนแทบเป็นเสียงหายใจ */
+      abyss: { bpm: 52,  root: 36.71, sc: [0, 1, 6, 7, 11], bw:'sine',     aw:'sine',   lp: 460,  bg:0.36, ag:0.10, pg:0.20 }
+    };
+
+    let BA_BGM_ON   = true;
+    let BA_BGM_G    = null;
+    let BA_BGM_T    = null;
+    let BA_BGM_ID   = '';
+    let BA_BGM_STEP = 0;
+    let BA_BGM_NEXT = 0;
+    let BA_BGM_LVL  = -1;
+
+    function baBgmLoad() {
+      try { BA_BGM_ON = localStorage.getItem(BA_BGM_KEY) !== 'off'; } catch (e) {}
+      return BA_BGM_ON;
+    }
+
+    /* ทางเข้าสาธารณะสำหรับครู/ชุดเทสต์ — ปิดเพลงประกอบอย่างเดียว SFX ยังดังอยู่
+       (ระดับเครื่อง ไม่ผูกบัญชี — กติกาเดียวกับ yao_audio ของ v5.1) */
+    function baSetBgm(on) {
+      BA_BGM_ON = !!on;
+      try { localStorage.setItem(BA_BGM_KEY, BA_BGM_ON ? 'on' : 'off'); } catch (e) {}
+      if (!BA_BGM_ON) baBgmGain(0);
+      return BA_BGM_ON;
+    }
+
+    /* กราฟเสียง — สร้างครั้งเดียวแบบ lazy เกาะบน AudioContext ใบเดียวของ v5.1 */
+    function baBgmCtx() {
+      if (typeof auCtx !== 'function') return null;
+      let ctx = null;
+      try { ctx = auCtx(); } catch (e) { return null; }
+      if (!ctx) return null;
+      if (!BA_BGM_G) {
+        if (typeof AU_MASTER === 'undefined' || !AU_MASTER) return null;
+        BA_BGM_G = ctx.createGain();
+        BA_BGM_G.gain.value = 0.0001;
+        BA_BGM_G.connect(AU_MASTER);
+      }
+      return ctx;
+    }
+
+    function baBgmGain(to) {
+      if (!BA_BGM_G) return;
+      const v = Math.max(0.0001, to);
+      if (BA_BGM_LVL === v) return;
+      BA_BGM_LVL = v;
+      try {
+        const t = BA_BGM_G.context.currentTime;
+        BA_BGM_G.gain.cancelScheduledValues(t);
+        BA_BGM_G.gain.setValueAtTime(Math.max(0.0001, BA_BGM_G.gain.value), t);
+        BA_BGM_G.gain.linearRampToValueAtTime(v, t + 0.5);
+      } catch (e) {}
+    }
+
+    /* โน้ตหนึ่งตัว — ออสซิลเลเตอร์ใช้ครั้งเดียวทิ้งตามข้อบังคับของ Web Audio
+       ปลดสายทิ้งทันทีที่จบ จึงไม่มีโหนดพอกค้างในกราฟ */
+    function baTone(ctx, t, f, d, g, w, lp) {
+      if (!BA_BGM_G || !(f > 0)) return;
+      const o = ctx.createOscillator();
+      o.type = w || 'sine';
+      o.frequency.setValueAtTime(f, t);
+      const gn = ctx.createGain();
+      gn.gain.setValueAtTime(0.0001, t);
+      gn.gain.exponentialRampToValueAtTime(Math.max(0.0002, g), t + Math.min(0.06, d * 0.34));
+      gn.gain.exponentialRampToValueAtTime(0.0001, t + d);
+      let tail = o;
+      let filt = null;
+      if (lp) {
+        filt = ctx.createBiquadFilter();
+        filt.type = 'lowpass';
+        filt.frequency.setValueAtTime(Math.max(60, lp), t);
+        o.connect(filt);
+        tail = filt;
+      }
+      tail.connect(gn);
+      gn.connect(BA_BGM_G);
+      o.start(t);
+      o.stop(t + d + 0.02);
+      o.onended = function () {
+        try { o.disconnect(); if (filt) filt.disconnect(); gn.disconnect(); } catch (e) {}
+      };
+    }
+
+    /* กลองของห้องบอส — ยืมบัฟเฟอร์ขาวของ v5.1 มาใช้ ไม่สร้างใบใหม่ */
+    function baBgmDrum(ctx, t) {
+      if (typeof auNoise !== 'function' || !BA_BGM_G) return;
+      const buf = auNoise();
+      if (!buf) return;
+      const s = ctx.createBufferSource();
+      s.buffer = buf;
+      const f = ctx.createBiquadFilter();
+      f.type = 'bandpass';
+      f.frequency.setValueAtTime(2200, t);
+      const gn = ctx.createGain();
+      gn.gain.setValueAtTime(0.0001, t);
+      gn.gain.exponentialRampToValueAtTime(0.14, t + 0.004);
+      gn.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
+      s.connect(f); f.connect(gn); gn.connect(BA_BGM_G);
+      s.start(t);
+      s.stop(t + 0.11);
+      s.onended = function () { try { s.disconnect(); f.disconnect(); gn.disconnect(); } catch (e) {} };
+    }
+
+    /* เพลงที่ "ควรจะเล่นอยู่ตอนนี้" — คำนวณสดจากสถานะทุกครั้ง ไม่เก็บธงซ้อน
+       (กติกาเดียวกับ auBgmWant ของ v5.1 · baSceneOf ของ v6.1)
+       คืนสตริงว่าง = ต้องเงียบ ซึ่งครอบข้อกำหนดข้อ 3 ครบทั้งสามข้อ:
+       ปิดสวิตช์ 🔊 · ติดสถานะ Pause ของ v4.8.1 · จอมืดของ Abyssal Devourer */
+    function baBgmWant() {
+      if (!BA_BGM_ON) return '';
+      if (typeof auMuted === 'function' && auMuted()) return '';
+      const g = baG();
+      if (!g || !baCanPlay() || baPaused()) return '';
+      const bl = document.getElementById('baBlack');
+      if (bl && bl.classList.contains('on')) return '';
+      if (typeof abyssOn === 'function' && !g.practiceMode && abyssOn(g)) return 'abyss';
+      const f = Math.round(g.floor || 1);
+      if (!g.practiceMode && baIsBossFloor(f)) return 'boss';
+      return 'z' + Math.min(BA_ZONES, baBandOf(f) + 1);
+    }
+
+    /* หนึ่งจังหวะของเพลง — เบส + อาร์เพจจิโอ + แพดทุก 8 จังหวะ (+ กลองของบอส)
+       สองถึงสามโหนดต่อจังหวะเท่านั้น ที่ 126 bpm ≈ 6 โหนด/วินาที ซึ่งเบามาก */
+    function baBgmStep(ctx, def, s, t) {
+      const sc = def.sc;
+      const hz = function (semi) { return def.root * Math.pow(2, semi / 12); };
+      const spb = 60 / def.bpm;
+      if (s % 2 === 0) {
+        baTone(ctx, t, hz(sc[(s / 2) % sc.length]), spb * 1.5, def.bg, def.bw, def.lp);
+      }
+      baTone(ctx, t, hz(sc[(s * 3) % sc.length] + 24), spb * 0.62, def.ag, def.aw, def.lp * 2.4);
+      if (s % 8 === 0) {
+        baTone(ctx, t, hz(12), spb * 7, def.pg, 'sine', def.lp);
+      }
+      if (def.drum && s % 2 === 1) baBgmDrum(ctx, t);
+    }
+
+    function baBgmTick() {
+      const ctx = baBgmCtx();
+      if (!ctx) return;
+      /* บริบทยังไม่ปลดล็อก (ยังไม่มีการแตะจอ) = ไม่ต้องจัดคิวอะไรเลย
+         auUnlock ของ v5.1 จะปลดให้เองตอนแตะจอครั้งแรก */
+      if (ctx.state !== 'running') { BA_BGM_NEXT = 0; return; }
+      const want = baBgmWant();
+      if (want !== BA_BGM_ID) {
+        BA_BGM_ID = want;
+        BA_BGM_STEP = 0;
+        BA_BGM_NEXT = ctx.currentTime + 0.06;
+      }
+      baBgmGain(want ? BA_BGM_VOL : 0);
+      if (!want) return;
+      const def = BA_BGM_DEF[want] || BA_BGM_DEF.z1;
+      const spb = 60 / def.bpm;
+      if (!BA_BGM_NEXT || BA_BGM_NEXT < ctx.currentTime) BA_BGM_NEXT = ctx.currentTime + 0.04;
+      let guard = 0;
+      while (BA_BGM_NEXT < ctx.currentTime + BA_BGM_AHEAD && guard++ < 24) {
+        baBgmStep(ctx, def, BA_BGM_STEP++, BA_BGM_NEXT);
+        BA_BGM_NEXT += spb;
+      }
+    }
+
+    function baBgmArm() {
+      if (BA_BGM_T) return;
+      BA_BGM_T = setInterval(function () {
+        try { baBgmTick(); } catch (e) { baErr(e, 'bgm'); }
+      }, BA_BGM_TICK);
+    }
+
+    function baBgmStop() {
+      if (BA_BGM_T) { clearInterval(BA_BGM_T); BA_BGM_T = null; }
+      BA_BGM_ID = '';
+      BA_BGM_NEXT = 0;
+      baBgmGain(0);
+    }
+
+    // ══ 4) เอฟเฟกต์ภาพ+เสียงเฉพาะตัวของอสูรทั้ง 19 ตัว ═════════════════
+    /* สารบัญอยู่ที่ก้อนนี้ก้อนเดียว **คีย์ตรงกับ id ของ BA_FOES และ BA_SKILLS**
+       จึงไม่มีแผนที่ชุดที่สามให้ต้องซิงก์ (กติกาเดียวกับที่ v6.3 ทำกับ BA_SKILLS)
+         s  = คีย์เสียงใน AU_SFX_DEF · fx = ชื่อท่าภาพ (ดู baFxBurst)
+       ตัวภาพทั้งหมดเป็น absolute ในกรอบ #baFx ซึ่งอยู่ใน #baArena ที่ overflow:hidden
+       ยกเว้นม่านเต็มจอ (#baVeil) ที่เป็น fixed + pointer-events:none
+       **จึงไม่มีชิ้นไหนกินความสูงหรือความกว้างของเลย์เอาต์เลยแม้แต่พิกเซลเดียว** */
+    const BA_ATK_FX = {
+      m11: { s:'BA_M11', fx:'rock'   },
+      m12: { s:'BA_M12', fx:'guard'  },
+      m13: { s:'BA_M13', fx:'wave'   },
+      m14: { s:'BA_M14', fx:'lance'  },
+      m15: { s:'BA_M15', fx:'claw'   },
+      m16: { s:'BA_M16', fx:'roar'   },
+      m21: { s:'BA_M21', fx:'mist'   },
+      m22: { s:'BA_M22', fx:'vine'   },
+      m23: { s:'BA_M23', fx:'grove'  },
+      m31: { s:'BA_M31', fx:'page'   },
+      m32: { s:'BA_M32', fx:'siphon' },
+      m33: { s:'BA_M33', fx:'pillar' },
+      m41: { s:'BA_M41', fx:'glitch' },
+      m42: { s:'BA_M42', fx:'laser'  },
+      m43: { s:'BA_M43', fx:'warp'   },
+      m51: { s:'BA_M51', fx:'mirror' },
+      m52: { s:'BA_M52', fx:'bell'   },
+      m53: { s:'BA_M53', fx:'storm'  },
+      void:{ s:'BA_VOID', fx:'hole'  }
+    };
+
+    /* ม่านเต็มจอสำหรับท่าที่สเปกสั่งว่า "เกาะขอบจอ / อัดจอ / เต็มจอ"
+       fixed + pointer-events:none + z-index 144 = ใต้จอมืด (145) · ใต้ม่านหยุดเกม (190)
+       · ใต้หน้าต่างระบบ (200) เสมอ จึงไม่บังอะไรและไม่ขวางการกดปุ่มสักปุ่ม */
+    function baVeilEl() {
+      let el = document.getElementById('baVeil');
+      if (el) return el;
+      el = document.createElement('div');
+      el.id = 'baVeil';
+      el.setAttribute('aria-hidden', 'true');
+      document.body.appendChild(el);
+      return el;
+    }
+
+    function baVeilFx(bg, ms) {
+      const el = baVeilEl();
+      if (!el) return;
+      el.style.background = bg;
+      el.classList.remove('on');
+      void el.offsetWidth;
+      el.classList.add('on');
+      baLater(function () { el.classList.remove('on'); }, ms || 900);
+    }
+
+    /* ติดคลาสชั่วคราวให้โหนดของชั้นล่าง แล้วถอดคืนเองเสมอ
+       ใช้เฉพาะคลาสที่เปลี่ยนแค่สี/เงา/transform ห้ามแตะขนาดกล่องเด็ดขาด */
+    function baTint(id, cls, ms) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.classList.remove(cls);
+      void el.offsetWidth;
+      el.classList.add(cls);
+      baLater(function () { el.classList.remove(cls); }, ms);
+    }
+
+    /* โปรยชิ้นส่วนหลายชิ้นในกรอบสนาม — ใช้ร่วมกันหลายท่า */
+    function baBits(cls, n, life, at, spread, drift) {
+      for (let i = 0; i < n; i++) {
+        const el = baSpawn('<div class="' + cls + '"></div>', life);
+        if (!el) return;
+        el.style.left = Math.max(0, (at ? at.x : 60) - spread / 2 + baRand(spread)) + 'px';
+        el.style.top  = (at ? at.y : 40) - 30 + baRand(30) + 'px';
+        el.style.setProperty('--bx', (baRand(drift * 2) - drift) + 'px');
+        el.style.setProperty('--bd', (i * 55) + 'ms');
+      }
+    }
+
+    /* ท่าภาพทั้งหมด — หนึ่ง switch หนึ่งที่ แก้ที่นี่ที่เดียว
+       ทุกท่าเป็นอนิเมชัน **ครั้งเดียวจบ ไม่มี infinite สักตัว** (กับดักข้อ 31) */
+    function baFxBurst(kind) {
+      const hero = baSpot('baHero');
+      const foe  = baSpot('baFoe');
+      switch (kind) {
+        case 'rock':                                   /* 1.1 หินถล่มใส่ฮีโร่ */
+          baBits('ba-rock', 5, 780, hero ? { x: hero.x, y: 10 } : null, 74, 12);
+          baTint('baArena', 'ba-dust', 800);
+          break;
+        case 'guard':                                  /* 1.2 เกราะศิลากางล้อมตัว */
+          if (foe) {
+            const g1 = baSpawn('<div class="ba-guardring"></div>', 900);
+            if (g1) { g1.style.left = (foe.x - 34) + 'px'; g1.style.top = (foe.y - 34) + 'px'; }
+          }
+          break;
+        case 'wave':                                   /* 1.3 คลื่นกระแทกสีเทาอัดจอ */
+          baSpawn('<div class="ba-shock"></div>', 620);
+          baVeilFx('radial-gradient(circle at 72% 52%,rgba(190,196,205,.34),transparent 66%)', 620);
+          break;
+        case 'lance':                                  /* 1.4 ลำแสงแทงสีแดงเลือด */
+          if (hero && foe) {
+            const b = baSpawn('<div class="ba-lance"></div>', 560);
+            if (b) { b.style.top = (foe.y - 3) + 'px'; b.style.left = (hero.x - 10) + 'px';
+                     b.style.width = Math.max(30, foe.x - hero.x + 10) + 'px'; }
+          }
+          break;
+        case 'claw':                                   /* 1.5 รอยกรงเล็บเฉือน */
+          if (hero) {
+            for (let i = 0; i < 3; i++) {
+              const c = baSpawn('<div class="ba-claw"></div>', 520);
+              if (!c) break;
+              c.style.left = (hero.x - 26 + i * 9) + 'px';
+              c.style.top  = (hero.y - 28 + i * 5) + 'px';
+              c.style.setProperty('--bd', (i * 70) + 'ms');
+            }
+          }
+          break;
+        case 'roar':                                   /* 1.6 คำรามสะท้อน — วงคลื่นซ้อน */
+          if (foe) {
+            for (let i = 0; i < 3; i++) {
+              const r = baSpawn('<div class="ba-roar"></div>', 900);
+              if (!r) break;
+              r.style.left = (foe.x - 30) + 'px';
+              r.style.top  = (foe.y - 30) + 'px';
+              r.style.setProperty('--bd', (i * 170) + 'ms');
+            }
+          }
+          baVeilFx('radial-gradient(circle at 50% 60%,rgba(176,176,186,.30),transparent 70%)', 900);
+          break;
+        case 'mist':                                   /* 2.1 หมอกควันพิษเขียวเกาะขอบจอ */
+          baVeilFx('radial-gradient(ellipse at 50% 50%,transparent 42%,rgba(56,214,120,.36) 100%)', 1500);
+          baBits('ba-spore', 6, 1200, foe, 96, 22);
+          break;
+        case 'vine':                                   /* 2.2 เถาวัลย์หนามพันปุ่ม */
+          baTint('gChoices', 'ba-thorn', 900);
+          baBits('ba-vine', 4, 820, foe, 80, 10);
+          break;
+        case 'grove':                                  /* 2.3 เถาวัลย์ยักษ์คลุมสนาม */
+          baTint('gChoices', 'ba-thorn', 1100);
+          baSpawn('<div class="ba-grove"></div>', 1200);
+          baVeilFx('linear-gradient(0deg,rgba(34,140,72,.34),transparent 62%)', 1200);
+          break;
+        case 'page':                                   /* 3.1 อักขระบังพินอิน */
+          baBits('ba-page', 6, 1000, foe ? { x: foe.x - 30, y: foe.y - 10 } : null, 110, 26);
+          baTint('gPinyin', 'ba-flutter', 900);
+          break;
+        case 'siphon':                                 /* 3.2 สายฟ้าม่วงดูดเกจคริต */
+          if (hero && foe) {
+            const s = baSpawn('<div class="ba-siphon"></div>', 700);
+            if (s) { s.style.top = (Math.min(hero.y, foe.y) - 4) + 'px';
+                     s.style.left = (hero.x) + 'px';
+                     s.style.width = Math.max(30, foe.x - hero.x) + 'px'; }
+          }
+          baTint('baCritBar', 'ba-drain', 800);
+          break;
+        case 'pillar':                                 /* 3.3 เสาเพลิงล้อมจอ */
+          for (let i = 0; i < 4; i++) {
+            const p = baSpawn('<div class="ba-pillar"></div>', 900);
+            if (!p) break;
+            p.style.left = (14 + i * 26) + '%';
+            p.style.setProperty('--bd', (i * 90) + 'ms');
+          }
+          baVeilFx('linear-gradient(0deg,rgba(255,120,40,.34),transparent 58%)', 950);
+          break;
+        case 'glitch':                                 /* 4.1 เกจเวลาวิ่งกระตุก */
+          baTint('gTimer', 'ba-glitchbar', 900);
+          baTint('baArena', 'ba-scan', 700);
+          break;
+        case 'laser':                                  /* 4.2 ลำแสงฟ้า 3 เส้นตัดจอ */
+          for (let i = 0; i < 3; i++) {
+            const l = baSpawn('<div class="ba-laser"></div>', 640);
+            if (!l) break;
+            l.style.top = (24 + i * 34) + 'px';
+            l.style.setProperty('--bd', (i * 150) + 'ms');
+          }
+          break;
+        case 'warp':                                   /* 4.3 ปุ่มลอยบิดมิติ */
+          baTint('gChoices', 'ba-wobble', 1400);
+          baTint('baArena', 'ba-warp', 900);
+          break;
+        case 'mirror':                                 /* 5.1 เงากระจกสะท้อน */
+          baBits('ba-mirror', 5, 820, foe ? { x: foe.x - 24, y: foe.y } : null, 100, 16);
+          break;
+        case 'bell':                                   /* 5.2 วงแหวนทองลงทัณฑ์ */
+          if (hero) {
+            for (let i = 0; i < 2; i++) {
+              const r = baSpawn('<div class="ba-judge"></div>', 1000);
+              if (!r) break;
+              r.style.left = (hero.x - 40) + 'px';
+              r.style.top  = (hero.y - 40) + 'px';
+              r.style.setProperty('--bd', (i * 220) + 'ms');
+            }
+          }
+          baVeilFx('radial-gradient(circle at 26% 62%,rgba(255,206,84,.34),transparent 64%)', 1000);
+          break;
+        case 'storm':                                  /* 5.3 พายุลำแสงคริสตัลเต็มจอ */
+          for (let i = 0; i < 6; i++) {
+            const l = baSpawn('<div class="ba-storm"></div>', 900);
+            if (!l) break;
+            l.style.left = (6 + i * 16) + '%';
+            l.style.setProperty('--bd', (i * 70) + 'ms');
+          }
+          baVeilFx('linear-gradient(180deg,rgba(150,240,255,.38),transparent 70%)', 1000);
+          break;
+        case 'hole':                                   /* ABYSS หลุมดำ */
+          if (foe) {
+            const h = baSpawn('<div class="ba-hole"></div>', 1000);
+            if (h) { h.style.left = (foe.x - 40) + 'px'; h.style.top = (foe.y - 40) + 'px'; }
+          }
+          break;
+      }
+    }
+
+    /* จุดเรียกเดียว — ยิงพร้อมกับที่อสูรปล่อยสกิล */
+    function baAttackFx(slot) {
+      const d = BA_ATK_FX[slot];
+      if (!d) return;
+      baSfx(d.s);
+      if (!baCanPlay()) return;
+      try { baFxBurst(d.fx); } catch (e) { baErr(e, 'fx:' + d.fx); }
+    }
+
+    // ══ CSS ของแพตช์นี้ — ก้อนที่สอง แยกจาก #baStyle ของ v6.0 ═══════════
+    /* แยกก้อนเพื่อให้ลบแพตช์นี้ทิ้งได้ทั้งก้อนโดยไม่ต้องรื้อ CSS ของชั้นล่าง
+       **ทุกกฎที่นี่แตะแค่สี เงา transform opacity** ไม่มีกฎไหนเปลี่ยนขนาดกล่อง
+       ของอะไรที่อยู่ในสายเลย์เอาต์เลยสักกฎเดียว */
+    function baFxStyle() {
+      if (document.getElementById('baStyle2')) return;
+      const css =
+        /* แถบเกราะที่วาดทับหลอดเลือดอสูร — absolute ในรางเดิม ไม่กินความสูงเพิ่ม */
+        '#baArena .ba-hp{position:relative}' +
+        '#baArena .ba-shield{position:absolute;top:0;bottom:0;left:0;width:0;' +
+          'border-radius:2px;pointer-events:none;' +
+          'background:linear-gradient(90deg,#2a6f8f,#7fe6ff 55%,#eafcff);' +
+          'box-shadow:0 0 6px rgba(127,230,255,.85)}' +
+        '#baArena .ba-hp.ba-guard{border-color:rgba(127,230,255,.7)}' +
+
+        /* ป้ายอีลีท — กรอบม่วงเรืองแสงรอบตัวอสูร ตามสเปกข้อ 2 */
+        '#baArena.ba-elite .ba-foe .ba-sprite{filter:drop-shadow(0 0 8px rgba(178,102,255,.95))}' +
+        '#baArena.ba-elite .ba-foe .ba-name{color:#e2ccff;' +
+          'text-shadow:0 0 9px rgba(178,102,255,.95),0 1px 3px rgba(0,0,0,.9)}' +
+        '#baArena.ba-elite .ba-foe .ba-plate{outline:1px solid rgba(178,102,255,.55);' +
+          'outline-offset:2px;border-radius:4px}' +
+
+        /* สะเก็ดผลึกตอนเกราะแตก */
+        '.ba-shard{position:absolute;width:6px;height:6px;pointer-events:none;' +
+          'background:linear-gradient(135deg,#eafcff,#7fe6ff);' +
+          'box-shadow:0 0 7px rgba(127,230,255,.95);' +
+          'animation:baShard 600ms ease-out forwards}' +
+        '@keyframes baShard{0%{opacity:1;transform:translate(0,0) rotate(0)}' +
+          '100%{opacity:0;transform:translate(var(--bx,0),var(--by,-24px)) rotate(220deg)}}' +
+
+        /* ── ท่าภาพประจำตัวของอสูร ─────────────────────────────────── */
+        '.ba-rock{position:absolute;width:13px;height:11px;pointer-events:none;' +
+          'background:linear-gradient(150deg,#9aa0a8,#4a4f57);border-radius:3px 6px 4px 7px;' +
+          'animation:baRock 700ms cubic-bezier(.4,0,.9,.6) var(--bd,0ms) forwards;opacity:0}' +
+        '@keyframes baRock{0%{opacity:1;transform:translateY(-14px) rotate(0)}' +
+          '100%{opacity:.1;transform:translateY(120px) translateX(var(--bx,0)) rotate(180deg)}}' +
+        '#baArena.ba-dust .ba-ground{filter:brightness(.7) sepia(.5)}' +
+
+        '.ba-guardring{position:absolute;width:68px;height:68px;border-radius:50%;' +
+          'pointer-events:none;border:3px solid rgba(190,196,205,.9);' +
+          'box-shadow:0 0 14px rgba(190,196,205,.7) inset;' +
+          'animation:baGuard 880ms ease-out forwards}' +
+        '@keyframes baGuard{0%{opacity:0;transform:scale(.4)}22%{opacity:1;transform:scale(1.05)}' +
+          '70%{opacity:.9;transform:scale(1)}100%{opacity:0;transform:scale(1.12)}}' +
+
+        '.ba-shock{position:absolute;left:0;right:0;top:38%;height:26px;pointer-events:none;' +
+          'background:linear-gradient(90deg,transparent,rgba(214,220,228,.85),transparent);' +
+          'animation:baShock 600ms ease-out forwards}' +
+        '@keyframes baShock{0%{opacity:0;transform:translateX(38%) scaleY(.3)}' +
+          '30%{opacity:1}100%{opacity:0;transform:translateX(-42%) scaleY(1.4)}}' +
+
+        '.ba-lance{position:absolute;height:6px;pointer-events:none;border-radius:3px;' +
+          'background:linear-gradient(90deg,rgba(255,60,80,0),rgba(255,60,80,.95),#fff);' +
+          'box-shadow:0 0 12px rgba(255,60,80,.95);transform-origin:right center;' +
+          'animation:baLance 540ms ease-out forwards}' +
+        '@keyframes baLance{0%{opacity:0;transform:scaleX(.1)}26%{opacity:1;transform:scaleX(1)}' +
+          '100%{opacity:0;transform:scaleX(1)}}' +
+
+        '.ba-claw{position:absolute;width:52px;height:4px;pointer-events:none;border-radius:2px;' +
+          'background:linear-gradient(90deg,transparent,#ff9ab0,#fff,transparent);' +
+          'transform:rotate(-34deg);box-shadow:0 0 9px rgba(255,120,150,.9);' +
+          'animation:baClaw 500ms ease-out var(--bd,0ms) forwards;opacity:0}' +
+        '@keyframes baClaw{0%{opacity:0;transform:rotate(-34deg) scaleX(.2)}' +
+          '30%{opacity:1;transform:rotate(-34deg) scaleX(1)}' +
+          '100%{opacity:0;transform:rotate(-34deg) scaleX(1.1)}}' +
+
+        '.ba-roar{position:absolute;width:60px;height:60px;border-radius:50%;pointer-events:none;' +
+          'border:2px solid rgba(214,214,226,.85);' +
+          'animation:baRoar 780ms ease-out var(--bd,0ms) forwards;opacity:0}' +
+        '@keyframes baRoar{0%{opacity:.95;transform:scale(.3)}100%{opacity:0;transform:scale(2.3)}}' +
+
+        '.ba-spore{position:absolute;width:9px;height:9px;border-radius:50%;pointer-events:none;' +
+          'background:radial-gradient(circle,#8ef0b6,rgba(56,214,120,0));' +
+          'animation:baSpore 1150ms ease-out var(--bd,0ms) forwards;opacity:0}' +
+        '@keyframes baSpore{0%{opacity:.95;transform:translate(0,0) scale(.5)}' +
+          '100%{opacity:0;transform:translate(var(--bx,0),-42px) scale(1.8)}}' +
+
+        '.ba-vine{position:absolute;width:5px;height:34px;pointer-events:none;border-radius:3px;' +
+          'background:linear-gradient(180deg,#2f8f4e,#164a2a);' +
+          'animation:baVine 780ms ease-out var(--bd,0ms) forwards;transform-origin:bottom center}' +
+        '@keyframes baVine{0%{opacity:0;transform:scaleY(0) rotate(-8deg)}' +
+          '30%{opacity:1;transform:scaleY(1) rotate(4deg)}100%{opacity:0;transform:scaleY(1) rotate(-4deg)}}' +
+        '#gChoices.ba-thorn .g-choice{box-shadow:inset 0 0 0 2px rgba(47,143,78,.75)}' +
+
+        '.ba-grove{position:absolute;inset:0;pointer-events:none;' +
+          'background:radial-gradient(ellipse at 50% 120%,rgba(30,120,60,.55),transparent 62%);' +
+          'animation:baFade 1150ms ease-out forwards}' +
+        '@keyframes baFade{0%{opacity:0}22%{opacity:1}100%{opacity:0}}' +
+
+        '.ba-page{position:absolute;width:12px;height:15px;pointer-events:none;' +
+          'background:linear-gradient(160deg,#f0e6c8,#b9a878);border-radius:2px;' +
+          'animation:baPage 960ms ease-out var(--bd,0ms) forwards;opacity:0}' +
+        '@keyframes baPage{0%{opacity:1;transform:translate(0,0) rotate(0)}' +
+          '100%{opacity:0;transform:translate(var(--bx,0),-46px) rotate(320deg)}}' +
+        '#gPinyin.ba-flutter{animation:baFlut 860ms ease-in-out}' +
+        '@keyframes baFlut{0%,100%{opacity:1}30%{opacity:.25}62%{opacity:.7}}' +
+
+        '.ba-siphon{position:absolute;height:3px;pointer-events:none;border-radius:2px;' +
+          'background:linear-gradient(90deg,rgba(178,102,255,0),#b266ff,#e2ccff);' +
+          'box-shadow:0 0 11px rgba(178,102,255,.95);' +
+          'animation:baSiph 680ms ease-in forwards}' +
+        '@keyframes baSiph{0%{opacity:0;transform:scaleX(.2)}24%{opacity:1;transform:scaleX(1)}' +
+          '100%{opacity:0;transform:scaleX(1)}}' +
+        '#baCritBar.ba-drain{animation:baDrn 780ms ease-out}' +
+        '@keyframes baDrn{0%,100%{box-shadow:none}40%{box-shadow:0 0 12px rgba(178,102,255,.95)}}' +
+
+        '.ba-pillar{position:absolute;bottom:0;width:16px;height:78px;pointer-events:none;' +
+          'border-radius:8px 8px 2px 2px;' +
+          'background:linear-gradient(0deg,#ffce54,rgba(255,90,40,.85) 55%,rgba(255,60,80,0));' +
+          'animation:baPil 860ms ease-out var(--bd,0ms) forwards;transform-origin:bottom center;opacity:0}' +
+        '@keyframes baPil{0%{opacity:0;transform:scaleY(.1)}26%{opacity:1;transform:scaleY(1)}' +
+          '100%{opacity:0;transform:scaleY(1.1)}}' +
+
+        '#gTimer.ba-glitchbar{animation:baGl 860ms steps(2,end)}' +
+        '@keyframes baGl{0%,100%{filter:none;transform:translateX(0)}' +
+          '20%{filter:hue-rotate(150deg) saturate(3);transform:translateX(2px)}' +
+          '46%{filter:invert(.25);transform:translateX(-2px)}' +
+          '72%{filter:hue-rotate(-90deg);transform:translateX(1px)}}' +
+        '#baArena.ba-scan .ba-bg{filter:contrast(1.5) hue-rotate(24deg)}' +
+
+        '.ba-laser{position:absolute;left:-12%;width:124%;height:4px;pointer-events:none;' +
+          'background:linear-gradient(90deg,transparent,#7fd7ff,#eaffff,#7fd7ff,transparent);' +
+          'box-shadow:0 0 12px rgba(127,215,255,.95);transform:rotate(-7deg);' +
+          'animation:baLas 600ms ease-out var(--bd,0ms) forwards;opacity:0}' +
+        '@keyframes baLas{0%{opacity:0;transform:rotate(-7deg) scaleX(.05)}' +
+          '26%{opacity:1;transform:rotate(-7deg) scaleX(1)}' +
+          '100%{opacity:0;transform:rotate(-7deg) scaleX(1)}}' +
+
+        '#gChoices.ba-wobble .g-choice{animation:baWob 1350ms ease-in-out}' +
+        '@keyframes baWob{0%,100%{transform:translate(0,0) rotate(0)}' +
+          '25%{transform:translate(3px,-2px) rotate(.5deg)}' +
+          '55%{transform:translate(-3px,2px) rotate(-.6deg)}' +
+          '80%{transform:translate(2px,1px) rotate(.3deg)}}' +
+        '#baArena.ba-warp .ba-bg{filter:hue-rotate(90deg) saturate(1.6)}' +
+
+        '.ba-mirror{position:absolute;width:16px;height:26px;pointer-events:none;' +
+          'background:linear-gradient(140deg,rgba(234,252,255,.9),rgba(127,215,255,.25));' +
+          'clip-path:polygon(50% 0,100% 38%,72% 100%,20% 82%,0 32%);' +
+          'animation:baMir 780ms ease-out var(--bd,0ms) forwards;opacity:0}' +
+        '@keyframes baMir{0%{opacity:0;transform:translate(0,0) scale(.4)}' +
+          '32%{opacity:1;transform:translate(var(--bx,0),-10px) scale(1)}' +
+          '100%{opacity:0;transform:translate(var(--bx,0),-26px) scale(1.1)}}' +
+
+        '.ba-judge{position:absolute;width:80px;height:80px;border-radius:50%;pointer-events:none;' +
+          'border:3px solid rgba(255,206,84,.95);box-shadow:0 0 16px rgba(255,206,84,.8);' +
+          'animation:baJdg 960ms ease-out var(--bd,0ms) forwards;opacity:0}' +
+        '@keyframes baJdg{0%{opacity:0;transform:scale(1.9) rotate(0)}' +
+          '40%{opacity:1;transform:scale(1) rotate(90deg)}' +
+          '100%{opacity:0;transform:scale(.5) rotate(200deg)}}' +
+
+        '.ba-storm{position:absolute;top:-10%;width:7px;height:130%;pointer-events:none;' +
+          'background:linear-gradient(180deg,rgba(150,240,255,0),#96f0ff,rgba(150,240,255,0));' +
+          'box-shadow:0 0 14px rgba(150,240,255,.9);transform:rotate(9deg);' +
+          'animation:baStorm 860ms ease-out var(--bd,0ms) forwards;opacity:0}' +
+        '@keyframes baStorm{0%{opacity:0;transform:rotate(9deg) scaleY(.1)}' +
+          '24%{opacity:1;transform:rotate(9deg) scaleY(1)}' +
+          '100%{opacity:0;transform:rotate(9deg) scaleY(1)}}' +
+
+        '.ba-hole{position:absolute;width:80px;height:80px;border-radius:50%;pointer-events:none;' +
+          'background:radial-gradient(circle,#000 32%,rgba(90,40,140,.65) 58%,transparent 72%);' +
+          'box-shadow:0 0 24px rgba(60,20,110,.95);' +
+          'animation:baHole 960ms ease-in forwards}' +
+        '@keyframes baHole{0%{opacity:0;transform:scale(.2)}30%{opacity:1;transform:scale(1)}' +
+          '100%{opacity:0;transform:scale(.15)}}' +
+
+        /* ม่านเต็มจอ — fixed + pointer-events:none จึงไม่กินเลย์เอาต์และไม่ขวางการกด */
+        '#baVeil{position:fixed;inset:0;z-index:144;pointer-events:none;opacity:0;' +
+          'transition:opacity .28s ease}' +
+        '#baVeil.on{opacity:1}' +
+
+        /* เครื่องที่ผู้ใช้ขอลดการเคลื่อนไหว — ตัดของที่วิ่งทิ้ง เหลือแต่ข้อมูล */
+        '@media (prefers-reduced-motion:reduce){' +
+          '.ba-rock,.ba-shock,.ba-lance,.ba-claw,.ba-roar,.ba-spore,.ba-vine,.ba-grove,' +
+          '.ba-page,.ba-siphon,.ba-pillar,.ba-laser,.ba-mirror,.ba-judge,.ba-storm,' +
+          '.ba-hole,.ba-shard,.ba-guardring{display:none}' +
+          '#gChoices.ba-wobble .g-choice{animation:none}}';
+
+      const st = document.createElement('style');
+      st.id = 'baStyle2';
+      st.textContent = css;
+      document.head.appendChild(st);
+    }
+
+    // ══ v6.4 · ห่อฟังก์ชัน ═══════════════════════════════════════════════
+    /* ── 1) แผนผังหอคอย — เขียนทับ binding ของ isBossFloor ──────────────
+       ทุกจุดเรียกในเกมอ้างถึงด้วยชื่อระดับบนสุดล้วน (mangle.toplevel ของ build
+       เป็น false ตลอดกาล ชื่อจึงรอดผ่านการย่อไฟล์) การเขียนทับที่นี่จุดเดียว
+       จึงเปลี่ยนพร้อมกันหมดทั้งเกม — ไม่ต้องแก้โค้ดของ v4.0 สักบรรทัด */
+    if (typeof isBossFloor === 'function') {
+      isBossFloor = function (floor) { return baIsBossFloor(floor); };
+      baTowerSync();
+    }
+
+    /* ── จุดเซฟ — ร่วงแล้วกลับมายืนที่ชั้นถัดจากประตูบอสบานล่าสุด ─────────
+       ต้องทำ **หลัง** ของเดิมทำงานจบ เพราะ onHunterDown ของ v4.0 เป็นคนย้ายชั้น
+       แล้วสั่งคิวเปิดประตูตั้งหลักใหม่ไว้ที่ 1500ms · โค้ดของเราวิ่งทันทีแบบซิงโครนัส
+       จึงเสร็จก่อนประตูจะเปิดเสมอ แผงวาปที่เรนเดอร์ทีหลังจึงอ่านชั้นที่ถูกต้อง
+
+       **เทียบชั้นก่อน/หลังเพื่อดูว่าร่วงจริงไหม** — ทาง 🛡️ ประกันภัยฮันเตอร์
+       คืนค่าออกไปโดยไม่ขยับชั้นเลย ถ้าไม่เทียบจะไปย้ายชั้นให้คนที่ไม่ได้ร่วง */
+    if (typeof onHunterDown === 'function') {
+      const _baCpDown = onHunterDown;
+      onHunterDown = function () {
+        const g = baG();
+        const before = g ? Math.round(g.floor || 1) : 0;
+        const r = _baCpDown.apply(this, arguments);
+        try {
+          if (g && !g.practiceMode && before > 0 && g.floor < before) {
+            const cp = baCheckpointOf(before);
+            if (cp > g.floor) {
+              g.floor = cp;
+              g.floorProgress = 0;
+              const fb = document.getElementById('gFeedback');
+              if (fb) {
+                const t = String(fb.textContent || '');
+                const tail = t.indexOf(' — ') !== -1 ? t.slice(t.indexOf(' — ')) : '';
+                fb.textContent = '[ระบบ] 💀 HP หมด! ร่วงกลับจุดเซฟ ชั้น ' + cp + tail;
+              }
+              try { renderStats(); } catch (e) {}
+            }
+          }
+        } catch (e) { baErr(e, 'checkpoint'); }
+        return r;
+      };
+    }
+
+    /* ── 2) เกราะ — ติดตั้งหลังทุกชั้นล่างจัดการมอนสเตอร์ตัวใหม่เสร็จแล้ว ──
+       ba เป็นชั้นนอกสุด โค้ดหลังของเราจึงวิ่งทีหลัง abSealSetup() ของ v4.6
+       และ cdInfernoSealStrike() ของ v4.7 เสมอ = เกราะของเราเป็นชั้นนอกจริง ๆ */
+    if (typeof nextMonster === 'function') {
+      const _baNextMonster = nextMonster;
+      nextMonster = function () {
+        const r = _baNextMonster.apply(this, arguments);
+        try { baBarSetup(); baTagSync(); } catch (e) { baErr(e, 'nextMonster'); }
+        return r;
+      };
+    }
+
+    /* หลอดอสูรขยับ = จุดเดียวที่ครอบ "ทุกทางที่ HP อสูรลด" พร้อมกันหมด
+       (ตอบถูก · สกิล ⚔️ · ไอเทมทลายผนึกของ v4.6 · การ์ด 🔥 / 🗡️ ของ v4.7) */
+    if (typeof renderMonsterHp === 'function') {
+      const _baBarHp = renderMonsterHp;
+      renderMonsterHp = function () {
+        const r = _baBarHp.apply(this, arguments);
+        try { baBarSync(); } catch (e) { baErr(e, 'barSync'); }
+        return r;
+      };
+    }
+
+    /* ── แยกเกราะสองชั้นออกจากกันให้หลอดของ v4.6 อ่านถูก ─────────────────
+       abSealLeft() ของ v4.6 นิยามว่า "HP ส่วนที่เกิน HP ตั้งต้นของบอส" ซึ่งตอนนี้
+       รวมเกราะของแพตช์นี้เข้าไปด้วย (เพราะทั้งสองชั้นใช้ G.monsterHp ก้อนเดียวกัน)
+       ถ้าปล่อยไว้ แถบผนึกจะโชว์ตัวเลขเกินเพดานตัวเอง และ abSealBroken() จะไม่ยิง
+       จนกว่าเกราะทั้งสองชั้นจะหมดพร้อมกัน
+
+       หักเกราะชั้นนอกออกที่นี่จุดเดียว = ผนึกของ v4.6 กลับมาอ่านค่าของตัวเองเป๊ะ
+       และได้ผลพลอยได้สองอย่างที่ตั้งใจ:
+         · เกราะชั้นนอกถูกกินก่อนเสมอ (แถบผนึกยังเต็มอยู่จนเกราะผลึกแตกก่อน)
+         · การซ่อมตัว 34% ของ v4.6 คิดจาก AB_SEAL.max ตัวเดิม ไม่ใช่จากเกราะทั้งกอง
+           ซึ่งถ้าคิดรวมกัน บอสชั้น 20 จะซ่อมคืนทีละ 40% ของหลอดเลือดจนทลายไม่ได้เลย */
+    if (typeof abSealLeft === 'function') {
+      const _baSealLeftRaw = abSealLeft;
+      abSealLeft = function () {
+        const v = _baSealLeftRaw.apply(this, arguments);
+        if (!v) return v;
+        return Math.max(0, v - baBarLeft());
+      };
+    }
+
+    /* เกราะแตกแล้วบอสชะงัก — รับดาเมจแรงขึ้น BA_BREAK_MUL เท่า
+       ใส่ที่ **wrapper ของสูตร** ตามกฎเดียวกับ v4.4/v4.6/v6.3 ไม่ไล่แก้ตามจุดเรียก
+       มีผลเฉพาะตอน BA_LIVE (ระหว่างตัดสินข้ออยู่จริง) จึงไม่ไปกวนตอนตั้งเกราะผนึก */
+    if (typeof hunterAtk === 'function') {
+      const _baBreakAtk = hunterAtk;
+      hunterAtk = function () {
+        const base = _baBreakAtk.apply(this, arguments);
+        if (!BA_LIVE || !baStunned()) return base;
+        return Math.max(1, Math.round(base * BA_BREAK_MUL));
+      };
+    }
+
+    /* ระหว่างชะงัก เกจ ATB ต้องหยุดเดิน — ปิดที่ baFighting() ตัวเดียว
+       ซึ่งเป็นตัวตัดสินร่วมของเกจ ATB · การปล่อยสกิล · การสลับปุ่มของ 🌀 บิดมิติ
+       ทั้งสามอย่างจึงหยุดพร้อมกันตอนบอสยืนซวนเซ ซึ่งตรงกับที่ควรเป็น */
+    if (typeof baFighting === 'function') {
+      const _baFightRaw = baFighting;
+      baFighting = function () {
+        return _baFightRaw.apply(this, arguments) && !baStunned();
+      };
+    }
+
+    /* อีลีทชาร์จเกจเร็วกว่าปกติในโซนเดียวกัน 1 วินาที */
+    if (typeof baAtbFull === 'function') {
+      const _baAtbFullRaw = baAtbFull;
+      baAtbFull = function () {
+        const v = _baAtbFullRaw.apply(this, arguments);
+        const g = baG();
+        if (!g || g.practiceMode) return v;
+        const f = Math.round(g.floor || 1);
+        if (baIsBossFloor(f) || !baIsEliteFloor(f)) return v;
+        return Math.max(2000, v - BA_ELITE_ATB);
+      };
+    }
+
+    /* ป้ายระดับ + แถบเกราะ ต้องตามฉากไปทุกครั้งที่ฉากถูกซิงก์ */
+    if (typeof baSyncScene === 'function') {
+      const _baSyncSceneRaw = baSyncScene;
+      baSyncScene = function () {
+        const r = _baSyncSceneRaw.apply(this, arguments);
+        try { baTagSync(); } catch (e) { baErr(e, 'tagSync'); }
+        return r;
+      };
+    }
+
+    /* ── 4) เอฟเฟกต์ประจำตัว — ยิงพร้อมกับที่อสูรปล่อยสกิล ────────────────
+       **ต้องอ่าน baFighting() ไว้ก่อนเรียกของเดิม** เพราะ baFire ของ v6.3
+       รีเซ็ตเกจแล้วคืนค่าทันทีถ้าไม่ได้อยู่ในสถานะสู้จริง ถ้าอ่านทีหลังจะได้
+       คำตอบของสถานะที่เปลี่ยนไปแล้ว (สกิลบางตัวเปลี่ยนสภาพจอระหว่างทาง) */
+    if (typeof baFire === 'function') {
+      const _baFireRaw = baFire;
+      baFire = function () {
+        const armed = baFighting();
+        const slot  = armed ? baSlotNow() : '';
+        const r = _baFireRaw.apply(this, arguments);
+        try { if (armed && slot) baAttackFx(slot); } catch (e) { baErr(e, 'atkFx'); }
+        return r;
+      };
+    }
+
+    /* เสียงฟันดาบ/คริติคอล/ท่าไม้ตายของฮีโร่ — เกาะที่ baStrike จุดเดียว
+       ซึ่ง v6.3 เรียกจาก wrapper ของ resolveAnswer หลังตัดสินผลไปแล้ว
+       จึงได้เสียงที่ตรงกับผลจริงเสมอ ไม่ใช่เสียงตอนกดปุ่ม */
+    if (typeof baStrike === 'function') {
+      const _baStrikeRaw = baStrike;
+      baStrike = function (dmg, crit, sup) {
+        try { baSfx(sup ? 'BA_SUPER_HIT' : crit ? 'BA_CRIT_HIT' : 'BA_SLASH'); }
+        catch (e) { baErr(e, 'strikeSfx'); }
+        return _baStrikeRaw.apply(this, arguments);
+      };
+    }
+
+    /* เกจคริตเต็ม 100% — ยิงเสียงตอน "ข้ามเส้น" เท่านั้น ไม่ใช่ทุกครั้งที่เต็มอยู่
+       (edge-trigger แบบเดียวกับ SN_MP_SEEN ของ v4.1 · กับดักข้อ 3) */
+    if (typeof baCritAdd === 'function') {
+      const _baCritAddRaw = baCritAdd;
+      baCritAdd = function (n) {
+        const before = ba_crit;
+        const r = _baCritAddRaw.apply(this, arguments);
+        try {
+          if (before < BA_CRIT_MAX && ba_crit >= BA_CRIT_MAX) baSfx('BA_CRIT_READY');
+        } catch (e) { baErr(e, 'critSfx'); }
+        return r;
+      };
+    }
+
+    /* ล้างเอฟเฟกต์ — **คลาสชั่วคราวที่เกาะโหนดของชั้นล่างต้องถูกถอดเองที่นี่**
+       baClearFx ของ v6.0 ล้างนาฬิกาใน BA_T ทิ้งทั้งหมด ซึ่งรวมนาฬิกาที่ตั้งไว้
+       ถอดคลาสพวกนี้ด้วย ถ้าไม่ถอดเองคลาสจะค้างบนปุ่มตัวเลือก/หลอดเวลาข้ามข้อไป */
+    if (typeof baClearFx === 'function') {
+      const _baClearFxRaw = baClearFx;
+      baClearFx = function () {
+        const r = _baClearFxRaw.apply(this, arguments);
+        try {
+          const pairs = [['gChoices', 'ba-thorn'], ['gChoices', 'ba-wobble'],
+                         ['gPinyin', 'ba-flutter'], ['gTimer', 'ba-glitchbar'],
+                         ['baCritBar', 'ba-drain'], ['baVeil', 'on']];
+          for (let i = 0; i < pairs.length; i++) {
+            const el = document.getElementById(pairs[i][0]);
+            if (el) el.classList.remove(pairs[i][1]);
+          }
+          const ar = baArena();
+          if (ar) ar.classList.remove('ba-dust', 'ba-scan', 'ba-warp');
+        } catch (e) { baErr(e, 'clearFx'); }
+        return r;
+      };
+    }
+
+    /* ── 3) เพลงประกอบ — ติดนาฬิกาตอนเข้าเกม ถอดตอนออก ────────────────
+       ไม่ปล่อยให้เดินค้างนอกหน้าเล่นเกม (กับดักข้อ 31 — งานที่วิ่งตลอดเวลา
+       ทำให้ชุดเทสต์ที่รอเวลาแกว่ง) และไม่กินแบตเครื่องนักเรียนฟรี ๆ */
+    if (typeof startGame === 'function') {
+      const _baBgmStart = startGame;
+      startGame = function () {
+        const r = _baBgmStart.apply(this, arguments);
+        try { baFxStyle(); baBarClear(); baBgmArm(); baTagSync(); }
+        catch (e) { baErr(e, 'startGame64'); }
+        return r;
+      };
+    }
+
+    if (typeof exitGame === 'function') {
+      const _baBgmExit = exitGame;
+      exitGame = function () {
+        try {
+          baBgmStop();
+          baBarClear();
+          const v = document.getElementById('baVeil');
+          if (v) v.classList.remove('on');
+        } catch (e) { baErr(e, 'exitGame64'); }
+        return _baBgmExit.apply(this, arguments);
+      };
+    }
+
+    /* ทางเข้าสาธารณะสำหรับชุดเทสต์ — สรุปสถานะของแพตช์นี้ในคำสั่งเดียว */
+    function baBattleAudit() {
+      const g = baG();
+      return {
+        bossFloors: BA_BOSS_FLOORS.slice(),
+        eliteFloors: BA_ELITE_FLOORS.slice(),
+        floor: g ? Math.round(g.floor || 0) : 0,
+        tier: g ? (baIsBossFloor(Math.round(g.floor || 1)) ? 'boss'
+                 : baIsEliteFloor(Math.round(g.floor || 1)) ? 'elite' : 'normal') : '',
+        bar: BA_BAR ? { max: BA_BAR.max, left: baBarLeft(), tier: BA_BAR.tier,
+                        broken: !!BA_BAR.broken } : null,
+        stunned: baStunned(),
+        bgm: { on: BA_BGM_ON, want: baBgmWant(), playing: BA_BGM_ID, armed: !!BA_BGM_T },
+        sfx: Object.keys(BA_SFX_DEF).length,
+        fx: Object.keys(BA_ATK_FX).length
+      };
+    }
+
+    (function baInstall64() {
+      try {
+        baBgmLoad();
+        baFxStyle();
+      } catch (e) { baErr(e, 'install64'); }
+    })();
+
     /* ทางเข้าสาธารณะสำหรับครู/ชุดเทสต์ — สลับแล้วต้องรีเฟรชหน้าถึงจะเห็นผล
        (การถอดสนามรบกลางคันต้องย้ายโหนดกลับที่เดิม ซึ่งเสี่ยงกว่าการรีโหลดมาก) */
     function baSetEnabled(on) {

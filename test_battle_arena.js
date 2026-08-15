@@ -400,17 +400,17 @@ async function arena(page, floor, opts) {
   say('\n【บล็อก 5】ชั้นบอสเปลี่ยนโทนสนาม');
   {
     const { ctx, page, errs } = await boot(browser, 390, 844);
-    await arena(page, 5, { tanky: true });
+    await arena(page, 4, { tanky: true });
     const boss = await page.evaluate(() => ({
       cls: document.getElementById('baArena').classList.contains('ba-boss'),
       name: (document.getElementById('baFoeName') || {}).textContent,
       avatar: (document.getElementById('gAvatar') || {}).textContent
     }));
     ok(boss.cls, 'ชั้นบอสได้คลาส ba-boss');
-    ok(/บอส/.test(boss.name || ''), 'ป้ายชื่อบอกว่าเป็นบอส (' + boss.name + ')');
+    ok(/บอส|BOSS/.test(boss.name || ''), 'ป้ายชื่อบอกว่าเป็นบอส (' + boss.name + ')');
     ok(boss.avatar === '👑', 'อสูรกลายเป็น 👑 ตามกติกาเดิมของ v4.0');
 
-    await arena(page, 3, { tanky: true });
+    await arena(page, 2, { tanky: true });
     const norm = await page.evaluate(() => document.getElementById('baArena').classList.contains('ba-boss'));
     ok(!norm, 'กลับชั้นปกติแล้วถอดคลาสบอสคืน');
     ok(errs.length === 0, 'ไม่มี pageerror' + (errs.length ? ' → ' + errs[0] : ''));

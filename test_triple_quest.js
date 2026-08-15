@@ -129,8 +129,8 @@ function eq(name, got, want) { ok(name + ' (=' + JSON.stringify(want) + ')', got
      meta.tags.join(',') === 'TRACK 01/05,TRACK 02/05,TRACK 03/05,TRACK 04/05,TRACK 05/05', meta.tags);
   eq('ไม่มี gate สักใบ (กับดักข้อ 18)', meta.gates.length, 0);
   ok('บัญชีใหม่ได้ก้อน tq', meta.hasTq);
-  eq('🛡️ สายไร้รอยขีดข่วน = 3 ชั้น', meta.scar, 3);
-  ok('เงื่อนไข T8 ระบุชั้น 5, 10, 15', /5, 10, 15/.test(meta.scarCond), meta.scarCond);
+  eq('🛡️ สายไร้รอยขีดข่วน = 4 ชั้น', meta.scar, 4);
+  ok('เงื่อนไข T8 ระบุชั้น 4, 8, 12, 16', /4, 8, 12, 16/.test(meta.scarCond), meta.scarCond);
 
   // ── 2. Daily Unlocking Requirement ───────────────────────────
   log('\n[2] Daily Unlocking Requirement — ยังไม่เคลียร์ชั้น = ไม่นับ');
@@ -352,21 +352,21 @@ function eq(name, got, want) { ok(name + ' (=' + JSON.stringify(want) + ')', got
   const scar = await page.evaluate(() => {
     G.tq.done.L = []; G.tq.L.nopot = []; G.gold = 0; tqSeedSeen();
     const out = [];
-    [5, 10, 15].forEach(f => {
+    [4, 8, 12, 16].forEach(f => {
       G.floor = f; G.floorProgress = 0; TQ_POT_F = 0;
       clearFloor(true);
       out.push(G.tq.L.nopot.slice());
     });
     return { out, gold: G.gold, done: G.tq.done.L.indexOf('T8') !== -1, rw: TQ_RW_SCAR };
   });
-  eq('ผ่านครบ 3 ชั้นบอสโดยไม่ใช้ยา → สำเร็จ', scar.done, true);
-  ok('เก็บครบ [5,10,15]', JSON.stringify(scar.out[2]) === '[5,10,15]', scar.out);
+  eq('ผ่านครบ 4 ชั้นบอสโดยไม่ใช้ยา → สำเร็จ', scar.done, true);
+  ok('เก็บครบ [4,8,12,16]', JSON.stringify(scar.out[3]) === '[4,8,12,16]', scar.out);
   ok('ได้ทองรวม ≥ 1,000 จากรางวัล', scar.gold >= scar.rw, scar.gold);
 
   const scarPot = await page.evaluate(() => {
     G.tq.done.L = []; G.tq.L.nopot = []; tqSeedSeen();
-    G.floor = 5; G.floorProgress = 0;
-    TQ_POT_F = 5;                       /* กดยาฟื้นพลังบนชั้นนี้ไปแล้ว */
+    G.floor = 4; G.floorProgress = 0;
+    TQ_POT_F = 4;                       /* กดยาฟื้นพลังบนชั้นนี้ไปแล้ว */
     clearFloor(true);
     return G.tq.L.nopot.slice();
   });
@@ -544,7 +544,7 @@ function eq(name, got, want) { ok(name + ' (=' + JSON.stringify(want) + ')', got
     /* day ต้องเป็นวันนี้ ไม่งั้นจะโดนรีเซ็ตรอบวันก่อน แล้วไม่ได้ทดสอบตัวกรอง id ซ้ำ */
     const bad = { day: qDayKey(), d: { ans: -9, cast: 'x', zzz: 1 }, unlocked: 'yes',
                   done: { d: ['T1', 'T1', 'T9', 'NOPE'], L: ['T7', 'T7'] },
-                  pend: ['T1', 'ZZZ'], L: { sboss: 99, streak: 999, nopot: [5, 5, 7, 20, 'x'] } };
+                  pend: ['T1', 'ZZZ'], L: { sboss: 99, streak: 999, nopot: [4, 4, 7, 20, 'x'] } };
     const a = tqEnsure(bad);
     const b = tqEnsure(JSON.parse(JSON.stringify(a)));
 
@@ -562,7 +562,7 @@ function eq(name, got, want) { ok(name + ' (=' + JSON.stringify(want) + ')', got
   eq('id ตลอดชีพซ้ำถูกกรอง', dirty.a.done.L.length, 1);
   eq('sboss ถูกหนีบไม่เกิน 1', dirty.a.L.sboss, 1);
   eq('สตรีคถูกหนีบที่เพดาน', dirty.a.L.streak, 10);
-  ok('nopot เหลือเฉพาะชั้นบอส 5/10/15 ไม่ซ้ำ', JSON.stringify(dirty.a.L.nopot) === '[5]', dirty.a.L.nopot);
+  ok('nopot เหลือเฉพาะชั้นบอส 4/8/12/16 ไม่ซ้ำ', JSON.stringify(dirty.a.L.nopot) === '[4]', dirty.a.L.nopot);
   ok('เรียกซ้ำได้ผลเท่าเดิม (idempotent)', dirty.same);
 
   // ── 14. โหมดฝึกจุดอ่อนไม่นับ ────────────────────────────────

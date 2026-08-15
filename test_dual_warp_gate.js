@@ -1,5 +1,5 @@
 /* ชุดทดสอบชั้น v4.9.2 · DUAL WARP GATE (คำสั่ง Patch v4.8.2)
-   ประตูวาปก่อนบอส (ชั้น 4/9/14/19) + ประตูวาปหลังบอส (ชั้น 5/10/15/20) + กฎหยุดเวลา */
+   ประตูวาปก่อนบอส (ชั้น 3/7/11/15/19) + ประตูวาปหลังบอส (ชั้น 4/8/12/16/20) + กฎหยุดเวลา */
 const { chromium } = require('playwright');
 const fs = require('fs');
 
@@ -132,8 +132,8 @@ function snap(page) {
       }
       return { pre, boss, ver: DW_VER, kind: DW_PRE, wait: DW_WAIT };
     });
-    ok('ชั้นก่อนบอส = 4/9/14/19', JSON.stringify(r.pre) === JSON.stringify([4, 9, 14, 19]), r.pre.join(','));
-    ok('ชั้นบอส = 5/10/15/20', JSON.stringify(r.boss) === JSON.stringify([5, 10, 15, 20]), r.boss.join(','));
+    ok('ชั้นก่อนบอส = 3/7/11/15/19', JSON.stringify(r.pre) === JSON.stringify([3, 7, 11, 15, 19]), r.pre.join(','));
+    ok('ชั้นบอส = 4/8/12/16/20', JSON.stringify(r.boss) === JSON.stringify([4, 8, 12, 16, 20]), r.boss.join(','));
     ok('ป้ายรุ่น/kind/หน่วงเวลา', r.ver === 'v4.9.2' && r.kind === 'preboss' && r.wait === 1500);
     await page.context().close();
   }
@@ -145,7 +145,7 @@ function snap(page) {
     await enter(page, 'dw_pre');
     await settle(page);
 
-    for (const f of [4, 9, 14, 19]) {
+    for (const f of [3, 7, 11, 15, 19]) {
       await standOn(page, f);
       await page.evaluate(() => clearFloor(false));
       await page.waitForTimeout(1900);          /* > DW_WAIT 1500 */
@@ -169,7 +169,7 @@ function snap(page) {
     }
 
     /* ชั้นที่ไม่ใช่ก่อนบอส ต้องไหลต่อทันทีเหมือนเดิม */
-    for (const f of [1, 2, 3, 7, 12, 18]) {
+    for (const f of [1, 2, 5, 9, 13, 18]) {
       await standOn(page, f);
       await page.evaluate(() => clearFloor(false));
       await page.waitForTimeout(1900);
@@ -188,7 +188,7 @@ function snap(page) {
     await enter(page, 'dw_enter');
     await settle(page);
 
-    await standOn(page, 4);
+    await standOn(page, 3);
     await page.evaluate(() => clearFloor(false));
     await page.waitForTimeout(1900);
     const before = await snap(page);
@@ -208,7 +208,7 @@ function snap(page) {
       qTimer: QUESTION_TIMER !== null
     }));
     ok('กดแล้วประตูปิด', !after.warpOpen && after.warpHidden);
-    ok('เข้าห้องบอสชั้น 5', after.floor === 5 && after.boss && after.mon);
+    ok('เข้าห้องบอสชั้น 4', after.floor === 4 && after.boss && after.mon);
     ok('ปลดล็อกให้ตอบได้', !after.locked);
     ok('นาฬิกาข้อใหม่เดินแล้ว', after.qTimer);
     ok('เกราะผนึกของ v4.6 ถูกสร้างหลังประตู', after.sealMax > 0 && after.sealLeft > 0,
@@ -236,7 +236,7 @@ function snap(page) {
       }
     });
 
-    for (const f of [5, 10, 15]) {
+    for (const f of [4, 8, 12, 16]) {
       await standOn(page, f);
       const pre = await page.evaluate(() => ({ gold: G.gold, exp: G.exp, lv: G.level, maxExp: G.maxExp }));
       await page.evaluate(() => clearFloor(true));
@@ -307,7 +307,7 @@ function snap(page) {
     await settle(page);
 
     /* ประตูก่อนบอส */
-    await standOn(page, 9);
+    await standOn(page, 11);
     const running = await page.evaluate(() => QUESTION_TIMER !== null && QUESTION_TICK !== null);
     ok('ก่อนเคลียร์ชั้น นาฬิกาเดินอยู่จริง', running);
 
@@ -340,7 +340,7 @@ function snap(page) {
     ok('กดเข้าห้องบอสแล้วนาฬิกาเดินต่อ', back.q && back.t);
 
     /* ประตูหลังบอส */
-    await standOn(page, 10);
+    await standOn(page, 12);
     await page.evaluate(() => clearFloor(true));
     await page.waitForTimeout(1900);
     s = await snap(page);
@@ -361,7 +361,7 @@ function snap(page) {
     await settle(page);
 
     await page.evaluate(() => {
-      G.floor = 5;
+      G.floor = 4;
       for (let i = 0; i < 12; i++) { renderWarp('preboss'); renderWarp('floor'); renderWarp('down'); }
     });
     const d = await page.evaluate(() => ({
@@ -475,21 +475,21 @@ function snap(page) {
   }
 
   // ══════════════════════════════════════════════════════════
-  log('\n=== 9) เล่นจริงจากชั้น 4 ถึงเข้าห้องบอสชั้น 5 ===');
+  log('\n=== 9) เล่นจริงจากชั้น 3 ถึงเข้าห้องบอสชั้น 4 ===');
   {
     const page = await newPage(browser, 390, 844);
     await enter(page, 'dw_real');
     await settle(page);
 
     await page.evaluate(() => {
-      G.floor = 4; G.floorProgress = MONSTERS_PER_FLOOR - 1; G.maxFloor = FLOOR_MAX;
+      G.floor = 3; G.floorProgress = MONSTERS_PER_FLOOR - 1; G.maxFloor = FLOOR_MAX;
       G.hp = G.maxHp; recalcStats(); nextMonster();
     });
     await page.waitForTimeout(300);
 
-    /* ตอบถูกรัว ๆ จนล้มอสูรตัวสุดท้ายของชั้น 4 */
+    /* ตอบถูกรัว ๆ จนล้มอสูรตัวสุดท้ายของชั้น 3 */
     let guard = 0;
-    while (guard++ < 40) {
+    while (guard++ < 90) {
       const st = await page.evaluate(() => ({
         locked: !!G.locked, warp: !!G.warpOpen, mon: !!G.currentMonster,
         floor: G.floor, gate: document.getElementById('snGate').classList.contains('active'),
@@ -540,7 +540,7 @@ function snap(page) {
     const fin = await page.evaluate(() => ({
       floor: G.floor, boss: isBossFloor(G.floor), mon: !!G.currentMonster, locked: !!G.locked
     }));
-    ok('เล่นจริง → เข้าห้องบอสชั้น 5 สำเร็จ', fin.floor === 5 && fin.boss && fin.mon && !fin.locked);
+    ok('เล่นจริง → เข้าห้องบอสชั้น 4 สำเร็จ', fin.floor === 4 && fin.boss && fin.mon && !fin.locked);
     ok('ไม่มี pageerror (บล็อก 9)', page._errs.length === 0, page._errs.join(' | '));
     await page.context().close();
   }

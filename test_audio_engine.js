@@ -498,7 +498,7 @@ function head(s) { log('\n══ ' + s + ' ' + '═'.repeat(Math.max(0, 62 - s.l
       const out = {};
       G.practiceMode = false; G.warpOpen = false;
       G.floor = 3;  out.normal = auBgmWant();
-      G.floor = 10; out.boss   = auBgmWant();
+      G.floor = 12; out.boss   = auBgmWant();
       G.warpOpen = true;
       if (typeof DW_WON !== 'undefined') DW_WON = { gold: 500, exp: 250 };
       out.victory = auBgmWant();
@@ -508,11 +508,11 @@ function head(s) { log('\n══ ' + s + ' ' + '═'.repeat(Math.max(0, 62 - s.l
       return out;
     });
     ok('ชั้นมอนสเตอร์ทั่วไป → BGM_BATTLE_NORMAL', want.normal === 'BGM_BATTLE_NORMAL', want.normal);
-    ok('ชั้นบอส 5/10/15/20 → BGM_BATTLE_BOSS', want.boss === 'BGM_BATTLE_BOSS', want.boss);
+    ok('ชั้นบอส 4/8/12/16/20 → BGM_BATTLE_BOSS', want.boss === 'BGM_BATTLE_BOSS', want.boss);
     ok('ยืนที่ประตูวาปหลังปราบบอส → BGM_VICTORY', want.victory === 'BGM_VICTORY', want.victory);
 
     const sync = await ev(() => {
-      G.floor = 10; auBgmSync(true); const a = auBgmState();
+      G.floor = 12; auBgmSync(true); const a = auBgmState();
       G.floor = 3;  auBgmSync(true); const b = auBgmState();
       return [a, b];
     });

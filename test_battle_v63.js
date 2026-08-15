@@ -128,8 +128,12 @@ async function arena(page, floor, opts) {
       if (ab) { const was = ab.abyss; ab.abyss = true; abyss = baAtbFull(); ab.abyss = was; }
       return { out: out, abyss: abyss, table: BA_ATB_MS.slice(), ab5: BA_ATB_ABYSS };
     });
+    /* v6.4 — ชั้นอีลีท (3/7/11/15/19) ชาร์จเร็วกว่าโซนเดียวกัน 1 วินาที */
     const want = [];
-    for (let f = 1; f <= 20; f++) want.push(speed.table[Math.min(4, Math.ceil(f / 4) - 1)]);
+    for (let f = 1; f <= 20; f++) {
+      const base = speed.table[Math.min(4, Math.ceil(f / 4) - 1)];
+      want.push([3, 7, 11, 15, 19].indexOf(f) !== -1 ? base - 1000 : base);
+    }
     ok(JSON.stringify(speed.out) === JSON.stringify(want),
       'ความเร็วเกจไล่ตามโซนครบ 20 ชั้น [' + speed.out.join(',') + ']');
     ok(speed.abyss === speed.ab5, 'โหมดเหวลึกทับทุกชั้นด้วยเกจเร็วสุด ' + speed.abyss + 'ms');
@@ -171,12 +175,12 @@ async function arena(page, floor, opts) {
       const r = {};
       G.floor = 3; G.currentMonster = { id: 4 };   /* ชั้น 3 มี m13/m14/m15 */
       r.tier3 = baTierNow();
-      G.floor = 5; r.tier5 = baTierNow();          /* ชั้นบอสจริงของ v4.0 */
+      G.floor = 8; r.tier5 = baTierNow();          /* ชั้นบอสจริง (v6.4 ย้ายมา 4/8/12/16/20) */
       G.floor = 4; G.currentMonster = { id: 0 };
       r.tier4 = baTierNow();                       /* บอสภาพประจำโซน */
       return r;
     });
-    ok(push2.tier5 === 'boss', 'ชั้นบอสจริงของ v4.0 (ชั้น 5) นับเป็น boss เสมอ');
+    ok(push2.tier5 === 'boss', 'ชั้นบอสจริง (ชั้น 8) นับเป็น boss เสมอ');
     ok(push2.tier4 === 'boss', 'บอสประจำโซนของภาพ (ชั้น 4) นับเป็น boss');
     ok(['normal', 'elite'].indexOf(push2.tier3) !== -1, 'ชั้น 3 เป็น normal/elite ไม่ใช่ boss');
 

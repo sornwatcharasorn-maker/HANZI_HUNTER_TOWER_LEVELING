@@ -7,3 +7,6 @@ package-lock.json
 
 # ภาพตรวจงานที่ `embed_arena_art.py --preview` พ่นออกมา (ของชั่วคราว ไม่ใช่ของที่แจก)
 arena_art_preview.png
+
+# ภาพตรวจงานที่ `embed_monster_art.py --preview` พ่นออกมา (ของชั่วคราว ไม่ใช่ของที่แจก)
+monster_art_preview.png

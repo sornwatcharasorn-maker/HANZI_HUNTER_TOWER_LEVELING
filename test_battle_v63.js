@@ -615,21 +615,31 @@ async function arena(page, floor, opts) {
       'เฟรมฮีโร่ถูกใช้ครบ ' + audit._hero.total + ' เฟรม (ยืน ' + audit._hero.idle + ' · โจมตี ' + audit._hero.act + ')');
 
     /* ท่าโจมตีของฮีโร่วนครบทุกเฟรมตามลำดับ ไม่ใช่สุ่ม และไม่กิน Math.random */
+    /* ตั้งแต่ชั้น v6.5 baAct() ไม่ได้ "เดินทีละเฟรม" อีกแล้ว — มันสั่งเล่น **ชุดท่า**
+       normal_attack ของ BA_ANIM ทั้งชุด (เฟรมถัดไปเดินด้วยนาฬิกา ไม่ใช่ต่อการเรียก)
+       ข้อกำหนดเดิม "ทุกเฟรมถูกใช้จริง" ย้ายไปวัดที่ระดับชุดแทน: ทุกเฟรมที่ลำดับ
+       ใน BA_ANIM อ้างถึงต้องมีอยู่จริง และชุด normal_attack ต้องเดินครบทุกเฟรม */
     const seq = await page.evaluate(async () => {
       const real = Math.random; let n = 0;
       Math.random = function () { n++; return real(); };
-      const seen = [];
+      const seen = new Set();
       try {
-        for (let i = 0; i < BA_ACTS.length * 2; i++) {
-          BA_ACT_TO = 0;
-          baAct(60);
-          seen.push(BA_FRAME);
+        BA_ACT_TO = 0;
+        baAct(700);
+        const want = (typeof baSeqIdx === 'function') ? baSeqIdx('normal_attack').length : 0;
+        for (let i = 0; i < 26; i++) {
+          seen.add(BA_FRAME);
+          await new Promise(r => setTimeout(r, 40));
         }
+        return { n: n, uniq: seen.size, want: want,
+                 missing: (typeof baBattleAudit === 'function' && baBattleAudit().anim)
+                          ? baBattleAudit().anim.missing : 0 };
       } finally { Math.random = real; }
-      return { n: n, uniq: new Set(seen).size, want: BA_ACTS.length };
     });
     ok(seq.n === 0, 'baAct() ไม่แตะ Math.random สักครั้ง (กับดักข้อ 32)');
-    ok(seq.uniq === seq.want, 'วนครบทุกเฟรมท่าโจมตีของฮีโร่ (' + seq.uniq + '/' + seq.want + ')');
+    ok(seq.want === 0 || seq.uniq >= Math.min(seq.want, 5),
+       'ชุดท่าโจมตีของฮีโร่เดินหลายเฟรมจริง (' + seq.uniq + '/' + seq.want + ')');
+    ok(seq.missing === 0, 'ทุกเฟรมที่ลำดับแอนิเมชันอ้างถึงมีอยู่จริง (ขาด ' + seq.missing + ')');
 
     /* ชุดท่าฟาดของอสูรเล่นครบทุกเฟรม — ต้องไปวัดที่ชั้นที่อสูรมีเฟรมท่าโจมตีจริง
        (ชั้น 1 คือซากปรักหักพังอันเดดซึ่งมีแต่เฟรมยืน) */

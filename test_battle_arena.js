@@ -407,7 +407,11 @@ async function arena(page, floor, opts) {
       avatar: (document.getElementById('gAvatar') || {}).textContent
     }));
     ok(boss.cls, 'ชั้นบอสได้คลาส ba-boss');
-    ok(/บอส|BOSS/.test(boss.name || ''), 'ป้ายชื่อบอกว่าเป็นบอส (' + boss.name + ')');
+    /* ตั้งแต่ชั้น v6.5 ป้ายชื่อเป็น "ไอคอนระดับ + ชื่ออังกฤษ" ตามสเปก Compact Nameplate
+       คำว่า [BOSS] ถูกตัดออกโดยตั้งใจ (ป้ายกว้าง 104px ใส่ทั้งคำและชื่อไม่พอ)
+       ตัวบอกระดับคือไอคอนนำหน้า 👑 (บอส) · 🔥 (บอสใหญ่) · 🟣 (อีลีท) · 🟢 (ทั่วไป) */
+    ok(/^(👑|🔥)/.test((boss.name || '').trim()),
+       'ป้ายชื่อบอกว่าเป็นบอสด้วยไอคอนนำหน้า (' + boss.name + ')');
     ok(boss.avatar === '👑', 'อสูรกลายเป็น 👑 ตามกติกาเดิมของ v4.0');
 
     await arena(page, 2, { tanky: true });

@@ -108,6 +108,11 @@ async function enter(page) {
         G.floor = floor;
         G.floorProgress = 0;
         G.monsterMaxHp = 99999; G.monsterHp = 99999;
+        /* ปิดระบบบุกรุกของชั้น v6.6 ระหว่างวัดชุดนี้ — ทัพเงามีโอกาส 15% ต่อชั้น
+           ที่จะมายืนแทนอสูรประจำชั้น ซึ่งเป็นพฤติกรรมที่ถูกต้อง แต่ทำให้ชุดนี้
+           (ที่พิสูจน์ว่า "ชั้นไหนได้อสูรตัวไหน") ตกแบบสุ่มโดยไม่มีอะไรพังจริง
+           ปั๊ม BA_INC_F ให้ตรงชั้นก่อน = ลูกเต๋าถูกทอยไปแล้ว จะไม่ถูกทอยซ้ำ */
+        if (typeof BA_INC_F !== 'undefined') { BA_INC_F = floor; BA_INC_AT = -1; BA_INC_M = null; }
         nextMonster();
         const box = document.getElementById('baFoe');
         const imgs = [...box.getElementsByClassName('ba-mon')];
@@ -207,6 +212,9 @@ async function enter(page) {
       const keep = {};
       Object.keys(BA_MON).forEach(k => { keep[k] = BA_MON[k]; BA_MON[k] = []; });
       G.floor = 8; G.floorProgress = 0; G.monsterMaxHp = 99999; G.monsterHp = 99999;
+      /* ต้องปิดการบุกรุกของ v6.6 ด้วย ไม่งั้นสไปรต์ทัพเงาจะยังแขวนอยู่ทั้งที่
+         ถอดภาพอสูรหอคอยออกหมดแล้ว (คนละช่องเสียบกัน — BA_SH_ART ไม่ใช่ BA_MON) */
+      if (typeof BA_INC_F !== 'undefined') { BA_INC_F = 8; BA_INC_AT = -1; BA_INC_M = null; }
       nextMonster();
       const box = document.getElementById('baFoe');
       const out = {

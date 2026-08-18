@@ -45,11 +45,15 @@ def opt_int(argv, flag, default):
             return int(a.split('=', 1)[1])
     return default
 
-def main(path, quality=None, ruler_on=False):
+def main(path, quality=None, ruler_on=False, target_w=None):
     quality = quality or QUALITY
+    # --w คืนที่ได้เยอะกว่าการลดคุณภาพมาก เพราะกรอบเรดาร์กว้างแค่ 264-448 CSS px
+    # ภาพ 800px จึงเกินความละเอียดจอไปแล้วตั้งแต่ต้น · สัดส่วนไม่เปลี่ยน
+    # (TR_ART_AR ถูกเขียนใหม่ให้เองอยู่แล้ว) จึงไม่ต้องวัด TR_ART_Z ใหม่
+    target = target_w or TARGET_W
     im = Image.open(path).convert('RGB')
     w0, h0 = im.size
-    w = min(TARGET_W, w0)
+    w = min(target, w0)
     h = round(h0 * w / w0)
     if (w, h) != (w0, h0):
         im = im.resize((w, h), Image.LANCZOS)
@@ -120,11 +124,20 @@ def main(path, quality=None, ruler_on=False):
 
 
 if __name__ == '__main__':
-    args = [a for a in sys.argv[1:] if not a.startswith('-')]
     flags = sys.argv[1:]
-    qv = opt_int(flags, '--q', None)
-    if qv is not None and args and args[-1] == str(qv):
-        args = args[:-1]                            # ค่าที่ตามหลัง --q ไม่ใช่ชื่อไฟล์
+    # ค่าที่ตามหลังธงไม่ใช่ชื่อไฟล์ — คัดออกก่อนเสมอ ไม่งั้น --q 66 --w 680
+    # จะเหลือ '66' กับ '680' ปนมาเป็นชื่อไฟล์แล้วสคริปต์พิมพ์วิธีใช้ทิ้ง
+    args, skip = [], False
+    for a in flags:
+        if skip:
+            skip = False
+            continue
+        if a in ('--q', '--w'):
+            skip = True
+            continue
+        if not a.startswith('-'):
+            args.append(a)
     if len(args) != 1:
         sys.exit(__doc__)
-    main(args[0], qv, '--ruler' in flags)
+    main(args[0], opt_int(flags, '--q', None), '--ruler' in flags,
+         opt_int(flags, '--w', None))

@@ -68,6 +68,11 @@ async function arena(page, floor, opts) {
       CD_ST = { ward: 0, noItem: 0, noHeal: 0, atk: 0, perfect: true, hit: 0, miss: 0 };
       if (typeof cdPaintUi === 'function') cdPaintUi();
     }
+    /* ปิดระบบบุกรุกของชั้น v6.6 — ทัพเงามีโอกาส 15% ต่อชั้นที่จะมายืนแทนอสูร
+       ประจำชั้น ซึ่งถูกต้องตามกติกา แต่เปลี่ยนทั้งสกิล เกจ และป้ายชื่อ ชุดนี้จึงตก
+       แบบสุ่มโดยไม่มีอะไรพังจริง · ปั๊ม BA_INC_F ให้ตรงชั้น = ลูกเต๋าถูกทอยไปแล้ว
+       (ชุด test_abyss_army.js เป็นคนพิสูจน์การบุกรุกเอง) */
+    if (typeof BA_INC_F !== 'undefined') { BA_INC_F = o.floor; BA_INC_AT = -1; BA_INC_M = null; }
     G.floor = o.floor;
     G.floorProgress = 0;
     G.maxFloor = FLOOR_MAX;      /* ปลดล็อกแรงค์ ไม่งั้นไอเทม/ร้านค้าถูกปัดตกก่อน */

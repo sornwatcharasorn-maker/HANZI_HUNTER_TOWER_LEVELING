@@ -78,6 +78,11 @@ async function goFloor(page, f) {
     G.maxFloor = Math.max(G.maxFloor || 1, fl);
     G.floorProgress = 0;
     if (typeof CD_BAND !== 'undefined') CD_BAND = cdBandOf(fl);   /* กันหน้าต่างจั่วเด้ง */
+    /* ปิดระบบบุกรุกของชั้น v6.6 — ทัพเงามีโอกาส 15% ต่อชั้นที่จะมายืนแทนอสูร
+       ประจำชั้น ซึ่งถูกต้องตามกติกา แต่ทำให้ชุดนี้ (ที่พิสูจน์ป้ายชื่อ/เกจของ v6.5)
+       ตกแบบสุ่มโดยไม่มีอะไรพังจริง · ปั๊ม BA_INC_F ให้ตรงชั้น = ลูกเต๋าถูกทอยแล้ว
+       จะไม่ถูกทอยซ้ำใน baIncSync (ชุดของ v6.6 เป็นคนพิสูจน์การบุกรุกเอง) */
+    if (typeof BA_INC_F !== 'undefined') { BA_INC_F = fl; BA_INC_AT = -1; BA_INC_M = null; }
     recalcStats();
     nextMonster();
   }, f);
@@ -103,7 +108,7 @@ async function goFloor(page, f) {
   await enter(page, 'v65a');
 
   // ═══ 1) เครื่องเล่นเฟรมฮีโร่ ═══════════════════════════════════════
-  blk('1 · เครื่องเล่นเฟรม 43 เฟรม');
+  blk('1 · เครื่องเล่นเฟรมฮีโร่');
   await page.waitForFunction(() => {
     const f = document.querySelectorAll('#baArena .ba-hero .ba-fig');
     return f.length > 0 && [].every.call(f, i => i.complete && i.naturalWidth > 0);
@@ -119,8 +124,15 @@ async function goFloor(page, f) {
     audit: baFrameAudit()._hero,
     anim: baBattleAudit().anim
   }));
-  ok(fr.figs === 43, 'แขวนเฟรมฮีโร่ครบ 43 เฟรม (ได้ ' + fr.figs + ')');
-  ok(fr.ids === 43, 'ทุกเฟรมมีชื่อกำกับ (ได้ ' + fr.ids + ')');
+  /* ตั้งแต่ชั้น v6.6 embed_hero_art.py ฝังเฉพาะเฟรมที่ BA_ANIM อ้างถึงจริง (33 เฟรม)
+     อีก 10 เฟรมที่ไม่มีลำดับไหนเรียกใช้ถูกตัดออกเพื่อคืนที่ ~27KB ให้ทัพเงา 25 ตัว
+     **เกณฑ์ที่ถูกคือ "ทุกเฟรมที่ลำดับอ้างถึงต้องมีอยู่จริง" ไม่ใช่ "ต้องมี 43 ใบ"**
+     (สั่ง `python3 embed_hero_art.py --all` เพื่อฝังครบทุกเฟรมเหมือนเดิม) */
+  ok(fr.figs === fr.hero && fr.figs > 0,
+     'แขวนเฟรมฮีโร่ครบเท่าที่ฝังไว้ (ได้ ' + fr.figs + '/' + fr.hero + ')');
+  ok(fr.ids === fr.hero, 'ทุกเฟรมมีชื่อกำกับ (ได้ ' + fr.ids + '/' + fr.hero + ')');
+  ok(fr.anim.missing === 0,
+     'ไม่มีลำดับไหนอ้างถึงเฟรมที่ไม่ได้ฝัง (ขาด ' + fr.anim.missing + ')');
   ok(fr.decoded, 'ทุกเฟรม decode ได้จริง (data URI ไม่เสีย)');
   ok(fr.on === 1, 'โชว์ทีละเฟรมเดียวเสมอ (ได้ ' + fr.on + ')');
   ok(fr.audit.total === fr.audit.used && fr.audit.act >= 1,
@@ -193,8 +205,12 @@ async function goFloor(page, f) {
     G.ab.abyss = false; baNamePaint();
     return r;
   });
-  ok(secret.t.indexOf('👁️') === 0 && secret.t.indexOf('Void Sovereign') >= 0,
-     'โหมดเหวลึกได้ 👁️ Void Sovereign (ได้ "' + secret.t + '")');
+  /* ตั้งแต่ชั้น v6.6 โหมดเหวลึกเป็นบ้านของทัพเงา 25 ตัว ชื่อบนป้ายจึงเป็นชื่อของ
+     ตัวที่ยืนอยู่จริง (Kamish ที่ชั้นบอส · ทัพเงาลำดับ 1-20 ที่ชั้นอื่น)
+     ไม่ใช่ 'Void Sovereign' ของ v6.5 ซึ่งเป็นค่าตกกลับตอนยังไม่มีทัพเงา
+     **สิ่งที่ยังต้องคงเดิมคือไอคอน 👁️ กับคลาส ba-name-secret** */
+  ok(secret.t.indexOf('👁️') === 0 && secret.t.length > 3,
+     'โหมดเหวลึกได้ป้าย 👁️ พร้อมชื่อบอสลับ (ได้ "' + secret.t + '")');
   ok(secret.c.indexOf('ba-name-secret') >= 0, 'โหมดเหวลึกได้คลาส ba-name-secret');
 
   // ═══ 3) SYSTEM SCAN — ราคาก้าวหน้า ════════════════════════════════

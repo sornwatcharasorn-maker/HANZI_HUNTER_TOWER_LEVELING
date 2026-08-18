@@ -362,6 +362,7 @@ def main():
             else:
                 fh = v
             del args[i:i + 2]
+    keep_all = '--all' in args
     only = [a for a in args if not a.startswith('--')]
 
     src = read_game()
@@ -388,7 +389,18 @@ def main():
         print('  ถอดพื้นดำ %s …' % os.path.basename(p))
         sheets[n] = black_key(Image.open(p))
 
+    # ── ฝังเฉพาะเฟรมที่ BA_ANIM อ้างถึงจริง (ค่าเริ่มต้นตั้งแต่ชั้น v6.6) ──────
+    # ต้นฉบับมี 43 เฟรม แต่ BA_ANIM อ้างถึงแค่ 33 อีก 10 เฟรมถูกฝังไว้เผื่อลำดับ
+    # ใหม่ในอนาคต ซึ่งกินที่ราว 27KB ของไฟล์แจกโดยไม่มีใครได้เห็นสักครั้ง
+    # ชั้น v6.6 ต้องการที่คืนไปให้ทัพเงา 25 ตัว จึงตัดออกเป็นค่าเริ่มต้น
+    # **สั่ง --all เพื่อฝังครบทุกเฟรมเหมือนเดิม** และการระบุชื่อเฟรมมาเองยังชนะเสมอ
     grid = [g for g in HERO_GRID if not only or g[0] in only]
+    if not only and not keep_all and used_ids:
+        drop = [g[0] for g in grid if g[0] not in used_ids]
+        if drop:
+            print('  ข้าม %d เฟรมที่ BA_ANIM ไม่ได้อ้างถึง: %s' % (len(drop), ' '.join(drop)))
+            print('  (สั่ง --all ถ้าต้องการฝังครบทุกเฟรมเหมือนเดิม)')
+        grid = [g for g in grid if g[0] in used_ids]
     if not grid:
         sys.exit('ไม่มีเฟรมไหนตรงกับที่สั่งมาเลย — ชื่อเฟรมคือ S1_01 … S3_17')
 

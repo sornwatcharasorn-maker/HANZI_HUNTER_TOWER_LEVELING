@@ -26857,6 +26857,602 @@
       } catch (e) { baErr(e, 'install70'); }
     })();
 
+
+    /* ══════════════════════════════════════════════════════════════════
+       Patch v6.11 · ATTACK TELEGRAPHING · ANTI-CHAIN STUN
+                    + DEBUFF TIMING AUDIT
+       ══════════════════════════════════════════════════════════════════
+       อยู่ในเนมสเปซ ba ของชั้น v6.0 เดิม **ไม่ได้ตั้งพรีฟิกซ์ใหม่** เพราะเป็นการ
+       ต่อยอดชั้นเดียวกัน (กติกาเดียวกับ Patch v6.1 · v6.2 · v6.3 · v6.4 · v6.5
+       · v6.6 · v6.7 · v6.8 · v6.9 · v7.0) **ไม่แตะโค้ดของ v4.0-v5.9 เลยแม้แต่บรรทัดเดียว**
+
+       **เลขในคำสั่งคือ v6.11 แต่ก้อนนี้วางไว้ท้ายสุดของไฟล์ = ห่อทับ v7.0 อีกที**
+       เลขแพตช์เดินตามที่เจ้าของ repo เรียก ส่วนลำดับการห่อเดินตามตำแหน่งจริงเสมอ
+       (กติกาเดียวกับ v4.9.2 ที่คำสั่งเรียกว่า "v4.8.2" และ v5.2 ที่คำสั่งเรียกว่า "v5.0")
+
+       สามเรื่องในแพตช์เดียว
+         1) Attack Telegraphing — เกจ Fast ATB (v6.5) หรือ Curse Gauge (v6.8)
+            เหลือ BA_TG_LEAD (0.5 วิ) จะเต็ม → ไฟแดงกระพริบที่ตาบอส + เสียง glint_ping
+         2) Anti-Chain Stun — หลุดจาก Blackout / Seal of Silence แล้วได้ Grace Period
+            BA_GP_MS (1.5 วิ) ที่ debuff ปิดกั้นสองตัวนี้ติดซ้ำไม่ได้
+         3) Debuff Timing Audit — จอดำตรงเวลาเป๊ะ (บอส 2.0 วิ / มินิบอส 1.5 วิ)
+            · ปุ่มปลดล็อกตรง 4.0 วิ · ไม่มี timeout ตกค้างข้ามข้อหรือข้ามไฟต์
+
+       **ข้อจำกัดที่ตัดสินรูปร่างของทั้งแพตช์ ยังเป็นข้อเดิมของ v6.0:
+       ห้ามให้ความสูงการ์ดโจทย์ขยับแม้แต่พิกเซลเดียว (340.8px · 354.8px ที่จอ 320)**
+       ของที่เพิ่มเข้ามาจึงเป็น absolute ในกรอบสนามที่ overflow:hidden อยู่แล้วทั้งหมด
+       ไม่มีโหนดไหนอยู่ในสายเลย์เอาต์ และไม่มีกฎ CSS ไหนเปลี่ยนขนาดกล่องของอะไรเลย
+
+       ── ต้นตอที่แท้จริงของบั๊ค "จอดำค้าง / ปุ่มปลดเร็วเกิน" (ข้อ 3) ──────
+       baBlackout() ของ v6.3 ตั้งนาฬิกาถอดคลาสด้วย **baLater()** ซึ่งจดลง BA_T
+       แล้ว **baClearFx() ล้าง BA_T ทิ้งทั้งก้อน** และ baClearFx ถูกเรียกจาก wrapper
+       ของ renderMonster ทุกครั้งที่ขึ้นโจทย์ใหม่ — พอ v6.8 เติม Dynamic Question Flow
+       เข้ามา (เปลี่ยนโจทย์ทุกครั้งที่ตอบจบข้อ) renderMonster จึงวิ่งกลางไฟต์เป็นปกติ
+       นาฬิกาถอดจอดำเลยถูกฆ่าทิ้งกลางทาง **แล้วจอดำค้างยาวจนกว่าจะเปลี่ยนไฟต์**
+       (baFightSync เทียบด้วยตัวอ็อบเจกต์ จึงไม่เรียก baClearFight ตอนเปลี่ยนแค่โจทย์)
+       ส่วน baStone() ใช้ BA_STONE_T ของตัวเอง แต่ baClearQ() **ล้างนาฬิกานั้นทิ้ง
+       ทุกครั้งที่ขึ้นข้อใหม่** ปุ่มชุดใหม่ที่ renderChoices สร้างมาจึงกดได้ทันที
+       = ผนึกความเงียบงันสั้นกว่า 4.0 วิ ทุกครั้งที่โจทย์เปลี่ยนระหว่างถูกผนึก
+
+       ทางแก้คือ **ย้ายความเป็นเจ้าของนาฬิกามาไว้ที่แพตช์นี้ทั้งคู่** โดยถือ
+       "เวลาสิ้นสุด" (BA_DB_BLK_END / BA_DB_SEAL_END) เป็นแหล่งความจริงเดียว
+       แล้วตั้งนาฬิกาใหม่ให้ตรงเวลาที่เหลือทุกครั้งที่มีอะไรมากวาดนาฬิกาทิ้ง
+       **นาฬิกาของแพตช์นี้ไม่ผ่าน baLater เด็ดขาด** จึงไม่ถูก baClearFx ฆ่า
+       แต่ก็ต้องรับผิดชอบล้างเองให้ครบตอนเปลี่ยนไฟต์/ออกจากเกม (ทำครบข้างล่าง)  */
+
+    /* ── ค่าคงที่ทั้งชุด — ข้อความบนแบนเนอร์ประกอบจากค่าพวกนี้เอง
+       จึงไม่มีทางที่ตัวเลขบนจอกับตัวเลขที่ทำงานจริงจะเพี้ยนกัน
+       (กติกาเดียวกับราคาร้านค้าของ v4.7.9.1 · BA_CURSES ของ v6.8) ── */
+    const BA_TG_LEAD  = 500;    /* เตือนล่วงหน้ากี่ ms ก่อนเกจจะเต็ม */
+    const BA_TG_GAP   = 900;    /* เว้นระยะเสียงเตือนอย่างน้อยกี่ ms (กันเสียงรัว) */
+    const BA_GP_MS    = 1500;   /* Grace Period หลังหลุดจาก debuff ปิดกั้น */
+    const BA_DB_BLK_BOSS = 2000; /* จอดำของบอส/บอสลับ */
+    const BA_DB_BLK_MINI = 1500; /* จอดำของมินิบอส (ทัพเงา 1-20 ของ v6.6) */
+    const BA_DB_SEAL_MS  = 4000; /* Seal of Silence — ปลดล็อกปุ่มตรงเวลานี้เป๊ะ */
+
+    /* ชื่อรหัสเสียงตามสเปก → คีย์จริงในคลังของ v5.1
+       (ท่าเดียวกับ BA_SH_TONE ของ v6.6 — สารบัญยังอยู่ที่เดียว) */
+    const BA_TG_TONE = { glint_ping: 'BA_TG_PING' };
+
+    /* เสียง glint_ping สังเคราะห์ล้วนด้วย Web Audio **ไม่มีไฟล์เสียงแนบสักไบต์**
+       (กฎไฟล์เดียวจบห้ามอ้าง path ภายนอก และไฟล์แจกเหลือที่ไม่ถึงขนาดเพลงหนึ่งเพลง)
+       เติมเข้า AU_SFX_DEF ของ v5.1 จึงได้ Audio Pooling 16 ช่อง · throttle รายคีย์
+       · สวิตช์ 🔊 มาฟรีทั้งหมด — เสียงสั้น สูง คม เหมือนแสงวาบสะท้อนคมดาบ */
+    (function baTgSfxRegister() {
+      try {
+        if (typeof AU_SFX_DEF === 'undefined' || !AU_SFX_DEF) return;
+        if (AU_SFX_DEF.BA_TG_PING) return;
+        AU_SFX_DEF.BA_TG_PING = { gap: 260, v: [
+          { w: 'sine',  f: 2640, f2: 3520, d: 0.14, g: 0.15, a: 0.004 },
+          { w: 'sine',  f: 5280, f2: 6300, t: 0.012, d: 0.09, g: 0.06 },
+          { w: 'noise', lp: 9000, lp2: 3200, d: 0.07, g: 0.05, a: 0.003 }
+        ] };
+      } catch (e) { baErr(e, 'tgSfxReg'); }
+    })();
+
+    /* สถานะของ "รอบการเล่น" ทั้งหมด ไม่ต้องเซฟสักตัว
+       (กฎเดียวกับ BA_ATB ของ v6.3 · BA_BAT ของ v6.5 · BA_CUR ของ v6.8) */
+    let BA_TG_ON     = false;  /* กำลังเตือนอยู่ไหม (edge-trigger ของเสียง) */
+    let BA_TG_AT     = 0;      /* ยิงเสียงเตือนครั้งล่าสุดเมื่อไหร่ */
+    let BA_TG_N      = 0;      /* เตือนไปกี่ครั้ง (ให้ชุดเทสต์อ่าน) */
+    let BA_GP_UNTIL  = 0;      /* Grace Period ถึงเมื่อไหร่ */
+    let BA_GP_N      = 0;      /* กัน debuff ซ้ำซ้อนไปกี่ครั้ง */
+    let BA_DB_BLK_T   = null;  /* นาฬิกาจอดำของแพตช์นี้ — **ไม่ผ่าน baLater** */
+    let BA_DB_BLK_END = 0;     /* จอดำหมดอายุเมื่อไหร่ (แหล่งความจริงเดียว) */
+    let BA_DB_SEAL_T   = null; /* นาฬิกาผนึกของแพตช์นี้ — **ไม่ผ่าน baLater** */
+    let BA_DB_SEAL_END = 0;    /* ผนึกหมดอายุเมื่อไหร่ (แหล่งความจริงเดียว) */
+    let BA_DB_CAP     = null;  /* กล่องดัก baLater ระหว่างเรียกเจ้าของเดิม (ดูหัวข้อ 3) */
+
+    // ══ 1) Attack Telegraphing ═════════════════════════════════════════
+    /* แทรก overlay ตาบอสแบบ lazy — **ต้องกันแทรกซ้ำเอง** (กับดักข้อ 2)
+       ท่าเดียวกับ baBatEnsure() ของ v6.5 · baCurEnsure() ของ v6.8
+       จึงไม่ต้องไปแก้ baBuild() ของ v6.0 เลยสักบรรทัด
+
+       วางไว้ใน #baFoe ซึ่งเป็น .ba-sprite (position:relative · กว้าง/สูงตายตัว)
+       overlay จึง inset:0 ได้พอดีกรอบ และเป็น absolute จึงไม่กินที่ในสาย flex
+       **pointer-events:none ตามสเปก** — elementFromPoint มองข้ามไปเลย
+       ชุดตรวจของชั้นอื่นที่ยิงพิกัดหาปุ่ม/ตัวละครจึงไม่กระทบแม้แต่เคสเดียว */
+    function baTgEnsure() {
+      const foe = document.getElementById('baFoe');
+      if (!foe || foe.querySelector('.ba-tg')) return null;
+      const el = document.createElement('div');
+      el.className = 'ba-tg';
+      el.id = 'baTgEye';
+      el.setAttribute('aria-hidden', 'true');
+      el.innerHTML = '<i></i><i></i>';
+      foe.appendChild(el);
+      return el;
+    }
+
+    function baTgPaint(on) {
+      baTgEnsure();
+      const el = document.getElementById('baTgEye');
+      if (!el) return;
+      if (on) {
+        /* ถอดก่อนใส่เสมอ ไม่งั้นอนิเมชันจะไม่รีสตาร์ตตอนเตือนรอบถัดไป
+           (บทเรียนเดียวกับ baPose ของ v6.0) */
+        el.classList.remove('on');
+        void el.offsetWidth;
+        el.classList.add('on');
+      } else {
+        el.classList.remove('on');
+      }
+      const a = baArena();
+      if (a) a.classList.toggle('ba-tg-on', !!on);
+    }
+
+    /* เหลืออีกกี่ ms เกจใบที่ใกล้เต็มที่สุดจะเต็ม — **คำนวณสดจากเกจจริงทุกครั้ง
+       ไม่เก็บธงซ้อน** (กติกาเดียวกับ auBgmWant ของ v5.1 · baSceneOf ของ v6.1)
+       หลอดคำสาปนับเฉพาะไฟต์ที่มันโผล่จริง (baCurOn) ไม่งั้นไฟต์ทั่วไปจะถูกเตือน
+       จากเกจที่ไม่มีอยู่บนจอเลย */
+    function baTgLeft() {
+      let best = Infinity;
+      try {
+        if (typeof BA_BAT !== 'undefined' && typeof baBatFull === 'function') {
+          const full = baBatFull() || 4500;
+          best = Math.min(best, Math.max(0, (100 - BA_BAT) / 100 * full));
+        }
+      } catch (e) {}
+      try {
+        if (typeof BA_CUR !== 'undefined' && typeof baCurOn === 'function' && baCurOn()) {
+          const full = (typeof BA_CUR_MS !== 'undefined' ? BA_CUR_MS : 7000) || 7000;
+          best = Math.min(best, Math.max(0, (100 - BA_CUR) / 100 * full));
+        }
+      } catch (e) {}
+      return best;
+    }
+
+    /* ตัวประสานกลาง — เทียบสถานะที่ควรเป็นกับที่เป็นอยู่ แล้วลงมือครั้งเดียว
+       ตอนข้ามรอยต่อ (ท่าเดียวกับ auPauseSync ของ v5.1 · baPaintScene ของ v6.1)
+       เรียกถี่แค่ไหนก็แทบไม่มีต้นทุน เพราะไม่ข้ามรอยต่อ = ออกตั้งแต่บรรทัดแรก */
+    function baTgSync() {
+      let on = false;
+      try {
+        /* **เช็กเลขคณิตก่อน แล้วค่อยเช็กของแพง** — ตัวนี้ถูกเรียกทุก 150ms และทุก 200ms
+           ส่วน baPaused() ยิง querySelector ทั้งเอกสาร ถ้าเรียกทุกทิกโดยไม่คัดกรอง
+           จะเป็นงานที่วิ่งถี่ตลอดเวลาแล้วชุดเทสต์ที่รอเวลาจะแกว่ง (กับดักข้อ 31)
+           ทางปกติ (เกจยังไกลจากเต็มและยังไม่ได้เตือนอยู่) จึงจบด้วยการคูณเลขไม่กี่ตัว */
+        const near = baTgLeft() <= BA_TG_LEAD;
+        if (!near && !BA_TG_ON) return;
+        on = !!(near && baFighting() && baCanPlay() && !baPaused());
+      } catch (e) { on = false; }
+      if (on === BA_TG_ON) return;
+      BA_TG_ON = on;
+      baTgPaint(on);
+      if (!on) return;
+      BA_TG_N++;
+      const now = Date.now();
+      if (now - BA_TG_AT < BA_TG_GAP) return;
+      BA_TG_AT = now;
+      try { baSfx(BA_TG_TONE.glint_ping); } catch (e) {}
+    }
+
+    function baTgOff() {
+      BA_TG_ON = false;
+      try { baTgPaint(false); } catch (e) {}
+    }
+
+    // ══ 2) Anti-Chain Stun · Grace Period ══════════════════════════════
+    /* หลุดจาก Blackout หรือ Seal of Silence แล้วได้เกราะกัน debuff ปิดกั้นซ้ำ
+       BA_GP_MS วินาที **นับเฉพาะสองใบที่ "ปิดกั้นการเล่น" จริง ๆ ตามสเปก**
+       — ตาบอด/ควันดำ/ซ่อนพินอิน/พิษ ยังติดได้ตามปกติ เพราะยังเล่นต่อได้อยู่
+       และ **ไม่ได้ไปยุ่งกับบัฟของอสูร** (Berserk Rampage · Shadow Horde)
+       ด้วยเหตุผลเดียวกับที่ baCbCleanse ของ v6.9 ไม่ยุ่ง                       */
+    function baGpOn() { return Date.now() < BA_GP_UNTIL; }
+
+    function baGpGrant() {
+      BA_GP_UNTIL = Date.now() + BA_GP_MS;
+      BA_GP_N++;
+      const a = baArena();
+      if (a) {
+        a.classList.remove('ba-grace');
+        void a.offsetWidth;
+        a.classList.add('ba-grace');
+      }
+    }
+
+    /* ถูกกันไว้ = บอกให้เห็นบนจอ ไม่ใช่เงียบไปเฉย ๆ
+       **ใช้แบนเนอร์ในสนาม ไม่ใช่ toast และไม่ใช่ gate** — gate ห้ามเด็ดขาดเพราะ
+       นาฬิกาต่อข้อเดินอยู่ (กับดักข้อ 18) ส่วน toast จะไปแย่งโควตา Single Active
+       Replace ของ v4.9.1 (NC_MAX = 1) แล้วกลืนแจ้งเตือนของชั้นอื่นทิ้ง */
+    function baGpBlocked(name) {
+      const left = Math.max(0, BA_GP_UNTIL - Date.now());
+      baBannerText('🛡️ ภูมิต้านทานชั่วคราว · Anti-Chain Stun',
+                   'กัน ' + name + ' ไว้ได้ — เหลืออีก ' + (left / 1000).toFixed(1) +
+                   ' วิ จากเกราะ ' + (BA_GP_MS / 1000).toFixed(1) + ' วิ');
+      try { baSfx('BA_SH_BARRIER'); } catch (e) {}
+      if (baCanPlay()) {
+        baFlash('radial-gradient(circle at 26% 60%,rgba(127,215,255,.42),transparent 62%)');
+      }
+    }
+
+    // ══ 3) Debuff Timing Audit ═════════════════════════════════════════
+    /* ── 3.1 จอดำ — เจ้าของนาฬิกาตัวใหม่ ────────────────────────────────
+       อายุจริงถูกหนีบตามระดับของไฟต์ตามสเปก **ไม่ใช่เชื่อ ms ที่ผู้เรียกส่งมา**
+       บอส/บอสลับ 2.0 วิ · มินิบอสของทัพเงา 1.5 วิ · ไฟต์ทั่วไปใช้ค่าที่ขอมา
+       (ทัพเงา mythic = Kamish นับเป็นบอส ตามที่ v6.6 ตีตราไว้)
+       ผลข้างเคียงที่ตั้งใจ: Abyssal Devourer ของ v6.3 ซึ่งเคยดับจอ 4.0 วิ
+       ลดเหลือ 2.0 วิ เพราะสเปกให้ตัวเลขของ "บอส" มาตัวเดียว */
+    function baDbBlkMs(req) {
+      const want = Math.max(200, Math.round(req || BA_DB_BLK_BOSS));
+      try {
+        const sh = (typeof baShNow === 'function') ? baShNow() : null;
+        if (sh) return sh.tier === 'mini' ? BA_DB_BLK_MINI : BA_DB_BLK_BOSS;
+        if (typeof baHtBoss === 'function' && baHtBoss()) return BA_DB_BLK_BOSS;
+      } catch (e) {}
+      return want;
+    }
+
+    /* ตั้งนาฬิกาให้ตรง "เวลาที่เหลือจริง" ทุกครั้ง — เรียกซ้ำได้ไม่จำกัด
+       ตัวนี้คือหัวใจของการซ่อม: ใครมากวาดนาฬิกาทิ้งก็ตั้งใหม่ให้ตรงเป๊ะได้เสมอ
+       เพราะแหล่งความจริงคือ "เวลาสิ้นสุด" ไม่ใช่ตัวนาฬิกา */
+    function baDbBlkArm() {
+      if (BA_DB_BLK_T) { clearTimeout(BA_DB_BLK_T); BA_DB_BLK_T = null; }
+      if (!BA_DB_BLK_END) return;
+      const left = BA_DB_BLK_END - Date.now();
+      if (left <= 0) { baDbBlkEnd(); return; }
+      BA_DB_BLK_T = setTimeout(function () {
+        BA_DB_BLK_T = null;
+        try { baDbBlkEnd(); } catch (e) { baErr(e, 'dbBlkEnd'); }
+      }, left);
+    }
+
+    /* หมดอายุตามกำหนด = ถอดจอดำ **แล้วมอบ Grace Period ให้** (ข้อ 2 ของสเปก) */
+    function baDbBlkEnd() {
+      if (BA_DB_BLK_T) { clearTimeout(BA_DB_BLK_T); BA_DB_BLK_T = null; }
+      const was = BA_DB_BLK_END > 0;
+      BA_DB_BLK_END = 0;
+      const el = document.getElementById('baBlack');
+      if (el) el.classList.remove('on');
+      if (was) baGpGrant();
+    }
+
+    /* ยกเลิกกลางคัน (เปลี่ยนไฟต์ · ออกจากเกม) — ไม่ให้ Grace เพราะไม่ได้ "หลุดออกมา"
+       ด้วยการอดทนจนครบเวลา แต่เพราะทั้งไฟต์จบไปแล้ว */
+    function baDbBlkAbort() {
+      if (BA_DB_BLK_T) { clearTimeout(BA_DB_BLK_T); BA_DB_BLK_T = null; }
+      BA_DB_BLK_END = 0;
+      const el = document.getElementById('baBlack');
+      if (el) el.classList.remove('on');
+    }
+
+    /* ── 3.2 ผนึกความเงียบงัน — เจ้าของนาฬิกาตัวใหม่ ──────────────────
+       ปิดปุ่มทุกใบด้วยคลาส ba-stone ชุดเดิมของ v6.3 (baClearQ/baCbCleanse
+       ของชั้นล่างจึงยังรู้จักและล้างได้เหมือนเดิมทุกประการ) แต่ **เวลาปลดล็อก
+       ถูกยึดมาคุมเองด้วย BA_DB_SEAL_END** ไม่ใช่ BA_STONE_T ที่ baClearQ ล้างทิ้ง */
+    function baDbSealApply() {
+      const list = baChoices();
+      for (let i = 0; i < list.length; i++) {
+        list[i].disabled = true;
+        list[i].classList.add('ba-stone');
+      }
+      return list.length;
+    }
+
+    function baDbSealArm() {
+      if (BA_DB_SEAL_T) { clearTimeout(BA_DB_SEAL_T); BA_DB_SEAL_T = null; }
+      if (!BA_DB_SEAL_END) return;
+      const left = BA_DB_SEAL_END - Date.now();
+      if (left <= 0) { baDbSealEnd(); return; }
+      BA_DB_SEAL_T = setTimeout(function () {
+        BA_DB_SEAL_T = null;
+        try { baDbSealEnd(); } catch (e) { baErr(e, 'dbSealEnd'); }
+      }, left);
+    }
+
+    /* หมดอายุตามกำหนด = ปลดล็อกปุ่ม **แล้วมอบ Grace Period ให้**
+       **ปลดคืนเฉพาะปุ่มที่ยังไม่ถูกหนามรัด (ba-jail) และเฉพาะตอนยังไม่ล็อกเทิร์น**
+       (กติกาเดียวกับตัวปลดของ baStone ใน v6.3 · baCbCleanse ใน v6.9)
+       ไม่งั้นจะไปเปิดปุ่มที่ v4.0 ตั้งใจปิดไว้หลังตัดสินผลแล้ว */
+    function baDbSealEnd() {
+      if (BA_DB_SEAL_T) { clearTimeout(BA_DB_SEAL_T); BA_DB_SEAL_T = null; }
+      const was = BA_DB_SEAL_END > 0;
+      BA_DB_SEAL_END = 0;
+      try {
+        const g = baG();
+        const list = baChoices();
+        for (let i = 0; i < list.length; i++) {
+          if (!list[i].classList.contains('ba-stone')) continue;
+          list[i].classList.remove('ba-stone');
+          if (g && !g.locked && !list[i].classList.contains('ba-jail')) list[i].disabled = false;
+        }
+      } catch (e) { baErr(e, 'dbSealUnlock'); }
+      if (was) baGpGrant();
+    }
+
+    function baDbSealAbort() {
+      if (BA_DB_SEAL_T) { clearTimeout(BA_DB_SEAL_T); BA_DB_SEAL_T = null; }
+      BA_DB_SEAL_END = 0;
+    }
+
+    /* ── 3.3 ล้าง timeout ตกค้างทั้งชุด ───────────────────────────────
+       grant = true  → นับเป็น "หลุดออกมาได้" จึงมอบ Grace ให้ (Speed Reflex)
+       grant = false → ยกเลิกเฉย ๆ (เปลี่ยนไฟต์ · ออกจากเกม)                */
+    function baDbClear(grant) {
+      const had = (BA_DB_BLK_END > 0) || (BA_DB_SEAL_END > 0);
+      if (grant) {
+        baDbBlkAbort();
+        baDbSealAbort();
+        if (had) baGpGrant();
+      } else {
+        baDbBlkAbort();
+        baDbSealAbort();
+      }
+      /* นาฬิกาของ v6.3 ที่อาจค้างอยู่ก็ต้องไม่เหลือ — ตัวมันเองไม่มีทางรู้ว่า
+         แพตช์นี้ยึดเวลาไปคุมแล้ว ปล่อยไว้จะไปปลดปุ่มผิดจังหวะทีหลัง */
+      try { if (BA_STONE_T) { clearTimeout(BA_STONE_T); BA_STONE_T = null; } } catch (e) {}
+      baTgOff();
+      return had;
+    }
+
+    /* ── 3.4 กวาดใหม่ตอนเปลี่ยนข้อ ────────────────────────────────────
+       ขึ้นข้อใหม่ = ปุ่มชุดใหม่ถูกสร้างมาแล้ว (renderChoices ของ v4.0) และ
+       baClearQ ของ v6.3 เพิ่งล้าง BA_STONE_T ทิ้งไป **timeout เก่าจึงไม่เหลือ
+       สักตัว** ตามข้อกำหนด — แต่ถ้าผนึกยังไม่หมดอายุ ต้องแปะกลับลงปุ่มชุดใหม่
+       แล้วตั้งนาฬิกาใหม่ให้ตรง "เวลาที่เหลือจริง" ไม่ใช่เริ่มนับ 4.0 วิ ใหม่
+       (ไม่งั้นเปลี่ยนโจทย์ถี่ ๆ จะกลายเป็นผนึกไม่มีวันหมด ซึ่งโหดเกินสเปก) */
+    function baDbSweep() {
+      const now = Date.now();
+      if (BA_DB_SEAL_END > now) { baDbSealApply(); baDbSealArm(); }
+      else if (BA_DB_SEAL_END)  { baDbSealEnd(); }
+      if (BA_DB_BLK_END > now) {
+        const el = document.getElementById('baBlack');
+        if (el) el.classList.add('on');
+        baDbBlkArm();
+      } else if (BA_DB_BLK_END) { baDbBlkEnd(); }
+    }
+
+    // ══ v6.11 · wrapper ทั้งหมด ════════════════════════════════════════
+
+    /* ── ดัก baLater ระหว่างเรียกเจ้าของเดิมของ baBlackout เท่านั้น ─────
+       **นี่คือทางที่ทำให้ไม่ต้องคัดลอกตรรกะ Clarity Mind ของ v6.9 ออกมาเขียนซ้ำ**
+       v6.9 ห่อ baBlackout ไว้แล้วเพื่อกันสถานะบดบังสายตาตอนคอมโบถึงขั้น II
+       ถ้าจะรู้ว่า "รอบนี้ถูกกันไว้หรือเปล่า" วิธีที่ไม่ต้องรู้กติกาของ v6.9 เลยคือ
+       ดูว่ามีใครขอตั้งนาฬิกาถอดจอดำหรือไม่ — ถูกกันไว้ = ไม่มีการเรียก baLater เลย
+       (baCbClarity ของ v6.9 ไม่ได้เรียก baLater สักครั้ง ตรวจแล้ว)
+       ระหว่างดักอยู่เรากลืนนาฬิกาตัวนั้นทิ้ง เพราะเราจับเวลาเองแล้ว
+       **ขอบเขตการดักแคบที่สุดเท่าที่ทำได้** — เปิดเฉพาะระหว่างบรรทัดเดียวที่
+       เรียกเจ้าของเดิม และปิดคืนใน finally เสมอ (กฎเดียวกับ BA_LIVE ของ v6.0) */
+    if (typeof baLater === 'function') {
+      const _baDbLater = baLater;
+      baLater = function () {
+        if (BA_DB_CAP) { BA_DB_CAP.hit = true; return 0; }
+        return _baDbLater.apply(this, arguments);
+      };
+    }
+
+    if (typeof baBlackout === 'function') {
+      const _baDbBlackout = baBlackout;
+      baBlackout = function (ms) {
+        /* ข้อ 2 — Grace Period กัน debuff ปิดกั้นซ้ำซ้อน */
+        if (baGpOn()) { baGpBlocked('🌑 ม่านดับเหวลึก'); return 0; }
+
+        const cap = { hit: false };
+        BA_DB_CAP = cap;
+        try { _baDbBlackout.call(this, ms); }
+        catch (e) { baErr(e, 'dbBlackout'); }
+        finally { BA_DB_CAP = null; }
+        if (!cap.hit) return 0;   /* Clarity Mind ของ v6.9 กันไว้ — จบตรงนี้ */
+
+        const d = baDbBlkMs(ms);
+        BA_DB_BLK_END = Date.now() + d;
+        const el = document.getElementById('baBlack');
+        if (el) el.classList.add('on');
+        baDbBlkArm();
+        return d;
+      };
+    }
+
+    /* ── ผนึกความเงียบงัน / สถานะกลายเป็นหิน ────────────────────────────
+       baStone ของ v6.3 ใช้ BA_STONE_T ของตัวเอง (ไม่ผ่าน baLater) จึงยึดคืนได้ตรง ๆ
+       ปล่อยให้ของเดิมแปะคลาสกับปิดปุ่มตามเดิม แล้วเราล้างนาฬิกาของมันทิ้ง
+       แล้วตั้งของเราแทน = คลาส/DOM ยังเป็นชุดเดิมที่ทุกชั้นรู้จัก มีแต่ "เวลา" ที่ย้ายมา
+       **อายุถูกหนีบเป็น BA_DB_SEAL_MS เฉพาะตอนผู้เรียกขอมาเท่านั้นหรือมากกว่า**
+       ท่าล็อกปุ่มสั้น ๆ ของทัพเงา (Ground Stun 1.5 วิ) จึงยังสั้นเหมือนเดิม */
+    if (typeof baStone === 'function') {
+      const _baDbStone = baStone;
+      baStone = function (ms) {
+        if (baGpOn()) { baGpBlocked('🔒 ผนึกความเงียบงัน'); return 0; }
+
+        try { _baDbStone.call(this, ms); } catch (e) { baErr(e, 'dbStone'); }
+        /* ยึดเวลามาคุมเอง — ของเดิมตั้งนาฬิกาไว้แล้ว ล้างทิ้งก่อน */
+        try { if (BA_STONE_T) { clearTimeout(BA_STONE_T); BA_STONE_T = null; } } catch (e) {}
+
+        const want = Math.max(200, Math.round(ms || BA_DB_SEAL_MS));
+        const end  = Date.now() + want;
+        /* ซ้อนกันได้ = เอาอันที่หมดทีหลังเป็นตัวตัดสิน ไม่ใช่เขียนทับดื้อ ๆ */
+        BA_DB_SEAL_END = Math.max(BA_DB_SEAL_END, end);
+        baDbSealArm();
+        return want;
+      };
+    }
+
+    /* ── เกจขยับ = เช็กว่าถึงเวลาเตือนหรือยัง ────────────────────────────
+       เกาะนาฬิกาของ v6.5 (150ms) กับของ v6.3/v6.8 (200ms) **ไม่ได้ตั้งนาฬิกา
+       ใบใหม่สักใบ** (กับดักข้อ 31 — งานที่วิ่งถี่ตลอดเวลาทำให้ชุดเทสต์ที่รอเวลาแกว่ง)
+       ความละเอียด 150ms พอเหลือเฟือสำหรับหน้าต่างเตือน 500ms */
+    if (typeof baBatTick === 'function') {
+      const _baTgBat = baBatTick;
+      baBatTick = function () {
+        const r = _baTgBat.apply(this, arguments);
+        try { baTgSync(); } catch (e) { baErr(e, 'tgBat'); }
+        return r;
+      };
+    }
+
+    if (typeof baCurTick === 'function') {
+      const _baTgCur = baCurTick;
+      baCurTick = function () {
+        const r = _baTgCur.apply(this, arguments);
+        try { baTgSync(); } catch (e) { baErr(e, 'tgCur'); }
+        return r;
+      };
+    }
+
+    /* ── ขึ้นข้อใหม่ = ล้าง timeout ตกค้าง แล้วตั้งใหม่ให้ตรงเวลาที่เหลือ ──
+       ต้องทำ **หลัง** ของเดิมทำงานจบ เพราะ wrapper ของ v6.3 เรียก baClearQ()
+       ซึ่งล้าง BA_STONE_T กับคลาส ba-stone ทิ้งไปแล้วตรงนั้น */
+    if (typeof startQuestionTimer === 'function') {
+      const _baDbStartQ = startQuestionTimer;
+      startQuestionTimer = function () {
+        const r = _baDbStartQ.apply(this, arguments);
+        try { baDbSweep(); baTgSync(); } catch (e) { baErr(e, 'dbStartQ'); }
+        return r;
+      };
+    }
+
+    /* ── Speed Reflex สำเร็จ = ล้างทิ้งทั้งชุดทันที + ได้ Grace ────────────
+       เกาะ baCbCleanse ของ v6.9 ซึ่งเป็นทางผ่านเดียวของ Parry Strike
+       **ห้ามเกาะ baCbParry แทน** เพราะ baCbCleanse ถูกใช้ที่อื่นด้วยในอนาคตได้
+       และตัวมันเองคือ "จุดล้างสถานะ" ตามนิยาม */
+    if (typeof baCbCleanse === 'function') {
+      const _baDbCleanse = baCbCleanse;
+      baCbCleanse = function () {
+        let n = 0;
+        try { n = _baDbCleanse.apply(this, arguments) || 0; }
+        catch (e) { baErr(e, 'dbCleanse'); }
+        try { if (baDbClear(true)) n++; } catch (e) { baErr(e, 'dbCleanse2'); }
+        return n;
+      };
+    }
+
+    /* ── เปลี่ยนไฟต์ / ฮีโร่ร่วง = ยกเลิกทั้งชุด ไม่ให้ Grace ─────────────── */
+    if (typeof baClearFight === 'function') {
+      const _baDbClearFight = baClearFight;
+      baClearFight = function () {
+        try { baDbClear(false); BA_GP_UNTIL = 0; } catch (e) { baErr(e, 'dbClearFight'); }
+        return _baDbClearFight.apply(this, arguments);
+      };
+    }
+
+    /* ── ออกจากเกม = คืนทรัพยากรให้ครบ ไม่ปล่อยนาฬิกาค้างข้ามรอบการเล่น ── */
+    if (typeof exitGame === 'function') {
+      const _baDbExit = exitGame;
+      exitGame = function () {
+        try {
+          baDbClear(false);
+          BA_GP_UNTIL = 0; BA_GP_N = 0;
+          BA_TG_ON = false; BA_TG_AT = 0; BA_TG_N = 0;
+          baTgOff();
+        } catch (e) { baErr(e, 'dbExit'); }
+        return _baDbExit.apply(this, arguments);
+      };
+    }
+
+    if (typeof startGame === 'function') {
+      const _baDbStart = startGame;
+      startGame = function () {
+        const r = _baDbStart.apply(this, arguments);
+        try {
+          baDbClear(false);
+          BA_GP_UNTIL = 0; BA_GP_N = 0; BA_TG_ON = false; BA_TG_AT = 0; BA_TG_N = 0;
+          baStyle8(); baTgEnsure(); baTgOff();
+        } catch (e) { baErr(e, 'dbStartGame'); }
+        return r;
+      };
+    }
+
+    /* ── มอนสเตอร์ตัวใหม่/โจทย์ใหม่ = ยืนยันว่า overlay ยังอยู่กับ #baFoe ──
+       baBuild ของ v6.0 สร้าง #baFoe ใหม่ได้ตอนสวิตช์สนามถูกเปิดกลางคัน */
+    if (typeof renderMonster === 'function') {
+      const _baDbRender = renderMonster;
+      renderMonster = function () {
+        const r = _baDbRender.apply(this, arguments);
+        try { baStyle8(); baTgEnsure(); baTgPaint(BA_TG_ON); } catch (e) { baErr(e, 'dbRender'); }
+        return r;
+      };
+    }
+
+    // ══ CSS ของแพตช์นี้ — ก้อนที่แปด ════════════════════════════════════
+    /* **ทุกกฎที่นี่แตะแค่สี · เงา · opacity · และตำแหน่งของของที่เป็น absolute
+       อยู่แล้ว** ไม่มีกฎไหนเปลี่ยนขนาดกล่องของอะไรในสายเลย์เอาต์เลยสักกฎเดียว
+       (ข้อจำกัดหลักของทั้งชั้น — การ์ดโจทย์ต้องนิ่งที่ 340.8px / 354.8px) */
+    function baStyle8() {
+      const had = document.getElementById('baStyle8');
+      if (had) {
+        /* **ต้องเป็นก้อนท้ายสุดของ head เสมอ** — #baStyle ของ v6.0 ถูกแทรกตอน
+           baBuild() ซึ่งอาจเกิดหลังก้อนนี้ กฎที่ความจำเพาะเท่ากันจึงต้องอยู่ท้าย
+           (บทเรียนเดียวกับ baStyle3 ของ v6.5) */
+        if (document.head.lastElementChild !== had) document.head.appendChild(had);
+        return;
+      }
+      const css =
+        /* ── ไฟแดงกระพริบที่ตาบอส — absolute เต็มกรอบ .ba-sprite ที่ position:relative
+           **pointer-events:none ตามสเปก** จึงไม่ขวางการกดอะไรเลยแม้แต่จุดเดียว
+           display:none ตอนไม่เตือน = ไม่มีอะไรถูกวาดเลยในสภาพปกติ */
+        '#baArena .ba-foe .ba-sprite .ba-tg{position:absolute;left:0;top:0;right:0;bottom:0;' +
+          'pointer-events:none;display:none;z-index:4}' +
+        '#baArena .ba-foe .ba-sprite .ba-tg.on{display:block}' +
+        /* ตำแหน่งตา — วัดจากกรอบ .ba-sprite (62x60) ซึ่งภาพอสูรถูกจัดชิดล่าง
+           แล้วล้นขึ้นข้างบนได้ (.ba-mon สูง 72px) หัวของอสูรเกือบทุกตัวจึงตกอยู่แถว
+           10-25% ของกรอบพอดี · **อย่าดันลงต่ำกว่านี้** จะไปอยู่กลางลำตัวแทน
+           ขนาดจุดต้องใหญ่พอสู้กับอสูรโทนสว่าง (ลิชทองคำชั้น 12 คือเคสหนักสุด) */
+        '#baArena .ba-foe .ba-sprite .ba-tg i{position:absolute;top:10%;width:7px;height:7px;' +
+          'border-radius:50%;background:#fff2f3;' +
+          'box-shadow:0 0 0 2px rgba(255,20,40,.95),0 0 9px 4px rgba(255,30,50,.95),' +
+            '0 0 20px 9px rgba(255,20,40,.6);' +
+          /* **จำนวนรอบตายตัว ห้ามใช้ infinite** (กับดักข้อ 31 — งานที่วิ่งไม่รู้จบ
+             ทำให้ test_dual_warp_gate แกว่ง) 4 รอบ x .18s = .72s ยาวกว่าหน้าต่าง
+             เตือน 0.5 วิ อยู่แล้ว และคลาสถูกใส่ครั้งเดียวต่อการเตือนหนึ่งครั้ง */
+          'animation:baTgBlink .18s ease-in-out 4 alternate}' +
+        '#baArena .ba-foe .ba-sprite .ba-tg i:first-child{left:calc(50% - 12px)}' +
+        '#baArena .ba-foe .ba-sprite .ba-tg i:last-child{left:calc(50% + 5px)}' +
+        '@keyframes baTgBlink{0%{opacity:.25;transform:scale(.7)}' +
+          '100%{opacity:1;transform:scale(1.15)}}' +
+        /* ขอบสนามวูบแดงบาง ๆ ให้เห็นแม้ตัวอสูรจะเล็ก — inset box-shadow เท่านั้น
+           **ห้ามใช้ border** เพราะ border ดันเลย์เอาต์ (บทเรียนของ ba-stagger ใน v7.0) */
+        '#baArena.ba-tg-on{box-shadow:inset 0 0 0 1px rgba(255,47,61,.5),' +
+          'inset 0 0 20px rgba(255,47,61,.2)}' +
+
+        /* ── Grace Period — ขอบฟ้าอ่อนรอบสนาม 3 รอบแล้วจบเอง (ไม่ใช่ infinite) */
+        '@keyframes baGraceRing{0%{box-shadow:inset 0 0 0 2px rgba(127,215,255,.6)}' +
+          '100%{box-shadow:inset 0 0 0 2px rgba(127,215,255,.12)}}' +
+        '#baArena.ba-grace{animation:baGraceRing .5s ease-in-out 3 alternate}';
+
+      const st = document.createElement('style');
+      st.id = 'baStyle8';
+      st.textContent = css;
+      document.head.appendChild(st);
+    }
+
+    // ══ ทางเข้าสาธารณะสำหรับชุดเทสต์ ═══════════════════════════════════
+    if (typeof baBattleAudit === 'function') {
+      const _baDbAudit = baBattleAudit;
+      baBattleAudit = function () {
+        const o = _baDbAudit.apply(this, arguments) || {};
+        const eye = document.getElementById('baTgEye');
+        const now = Date.now();
+        o.telegraph = {
+          lead: BA_TG_LEAD, gap: BA_TG_GAP,
+          left: baTgLeft(), on: BA_TG_ON, n: BA_TG_N,
+          tone: BA_TG_TONE.glint_ping,
+          shown: !!(eye && eye.classList.contains('on')),
+          mounted: !!eye
+        };
+        o.grace = {
+          ms: BA_GP_MS, until: BA_GP_UNTIL, on: baGpOn(),
+          left: Math.max(0, BA_GP_UNTIL - now), n: BA_GP_N
+        };
+        o.debuff = {
+          blackMs: baDbBlkMs(0), bossMs: BA_DB_BLK_BOSS, miniMs: BA_DB_BLK_MINI,
+          sealMs: BA_DB_SEAL_MS,
+          blackEnd: BA_DB_BLK_END, blackLeft: Math.max(0, BA_DB_BLK_END - now),
+          blackArmed: !!BA_DB_BLK_T,
+          sealEnd: BA_DB_SEAL_END, sealLeft: Math.max(0, BA_DB_SEAL_END - now),
+          sealArmed: !!BA_DB_SEAL_T,
+          stoneStale: !!(typeof BA_STONE_T !== 'undefined' && BA_STONE_T)
+        };
+        return o;
+      };
+    }
+
+    (function baInstall611() {
+      try {
+        baStyle8();
+        baTgEnsure();   /* สร้าง overlay ไว้ล่วงหน้าครั้งเดียว — display:none จนกว่าจะเตือน */
+      } catch (e) { baErr(e, 'install611'); }
+    })();
+
     (function baInstall() {
       try {
         /* .g-monster-area อยู่ใน HTML แบบสแตติกอยู่แล้ว จึงสร้างได้ตั้งแต่โหลดหน้า

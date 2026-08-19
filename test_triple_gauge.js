@@ -351,7 +351,13 @@ async function answerOne(page, correct) {
   const c1b = await page.evaluate(() => !!(document.getElementById('baBlack') || {}).classList.contains('on'));
   ok(c1b === false, 'จอสว่างคืนเองหลัง 2.0 วิ');
 
+  /* **ต้องล้าง Grace Period ของ v6.11 ก่อนยิงคำสาปใบถัดไปแบบติด ๆ กัน** —
+     Anti-Chain Stun มอบเกราะ 1.5 วิ ทุกครั้งที่หลุดจาก Blackout/Seal แล้วกัน
+     debuff ปิดกั้นใบถัดไปไว้โดยชอบธรรม · ในการเล่นจริงไม่มีทางชนกันเลย เพราะเกจ
+     คำสาปเต็มทุก 7.0 วิ (BA_CUR_MS) ซึ่งห่างจากเกราะ 1.5 วิ อยู่มาก
+     ที่ชนคือเทสต์ยิงเองสองใบห่างกันแค่ ~0.3 วิ เท่านั้น */
   const c2 = await page.evaluate(() => {
+    if (typeof BA_GP_UNTIL !== 'undefined') BA_GP_UNTIL = 0;
     BA_CUR = 100;
     baCurFire();
     const list = Array.from(document.querySelectorAll('#gChoices .g-choice'));
@@ -373,6 +379,7 @@ async function answerOne(page, correct) {
   ok(c2c === 0, 'ปลดล็อกปุ่มคืนเองหลัง 4.0 วิ');
 
   const c3 = await page.evaluate(() => {
+    if (typeof BA_GP_UNTIL !== 'undefined') BA_GP_UNTIL = 0;   /* เหตุผลเดียวกับ c2 */
     BA_CUR = 100;
     baCurFire();
     return { hz: BA_CUR_HZ, next: baBattleAudit().curse.next };

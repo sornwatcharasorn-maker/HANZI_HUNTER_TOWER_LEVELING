@@ -250,13 +250,18 @@ function ok(c, n, x) {
     const nm = document.getElementById('baFoeName');
     return { id: au.id, tier: au.tier, atb: au.atb, bat: au.bat, pct: au.pct,
              bar: BA_BAR ? Math.round(BA_BAR.max / BA_BAR.base * 100) : 0,
+             want: Math.round((typeof BA_RS_BAR !== 'undefined' ? BA_RS_BAR : BA_KAM_BAR) * 100),
              txt: nm.textContent, cls: nm.className };
   });
   ok(kam.tier === 'mythic', 'ชั้นบอสในเหวลึกได้ Kamish', kam);
   ok(kam.atb === 5000, 'หลอดท่าไม้ตายเต็มทุก 5.0 วิ', kam.atb);
   ok(kam.bat === 2000, 'หลอดโจมตีปกติเต็มทุก 2.0 วิ', kam.bat);
   ok(kam.pct === 30, 'โจมตีปกติ -30% HP', kam.pct);
-  ok(kam.bar === 50, 'Heavy Abyssal Barrier = 50% ของ Max HP', kam.bar);
+  /* ชั้น v6.7 ทับเกราะของบอส *ทุกตัว* ให้เป็น 70% ของเนื้อบอส (BA_RS_BAR)
+     รวม Kamish ด้วย — สเปกของชั้นนั้นสั่งค่าเดียวทุกบอส BA_KAM_BAR ของ v6.6
+     จึงถูกกลบตั้งแต่ต้นไฟต์ ไม่ใช่บั๊ค · เทียบกับค่าคงที่จริงเสมอ อย่าพิมพ์เลขทับ */
+  ok(kam.bar === kam.want,
+     'Heavy Abyssal Barrier = ' + kam.want + '% ของ Max HP (v6.7 ทับ BA_KAM_BAR)', kam.bar);
   ok(/👁️/.test(kam.txt), 'ป้ายชื่อ 👁️ [ชื่ออังกฤษ]', kam.txt);
   ok(/ba-name-secret/.test(kam.cls), 'ใช้คลาส .ba-name-secret', kam.cls);
 

@@ -474,6 +474,12 @@ async function arena(page, floor, opts) {
     const dev = await page.evaluate(async () => {
       G.hp = G.maxHp;
       G.monsterMaxHp = 99999; G.monsterHp = 5000;
+      /* ปิดระบบต้านทานของ v6.7 ระหว่างวัด — เคสนี้ยัด monsterHp เป็น 5% ของหลอด
+         ซึ่งต่ำกว่าเส้นครึ่งหลอด Phase 2 Iron Shell จึงกางเกราะ +35% ให้ตามหน้าที่
+         (ยอด healed จะเกิน lost ไป 345) และ Abyssal Life Pulse ก็ฟื้นให้อีกทุก 1 วินาที
+         ทั้งสองอย่างไม่เกี่ยวกับสิ่งที่เคสนี้วัด คือ "ดูดเท่าไรเข้าอสูรเท่านั้น" */
+      if (typeof BA_RS !== 'undefined' && BA_RS) BA_RS.p2 = true;
+      if (typeof BA_RS_SUPP !== 'undefined') BA_RS_SUPP = Date.now() + 5000;
       const h0 = G.hp, m0 = G.monsterHp;
       BA_SKILLS.void.run();
       await new Promise(r => setTimeout(r, 120));

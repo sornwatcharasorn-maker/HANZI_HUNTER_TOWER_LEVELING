@@ -24637,6 +24637,447 @@
       try { baStyle4(); } catch (e) { baErr(e, 'install66'); }
     })();
 
+
+    /* ══════════════════════════════════════════════════════════════════
+       Patch v6.7 · LAYERED BOSS RESILIENCE & REGENERATION
+       ══════════════════════════════════════════════════════════════════
+       อยู่ในเนมสเปซ ba ของชั้น v6.0 เดิม **ไม่ได้ตั้งพรีฟิกซ์ใหม่** เพราะเป็นการ
+       ต่อยอดชั้นเดียวกัน (กติกาเดียวกับ Patch v6.1 · v6.2 · v6.3 · v6.4 · v6.5 · v6.6)
+       **ไม่แตะโค้ดของ v4.0-v5.9 เลยแม้แต่บรรทัดเดียว** ทุกอย่างยังเป็นการห่อฟังก์ชัน
+
+       ห้าเรื่องในแพตช์เดียว — ทั้งหมดมีผลเฉพาะ "ไฟต์บอส" เท่านั้น
+         1) สเตตัสพื้นฐาน — เลือดบอส x2.5 · Heavy Abyssal Barrier 70% · คริตถูกลดทอน 50%
+         2) Progressive Damage Gate — เพดานดาเมจต่อข้อ 15% / 10% ตามเฟสเลือด
+         3) Abyssal Life Pulse — รีเจน +0.6% ทุก 1 วินาที · โดนคริตแล้วระงับ 2 วินาที
+         4) Phase 2 Iron Shell — เลือดแตะ 50% ครั้งแรก กางเกราะใหม่ +35%
+         5) Soul Siphon Penalty — ตอบผิดแล้วบอสฟื้น +5%
+
+       **ข้อจำกัดที่ตัดสินรูปร่างของทั้งแพตช์ ยังเป็นข้อเดิมของ v6.0:
+       ห้ามให้ความสูงการ์ดโจทย์ขยับแม้แต่พิกเซลเดียว** — แพตช์นี้จึงไม่เพิ่ม DOM
+       สักโหนดและไม่เพิ่ม CSS สักกฎ ใช้แถบเกราะ · ตัวเลขลอย · แบนเนอร์ของ v6.0-v6.6
+       ที่เป็น absolute อยู่แล้วทั้งหมด
+
+       **"Max HP" ในแพตช์นี้หมายถึงหลอดเลือดเต็มใบที่ผู้เล่นเห็น** (g.monsterMaxHp
+       ตอนตั้งเกราะเสร็จ = เนื้อบอส x2.5 + ผนึกของ v4.6 + เกราะ 70%) เก็บเป็นภาพนิ่ง
+       ไว้ที่ BA_RS.mhp ตั้งแต่ต้นไฟต์ ทุกเปอร์เซ็นต์ของข้อ 2-5 คิดจากก้อนนี้ก้อนเดียว
+       จึงเป็น "ยอดคงที่ต่อไฟต์" ที่ผู้เล่นเดาได้ ไม่ใช่ตัวเลขที่โตตามเกราะระลอกสอง
+       **ยกเว้นเกราะ 70% ของข้อ 1 ซึ่งคิดจาก "เนื้อบอสก่อนกางเกราะ" ตามกติกาเดิมของ
+       v6.4 (BA_BOSS_BAR) และ v6.6 (BA_KAM_BAR)** — สองความหมายนี้ต่างกันโดยจำเป็น
+       เพราะเกราะเป็นส่วนหนึ่งของหลอด จะคิดเปอร์เซ็นต์จากหลอดที่ยังไม่มีตัวมันเองไม่ได้
+
+       ── ข้อควรระวังเรื่องบาลานซ์ที่วัดมาแล้ว (อ่านก่อนขยับตัวเลข) ────────────
+       เพราะดาเมจของ v4.0 คือ hunterAtk() ต่อข้อ และเลือดบอสก็คือ hits x hunterAtk()
+       เหมือนกัน **สัดส่วน "ดาเมจต่อข้อ : หลอดเลือด" จึงไม่ขึ้นกับเลเวลผู้เล่นเลย**
+       บอสชั้น 20 = 10 hits → x2.5 = 25A + ผนึก 4A = 29A → +เกราะ 70% = หลอด 49.3A
+       (A = hunterAtk) หมัดธรรมดาลงได้ 1A = 2.0% ของหลอด ขณะที่รีเจน 0.6%/วิ
+       บนข้อบอส 12 วินาทีคืนให้ 7.2% ของหลอด **รีเจนจึงชนะดาเมจธรรมดาอยู่ราว 3.5 เท่า**
+       และเพดานดาเมจ 15% (7.4A) สูงกว่าหมัดธรรมดามากจนแทบไม่เคยทำงาน
+       ผู้เล่นที่ถือแต่หมัดเปล่าจึงไล่บอสไม่ทันตามตัวเลขชุดนี้ ต้องพึ่งการ์ด 🔥 / 🗡️
+       ของ v4.7 · ท่าไม้ตายของ v6.3 · สกิล ⚔️ ของ v4.0 ประกอบกันถึงจะทะลุเพดาน
+       **ถ้าจะผ่อนให้หมัดเปล่าไล่ทัน ให้ลด BA_RS_HP หรือ BA_RS_REGEN สองตัวนี้ก่อน**
+       (ลด BA_RS_HP ลงมาที่ 1.0 จะทำให้หลอดเหลือ 19.7A แล้วเพดาน 15% = 3.0A
+       ซึ่งเป็นจุดที่เพดานเริ่มทำงานจริงกับคริต/ท่าไม้ตาย) — อย่าไปแก้ตรรกะ
+       ข้อความบนแบนเนอร์ทุกใบประกอบจากค่าคงที่พวกนี้เอง ตัวเลขบนจอจึงไม่มีทางเพี้ยน */
+
+    // ══ 1) ค่าคงที่ก้อนเดียวของทั้งแพตช์ — แก้บาลานซ์ที่นี่ที่เดียว ══════
+    const BA_RS_HP       = 2.5;    /* เลือดบอสทุกตัวคูณเท่านี้ (เนื้อบอสล้วน) */
+    const BA_RS_BAR      = 0.70;   /* Heavy Abyssal Barrier เริ่มต้นเท่านี้ของเนื้อบอส */
+    const BA_RS_CRIT_CUT = 0.50;   /* เกราะยังอยู่ → ดาเมจคริติคอลถูกลดทอนลงเท่านี้ */
+    const BA_RS_GATE_HI  = 0.15;   /* เพดานดาเมจต่อข้อ ช่วงเลือด > 50% */
+    const BA_RS_GATE_LO  = 0.10;   /* เพดานดาเมจต่อข้อ ช่วงเลือด <= 50% */
+    const BA_RS_HALF     = 0.50;   /* เส้นแบ่งเฟส (ใช้ทั้งเพดานดาเมจและเกราะระลอกสอง) */
+    const BA_RS_REGEN    = 0.006;  /* Abyssal Life Pulse — ฟื้นเท่านี้ต่อจังหวะ */
+    const BA_RS_REGEN_MS = 1000;   /* คาบของ Life Pulse */
+    const BA_RS_SUPP_MS  = 2000;   /* โดน Critical Strike → ระงับรีเจนกี่มิลลิวินาที */
+    const BA_RS_P2       = 0.35;   /* Phase 2 Iron Shell — เกราะระลอกสอง */
+    const BA_RS_SIPHON   = 0.05;   /* Soul Siphon — ตอบผิดแล้วบอสฟื้นเท่านี้ */
+    const BA_RS_TIP_N    = 3;      /* รีเจนกี่จังหวะถึงจะโชว์ตัวเลขลอยหนึ่งครั้ง */
+
+    /* สถานะของ "ไฟต์บอสตัวที่ยืนอยู่" ทั้งหมด ไม่ต้องเซฟสักตัว
+       (กฎเดียวกับ AB_SEAL ของ v4.6 · BA_FIGHT_M ของ v6.3 · BA_BAR ของ v6.4) */
+    let BA_RS      = null;   /* { m, mhp, base, p2 } — null = ไฟต์นี้ไม่ใช่บอส */
+    let BA_RS_M    = null;   /* มอนสเตอร์ตัวที่ผ่านขั้นตอนตั้งค่าไปแล้ว (บอสหรือไม่ก็ตาม) */
+    let BA_RS_T    = null;   /* นาฬิกา Abyssal Life Pulse */
+    let BA_RS_SUPP = 0;      /* รีเจนถูกระงับจนถึงเวลานี้ */
+    let BA_RS_TICK = 0;      /* นับจังหวะรีเจนไว้หรี่ความถี่ของตัวเลขลอย */
+    let BA_RS_ACC  = 0;      /* ยอดรีเจนสะสมที่ยังไม่ได้โชว์ */
+    let BA_RS_IN   = false;  /* กันเรียกซ้อนตอนกางเกราะระลอกสอง (renderMonsterHp วนกลับ) */
+
+    /* ไฟต์นี้เป็นบอสไหม — ตรงกับชุดที่ v6.4/v6.6 ตีตรา BA_BAR.tier = 'boss' เป๊ะ
+       คือชั้นบอสจริงของแผนผังหอคอย (4/8/12/16/20) กับ Kamish ของโหมดเหวลึก
+       **อีลีทไม่นับ** สเปกพูดถึง "บอส" อย่างเดียว อีลีทยังใช้กติกาของ v6.4 ตามเดิม */
+    function baRsBossFight(g) {
+      if (!g || g.practiceMode || !g.currentMonster) return false;
+      if (typeof baShMythic === 'function' && baShMythic()) return true;
+      return baIsBossFloor(Math.round(g.floor || 1));
+    }
+
+    function baRsOn() {
+      const g = baG();
+      return !!(BA_RS && g && BA_RS.m === g.currentMonster);
+    }
+
+    function baRsMax() { return BA_RS ? (BA_RS.mhp || 0) : 0; }
+
+    /* แปลงเปอร์เซ็นต์เป็นยอดจริง — คิดจากภาพนิ่งของหลอดเต็มใบตอนต้นไฟต์เสมอ */
+    function baRsAmt(frac) { return Math.max(1, Math.round(baRsMax() * frac)); }
+
+    /* เกราะยังตั้งอยู่ไหม ณ ตอนที่ HP เท่ากับ hp (ใช้ตรวจย้อนก่อนโดนหมัดล่าสุด) */
+    function baRsBarUpAt(hp) {
+      const g = baG();
+      if (!BA_BAR || !g || BA_BAR.m !== g.currentMonster) return false;
+      return (hp - BA_BAR.base) > 0;
+    }
+
+    function baRsRegenStop() {
+      if (BA_RS_T) { clearInterval(BA_RS_T); BA_RS_T = null; }
+    }
+
+    function baRsClear() {
+      baRsRegenStop();
+      BA_RS = null;
+      BA_RS_M = null;
+      BA_RS_SUPP = 0;
+      BA_RS_TICK = 0;
+      BA_RS_ACC = 0;
+    }
+
+    /* ── 3) Abyssal Life Pulse ────────────────────────────────────────
+       **ข้ามจังหวะที่เกมหยุดอยู่ ไม่ใช่ทบ** (กติกาเดียวกับพิษของ v6.3 และ
+       รีเจนเกราะของ v6.4) ไม่งั้นนักเรียนที่สลับแอปไปสองนาทีจะกลับมาเจอบอส
+       เลือดเต็มหลอดเหมือนไม่เคยตีเลย · baFighting() ของ v6.3/v6.4 เป็นตัวตัดสิน
+       จุดเดียวอยู่แล้ว (หยุดเกม · เปิดหน้าต่างระบบ · ประตูวาป · บอสชะงักตอนเกราะแตก)
+       ตัวเลขลอยถูกหรี่ให้โผล่ทุก BA_RS_TIP_N จังหวะ เพราะทุกวินาทีคือจอรก */
+    function baRsRegenArm() {
+      baRsRegenStop();
+      BA_RS_T = setInterval(function () {
+        try {
+          const g = baG();
+          if (!baRsOn() || !g) { baRsRegenStop(); return; }
+          if (g.monsterHp <= 0) return;
+          if (!baFighting()) return;
+          if (Date.now() < BA_RS_SUPP) return;
+          const room = Math.max(0, (g.monsterMaxHp || 0) - g.monsterHp);
+          if (!room) return;
+          const add = Math.min(room, baRsAmt(BA_RS_REGEN));
+          g.monsterHp += add;
+          BA_RS_ACC += add;
+          try { renderMonsterHp(); } catch (e) {}
+          try { baSyncFoe(); baBarPaint(); } catch (e) {}
+          BA_RS_TICK++;
+          if (BA_RS_TICK % BA_RS_TIP_N === 0 && BA_RS_ACC > 0) {
+            const t = baSpot('baFoe');
+            if (t) baFloat('💚 +' + BA_RS_ACC, 'heal', t);
+            BA_RS_ACC = 0;
+          }
+        } catch (e) { baErr(e, 'rsRegenTick'); baRsRegenStop(); }
+      }, BA_RS_REGEN_MS);
+    }
+
+    /* ── 1) ตั้งค่าไฟต์บอส — เรียกจาก wrapper ของ baBarSetup หลังชั้นล่างจบ ──
+       เกราะถูกปรับเป็น "ส่วนต่าง" ไม่ได้สร้างใหม่ทับ (ท่าเดียวกับ Kamish ของ v6.6)
+       จึงไม่ต้องคัดลอกตรรกะของ v6.4 ออกมาเขียนซ้ำแล้วลืมซิงก์ทีหลัง */
+    function baRsSetup() {
+      const g = baG();
+      baRsRegenStop();
+      BA_RS = null;
+      BA_RS_SUPP = 0;
+      BA_RS_TICK = 0;
+      BA_RS_ACC = 0;
+      if (!g || !g.currentMonster) { BA_RS_M = null; return; }
+      BA_RS_M = g.currentMonster;
+      if (!baRsBossFight(g)) return;
+
+      const base = (BA_BAR && BA_BAR.m === g.currentMonster) ? BA_BAR.base : g.monsterMaxHp;
+      const want = Math.max(1, Math.round(base * BA_RS_BAR));
+      const cur  = (BA_BAR && BA_BAR.m === g.currentMonster) ? BA_BAR.max : 0;
+      const d    = want - cur;
+      if (d) {
+        g.monsterMaxHp += d;
+        g.monsterHp    += d;
+        if (BA_BAR && BA_BAR.m === g.currentMonster) BA_BAR.max = want;
+        else BA_BAR = { m: g.currentMonster, floor: Math.round(g.floor || 1),
+                        base: base, max: want, tier: 'boss', broken: false };
+      }
+
+      BA_RS = { m: g.currentMonster, mhp: g.monsterMaxHp, base: base, p2: false };
+      baRsRegenArm();
+      try { renderMonsterHp(); } catch (e) {}
+      try { baSyncFoe(); baBarPaint(); } catch (e) {}
+    }
+
+    /* ── 4) Phase 2 Iron Shell ────────────────────────────────────────
+       เลือดแตะเส้นครึ่งหลอดครั้งแรก = กางเกราะใหม่ +35% ทันที
+       **ต่อยอด BA_BAR.max ของเดิม ไม่ได้สร้างเรคคอร์ดใหม่ทับ** แถบเกราะของ v6.4
+       จึงกลับมาเต็มเองโดยไม่ต้องแตะโค้ดของมัน และสถานะชะงักจากเกราะบานแรก
+       ต้องถูกยกเลิกพร้อมกัน (เกราะกลับมาแล้ว บอสไม่ควรยืนซวนเซต่อ)
+       ต้องกันเรียกซ้อนด้วย BA_RS_IN เพราะการเติม HP วิ่งกลับเข้า renderMonsterHp */
+    function baRsPhase2() {
+      const g = baG();
+      if (BA_RS_IN || !baRsOn() || !g || BA_RS.p2) return;
+      if (g.monsterHp <= 0) return;
+      if (g.monsterHp > (g.monsterMaxHp || 1) * BA_RS_HALF) return;
+      BA_RS.p2 = true;
+      const add = baRsAmt(BA_RS_P2);
+      BA_RS_IN = true;
+      try {
+        g.monsterMaxHp += add;
+        g.monsterHp    += add;
+        if (BA_BAR && BA_BAR.m === g.currentMonster) {
+          BA_BAR.max += add;
+          BA_BAR.broken = false;
+        } else {
+          BA_BAR = { m: g.currentMonster, floor: Math.round(g.floor || 1),
+                     base: Math.max(0, g.monsterMaxHp - add), max: add,
+                     tier: 'boss', broken: false };
+        }
+        BA_BREAK_UNTIL = 0;
+        try { renderMonsterHp(); } catch (e) {}
+        try { baSyncFoe(); baBarPaint(); } catch (e) {}
+        baSfx('BA_SH_BARRIER');
+        baBannerText('🛡️ PHASE 2 — IRON SHELL',
+                     'บอสกางเกราะระลอกสอง +' + Math.round(BA_RS_P2 * 100) + '% Max HP');
+        if (baCanPlay()) {
+          const t = baSpot('baFoe');
+          if (t) {
+            baFloat('🛡️ +' + add, 'heal', t);
+            for (let i = 0; i < 6; i++) {
+              const sh = baSpawn('<div class="ba-shard"></div>', 620);
+              if (!sh) break;
+              sh.style.left = (t.x - 4 + (baRand(46) - 23)) + 'px';
+              sh.style.top  = (t.y - 6 + (baRand(34) - 17)) + 'px';
+              sh.style.setProperty('--bx', (baRand(70) - 35) + 'px');
+              sh.style.setProperty('--by', (-18 - baRand(34)) + 'px');
+            }
+          }
+          baFlash('radial-gradient(circle at 74% 58%,rgba(120,200,255,.5),transparent 62%)');
+        }
+      } catch (e) { baErr(e, 'rsPhase2'); }
+      finally { BA_RS_IN = false; }
+    }
+
+    /* ── 5) Soul Siphon Penalty — ตอบผิดแล้วบอสฟื้น ─────────────────────
+       **ฟื้นให้บอสอย่างเดียว ไม่หัก HP ฮีโร่ซ้ำ** — สเปกให้ตัวเลขไว้ตัวเดียวคือ
+       "+5% Max HP" ของฝั่งบอส ส่วนฝั่งฮีโร่โดนตารางดาเมจของ v4.8 ไปแล้วในข้อเดียวกัน
+       (และถ้าเป็น Kamish ยังโดน Abyssal Counter ของ v6.6 ซ้ำอีก) การหักเพิ่มเองที่นี่
+       จะกลายเป็นการลงโทษสองต่อที่สเปกไม่ได้สั่ง */
+    function baRsSiphon() {
+      const g = baG();
+      if (!baRsOn() || !g || g.practiceMode || g.monsterHp <= 0) return;
+      const room = Math.max(0, (g.monsterMaxHp || 0) - g.monsterHp);
+      if (!room) return;
+      const add = Math.min(room, baRsAmt(BA_RS_SIPHON));
+      g.monsterHp += add;
+      try { renderMonsterHp(); } catch (e) {}
+      try { baSyncFoe(); baBarPaint(); } catch (e) {}
+      baBannerText('🩸 SOUL SIPHON',
+                   'อสูรดูดกลืนวิญญาณ — ฟื้นเลือดตัวเอง +' +
+                   Math.round(BA_RS_SIPHON * 100) + '% Max HP');
+      if (baCanPlay()) {
+        const t = baSpot('baFoe');
+        if (t) baFloat('🩸 +' + add, 'heal', t);
+      }
+    }
+
+    /* ── 2) Progressive Damage Gate + การลดทอนคริต ────────────────────
+       **วัดจากส่วนต่างจริงที่ทุกชั้นทำไปแล้ว** จึงครอบตัวคูณของการ์ด 🔥 / 🗡️ ของ v4.7
+       ท่าไม้ตายของ v6.3 และดาเมจพิเศษของผนึกใน v4.6 พร้อมกันหมด โดยไม่ต้องรู้จัก
+       ชั้นพวกนั้นเลยสักชั้น (กติกาเดียวกับ hdApplyCap ของ v4.8 ที่ทำฝั่งฮีโร่)
+
+       จุดที่ทำคือ wrapper ของ baStrike เพราะเป็นจังหวะเดียวที่ทั้งสามอย่างพร้อมกัน:
+       ดาเมจถูกลงไปแล้ว (วัดยอดจริงได้) · ธงคริตของ v6.3 อ่านได้แล้ว · และตัวเลข
+       ดาเมจลอยยังไม่ถูกวาด (แก้ยอดที่จะโชว์ได้ทัน ไม่ให้โกหกผู้เล่น)
+
+       **ต้องรับผิดชอบคิวเทิร์นเอง** ถ้าการคืน HP ทำให้บอสรอดจากที่ v4.0 สั่งปราบไว้แล้ว
+       (กับดักข้อ 19) */
+    function baRsUnkill(dealt) {
+      const g = baG();
+      if (!g) return;
+      const fb = document.getElementById('gFeedback');
+      if (fb) {
+        fb.className = 'g-feedback ok';
+        fb.textContent = '[ระบบ] ⚔️ พิชิตสำเร็จ! -' + dealt +
+                         ' HP มอนสเตอร์ | 🛡️ เกราะเบื้องลึกต้านไว้ — อสูรยังไม่ล้ม';
+      }
+      if (typeof scheduleTurn === 'function') {
+        scheduleTurn(function () {
+          const gg = baG();
+          if (gg) gg.locked = false;
+          try { renderMonster(); } catch (e) {}
+        }, 1100);
+      }
+    }
+
+    function baRsGate(dealt, crit, sup) {
+      const g = baG();
+      const raw = Math.max(0, Math.round(dealt || 0));
+      if (!baRsOn() || !g || !raw) return dealt;
+
+      const before = g.monsterHp + raw;          /* HP ก่อนโดนหมัดนี้ */
+      let want = raw;
+
+      /* ก) เกราะยังตั้งอยู่ตอนหมัดลง → ดาเมจคริติคอลถูกลดทอนครึ่งหนึ่ง
+         "คริติคอล" นับทั้งคริตของ v4.0 และท่าไม้ตายของ v6.3 ตรงกับที่ทั้งสองอย่าง
+         เล่นชุดเฟรม critical_strike ของ v6.5 เหมือนกัน */
+      const big = !!crit || !!sup;
+      if (big && baRsBarUpAt(before)) want = Math.round(want * (1 - BA_RS_CRIT_CUT));
+
+      /* ข) เพดานดาเมจต่อข้อ — ขั้นตัดสินจากเลือด "ก่อน" โดนหมัดนี้ */
+      const hi = before > (g.monsterMaxHp || 1) * BA_RS_HALF;
+      want = Math.max(1, Math.min(want, baRsAmt(hi ? BA_RS_GATE_HI : BA_RS_GATE_LO)));
+      if (want >= raw) return dealt;
+
+      const wasDead = g.monsterHp <= 0;
+      g.monsterHp = before - want;
+      try { renderMonsterHp(); } catch (e) {}
+      try { baSyncFoe(); } catch (e) {}
+      if (wasDead && g.monsterHp > 0) baRsUnkill(want);
+      else {
+        const fb = document.getElementById('gFeedback');
+        if (fb && fb.textContent) fb.textContent += ' | 🛡️ เกราะเบื้องลึกต้านไว้ ลงจริง -' + want;
+      }
+      return want;
+    }
+
+    // ══ 6) จุดต่อกับชั้นล่าง — ห่อฟังก์ชันล้วน ไม่แก้โค้ดของใคร ═══════════
+
+    /* ตั้งเลือด x2.5 **ก่อน** ชั้นล่างคิดเกราะ ไม่งั้นเกราะจะคิดจากหลอดเดิม
+       และต้องขยับ AB_SEAL.base ของ v4.6 ตามไปด้วยเท่ากันเป๊ะ เพราะ abSealSetup()
+       จดเส้นฐานไว้ก่อนที่แพตช์นี้จะดันเลือด ถ้าไม่ขยับ แถบผนึกจะโชว์ยอดคงที่ก้อนโต
+       (abSealLeft ที่ v6.4 ห่อไว้แล้วคืน BA_BAR.base − AB_SEAL.base ตรง ๆ)
+       ทำครั้งเดียวต่อมอนสเตอร์หนึ่งตัว — เทียบด้วย "ตัวอ็อบเจกต์" ไม่ใช่ id
+       เพราะ nextMonster ถูกเรียกซ้ำได้ (กติกาเดียวกับ baFightSync ของ v6.3) */
+    if (typeof baBarSetup === 'function') {
+      const _baRsBar = baBarSetup;
+      baBarSetup = function () {
+        const g = baG();
+        const fresh = !!(g && g.currentMonster && BA_RS_M !== g.currentMonster);
+        try {
+          if (fresh && baRsBossFight(g) && BA_RS_HP > 1) {
+            /* คูณเฉพาะ "เนื้อบอส" — หักเกราะผนึกของ v4.6 ออกก่อนเสมอ
+               ผนึกมีสูตรของตัวเอง (hits x hunterAtk) และมีกติกาซ่อมตัว/ฉายาผูกอยู่
+               การคูณมันไปด้วยคือการเปลี่ยนบาลานซ์ของ v4.6 โดยไม่ได้ตั้งใจ */
+            const seal = (typeof AB_SEAL !== 'undefined' && AB_SEAL) ? (AB_SEAL.max || 0) : 0;
+            const body = Math.max(1, (g.monsterMaxHp || 1) - seal);
+            const bump = Math.max(1, Math.round(body * (BA_RS_HP - 1)));
+            g.monsterMaxHp += bump;
+            g.monsterHp    += bump;
+            if (typeof AB_SEAL !== 'undefined' && AB_SEAL) AB_SEAL.base += bump;
+          }
+        } catch (e) { baErr(e, 'rsBump'); }
+        const r = _baRsBar.apply(this, arguments);
+        try { if (fresh || !g || !g.currentMonster) baRsSetup(); } catch (e) { baErr(e, 'rsSetup'); }
+        return r;
+      };
+    }
+
+    /* เลื่อนการตัดสิน "เกราะแตก" ออกไปจนกว่าเพดานดาเมจจะทำงานเสร็จ
+       v4.0 หัก HP ดิบแล้วเรียก renderMonsterHp ทันที ซึ่ง v6.4 ใช้เป็นจุดเช็กเกราะแตก
+       ถ้าปล่อยไว้ หมัดที่ทะลุเพดานจะทำให้เกราะ "แตกปลอม" (เสียง + แบนเนอร์ + ชะงัก)
+       แล้วเราคืน HP ทีหลังจนเกราะกลับมาเต็ม = ผู้เล่นเห็นเกราะแตกแต่เกราะยังอยู่
+       ระหว่าง BA_LIVE จึงวาดอย่างเดียว แล้ว wrapper ของ baStrike เรียกตัวจริงเองทีหลัง */
+    if (typeof baBarSync === 'function') {
+      const _baRsBarSync = baBarSync;
+      baBarSync = function () {
+        if (BA_LIVE && baRsOn()) { try { baBarPaint(); } catch (e) {} return; }
+        return _baRsBarSync.apply(this, arguments);
+      };
+    }
+
+    /* จุดเดียวที่เพดานดาเมจ · การลดทอนคริต · การระงับรีเจน ทำงานพร้อมกัน */
+    if (typeof baStrike === 'function') {
+      const _baRsStrike = baStrike;
+      baStrike = function (dmg, crit, sup) {
+        let d = dmg;
+        try { d = baRsGate(dmg, crit, sup); } catch (e) { baErr(e, 'rsGate'); d = dmg; }
+        try {
+          if (baRsOn() && (crit || sup)) BA_RS_SUPP = Date.now() + BA_RS_SUPP_MS;
+          baRsPhase2();
+          baBarSync();
+        } catch (e) { baErr(e, 'rsStrike'); }
+        return _baRsStrike.call(this, d, crit, sup);
+      };
+    }
+
+    /* ทุกทางที่ทำให้เลือดบอสลด (สกิล ⚔️ · ไอเทมทลายผนึก · การ์ด) มาลงที่นี่หมด
+       **ข้ามระหว่าง BA_LIVE** เพราะตอนนั้นดาเมจยังเป็นยอดดิบที่ยังไม่ผ่านเพดาน
+       ถ้าเช็กเลย เกราะระลอกสองจะกางจากเลือดที่กำลังจะถูกคืนกลับ */
+    if (typeof renderMonsterHp === 'function') {
+      const _baRsHp = renderMonsterHp;
+      renderMonsterHp = function () {
+        const r = _baRsHp.apply(this, arguments);
+        try { if (!BA_LIVE && !BA_RS_IN) baRsPhase2(); } catch (e) { baErr(e, 'rsHp'); }
+        return r;
+      };
+    }
+
+    /* Soul Siphon — ยิงหลังชั้นล่างตัดสินข้อจบแล้วทั้งหมด */
+    if (typeof resolveAnswer === 'function') {
+      const _baRsResolve = resolveAnswer;
+      resolveAnswer = function (choice, btn, timedOut) {
+        const g = baG();
+        const m = g ? g.currentMonster : null;
+        const correct = !!(m && !timedOut && choice === m.answer);
+        const r = _baRsResolve.apply(this, arguments);
+        try { if (!correct) baRsSiphon(); } catch (e) { baErr(e, 'rsSiphon'); }
+        return r;
+      };
+    }
+
+    /* เปลี่ยนไฟต์/ออกจากเกม = ดับนาฬิการีเจนและล้างสถานะให้ครบ
+       (baClearFight ถูกเรียกจากทางอื่นได้ด้วย เช่น baFell ของ v6.3) */
+    if (typeof baClearFight === 'function') {
+      const _baRsClearFight = baClearFight;
+      baClearFight = function () {
+        try { baRsRegenStop(); } catch (e) {}
+        return _baRsClearFight.apply(this, arguments);
+      };
+    }
+
+    if (typeof exitGame === 'function') {
+      const _baRsExit = exitGame;
+      exitGame = function () {
+        try { baRsClear(); } catch (e) { baErr(e, 'rsExit'); }
+        return _baRsExit.apply(this, arguments);
+      };
+    }
+
+    /* ── 7) ทางเข้าสาธารณะสำหรับชุดเทสต์ — ต่อท้ายของ v6.6 ไม่ได้เขียนทับ ── */
+    if (typeof baBattleAudit === 'function') {
+      const _baRsAudit = baBattleAudit;
+      baBattleAudit = function () {
+        const o = _baRsAudit.apply(this, arguments) || {};
+        const g = baG();
+        const on = baRsOn();
+        o.resil = {
+          on: on,
+          hpMul: BA_RS_HP, barPct: BA_RS_BAR, critCut: BA_RS_CRIT_CUT,
+          mhp: on ? BA_RS.mhp : 0, base: on ? BA_RS.base : 0,
+          hp: (g ? g.monsterHp : 0), max: (g ? g.monsterMaxHp : 0),
+          half: !!(on && g && g.monsterHp <= (g.monsterMaxHp || 1) * BA_RS_HALF),
+          gate: on ? baRsAmt((g && g.monsterHp > (g.monsterMaxHp || 1) * BA_RS_HALF)
+                             ? BA_RS_GATE_HI : BA_RS_GATE_LO) : 0,
+          gateHi: on ? baRsAmt(BA_RS_GATE_HI) : 0,
+          gateLo: on ? baRsAmt(BA_RS_GATE_LO) : 0,
+          regen: on ? baRsAmt(BA_RS_REGEN) : 0, regenMs: BA_RS_REGEN_MS,
+          pulsing: !!BA_RS_T, suppressed: Date.now() < BA_RS_SUPP,
+          suppMs: BA_RS_SUPP_MS,
+          p2: !!(on && BA_RS.p2), p2Add: on ? baRsAmt(BA_RS_P2) : 0,
+          siphon: on ? baRsAmt(BA_RS_SIPHON) : 0,
+          bar: (typeof baBarLeft === 'function') ? baBarLeft() : 0
+        };
+        return o;
+      };
+    }
+
+    (function baInstall67() {
+      try {
+        /* ไม่มี DOM ไม่มี CSS ไม่มีเสียงชุดใหม่ให้ติดตั้ง — ยืมของ v6.4/v6.6 ทั้งหมด
+           เหลือแค่กันนาฬิการีเจนค้างข้ามการรีโหลดหน้า (บางเบราว์เซอร์เก็บ bfcache) */
+        window.addEventListener('pagehide', function () { try { baRsRegenStop(); } catch (e) {} });
+      } catch (e) { baErr(e, 'install67'); }
+    })();
+
     (function baInstall() {
       try {
         /* .g-monster-area อยู่ใน HTML แบบสแตติกอยู่แล้ว จึงสร้างได้ตั้งแต่โหลดหน้า

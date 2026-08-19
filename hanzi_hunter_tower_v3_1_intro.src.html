@@ -26148,6 +26148,715 @@
       } catch (e) { baErr(e, 'install69'); }
     })();
 
+    /* ══════════════════════════════════════════════════════════════════
+       Patch v7.0 · HIGH-TIER BOSS ENCOUNTER MECHANICS
+       ══════════════════════════════════════════════════════════════════
+       อยู่ในเนมสเปซ ba ของชั้น v6.0 เดิม **ไม่ได้ตั้งพรีฟิกซ์ใหม่** เพราะเป็นการ
+       ต่อยอดชั้นเดียวกัน (กติกาเดียวกับ Patch v6.1 · v6.2 · v6.3 · v6.4 · v6.5
+       · v6.6 · v6.7 · v6.8 · v6.9) **ไม่แตะโค้ดของ v4.0-v5.9 เลยแม้แต่บรรทัดเดียว**
+
+       สามเรื่องในแพตช์เดียว — ทั้งหมดมีผลเฉพาะ "ไฟต์บอส" ตามชื่อของสเปก
+       (ชุดเดียวกับที่ v6.4/v6.6/v6.7 ตีตรา BA_BAR.tier = 'boss' เป๊ะ คือชั้นบอสจริง
+       ของแผนผังหอคอย 4/8/12/16/20 กับ Kamish 21-25 ของโหมดเหวลึก · อีลีทไม่นับ)
+
+         1) Stagger & Break — ตอบถูกด้วย Speed Reflex (<= 1.0 วิ) หรือคริติคอล
+            ติดกัน 3 ข้อ → บอสชะงัก 3.0 วิ: เกจทั้งสามหลอดแช่แข็ง · รีเจนถูกระงับ
+            · **ปลดล็อก Damage Gate ของ v6.7 ให้ดาเมจเข้าเลือดจริงเต็ม 100%**
+         2) Question Traps — บอสสุ่มปล่อยเอฟเฟกต์รบกวนลงบนการ์ดโจทย์
+            (Mirror Cipher พลิกอักษร · Vanishing Choices ตัวเลือกจางหาย)
+         3) Enrage Berserk (< 30%) + Doomsday DPS Check (< 20%)
+
+       **ข้อจำกัดที่ตัดสินรูปร่างของทั้งแพตช์ ยังเป็นข้อเดิมของ v6.0:
+       ห้ามให้ความสูงการ์ดโจทย์ขยับแม้แต่พิกเซลเดียว (340.8px · 354.8px ที่จอ 320
+       · 387.8px ในห้องบอส ซึ่งเป็นของแถบเกราะผนึก v4.6 มาตั้งแต่ก่อนแพตช์นี้)**
+       ของที่เพิ่มเข้ามาจึงมีแค่สามอย่าง และไม่มีอันไหนอยู่ในสายเลย์เอาต์เลย
+         · คลาสบนของเดิม (ba-stagger · ba-cipher · ba-vanish) แตะแค่ transform
+           opacity และ box-shadow:inset — **ไม่มีกฎไหนเปลี่ยนขนาดกล่องสักกฎเดียว**
+         · แถบนับถอยหลัง #baDoom เป็น position:fixed + pointer-events:none
+         · ป้ายลอยใช้ .ba-cbtip ของ v6.9 ซึ่งอยู่ใน #baFx ที่ absolute อยู่แล้ว
+
+       ทำไมแทบไม่ต้องเขียนกลไกใหม่เลย — เก้าแพตช์ก่อนหน้าทำทุกอย่างผ่าน
+       "ฟังก์ชันตัวเดียวต่อหนึ่งหน้าที่" ไว้แล้ว แพตช์นี้จึงห่อของเดิมล้วน
+         · แช่แข็งเกจทั้งสาม   → baFighting() ตัวเดียว (ท่าเดียวกับ baStunned ของ v6.4)
+         · ปลดล็อกเพดานดาเมจ  → baRsGate() ของ v6.7
+         · ดาเมจที่ฮีโร่รับ     → baHurtHero() ของ v6.3 (สั่งคิวเทิร์นเองครบ · กับดักข้อ 19)
+         · หลอดโจมตีปกติ      → baBatFull() ของ v6.5
+         · แบนเนอร์/เสียง/สั่นจอ → baBannerText() · baSfx() · baQuake() ของ v6.3/v6.6  */
+
+    /* ── 1) ค่าคงที่ — ข้อความบนแบนเนอร์/แถบนับถอยหลังประกอบจากค่าพวกนี้เอง
+       จึงไม่มีทางที่ตัวเลขบนจอกับตัวเลขที่ทำงานจริงจะเพี้ยนกัน
+       (กติกาเดียวกับราคาร้านค้าของ v4.7.9.1 · BA_SKILLS ของ v6.3) ────────── */
+    const BA_ST_HITS   = 3;      /* ตอบถูกแบบเข้าเงื่อนไขติดกันกี่ข้อถึงทำให้บอสชะงัก */
+    const BA_ST_MS     = 3000;   /* บอสชะงักนานกี่มิลลิวินาที */
+
+    const BA_TRAP_P    = 22;     /* โอกาสปล่อยกับดักต่อหนึ่งข้อ (%) — เฉพาะไฟต์บอส */
+    const BA_TRAP_FADE = 1500;   /* Vanishing Choices — ตัวเลือกจางหายภายในกี่ ms */
+
+    const BA_EN_AT     = 0.30;   /* Enrage Phase — เลือดบอสต่ำกว่าเท่านี้ */
+    const BA_EN_ATB    = 1.5;    /* หลอด Fast ATB วิ่งเร็วขึ้นกี่เท่าในเฟสคลั่ง */
+    const BA_EN_HIT    = 40;     /* ตอบผิดในเฟสคลั่ง → ฮีโร่เสีย HP กี่ % ของหลอด */
+    const BA_EN_DRAIN  = 15;     /* บอสดูดเลือดฟื้นตัวเองกี่ % ของหลอดตัวเอง */
+
+    const BA_DD_AT     = 0.20;   /* Doomsday DPS Check — เลือดบอสต่ำกว่าเท่านี้ */
+    const BA_DD_MS     = 10000;  /* นับถอยหลังฉุกเฉินกี่มิลลิวินาที */
+    const BA_DD_NEED   = 2;      /* ต้องตอบถูกกี่ข้อถึงจะขัดขวางท่าไม้ตายได้ */
+    const BA_DD_HIT    = 60;     /* ขัดขวางไม่ทัน → ฮีโร่เสีย HP กี่ % ของหลอด */
+    const BA_DD_GAP    = 12000;  /* ร่ายจบแล้วเว้นกี่มิลลิวินาทีถึงจะร่ายซ้ำได้ */
+    const BA_DD_TICK   = 100;    /* คาบวาดแถบนับถอยหลัง (ติดอาวุธเฉพาะตอนร่ายเท่านั้น) */
+
+    /* ── สถานะทั้งหมดเป็นของ "รอบการเล่น" ไม่ต้องเซฟสักตัว
+       (กฎเดียวกับ ba_crit ของ v6.3 · BA_BAR ของ v6.4 · BA_RS ของ v6.7
+       · BA_CUR ของ v6.8 · BA_CB_* ของ v6.9) ─────────────────────────── */
+    let BA_ST_N     = 0;      /* ตอบถูกแบบเข้าเงื่อนไขติดกันมากี่ข้อแล้ว */
+    let BA_ST_UNTIL = 0;      /* บอสชะงักจนถึงเวลานี้ */
+    let BA_ST_TOT   = 0;      /* ทำให้ชะงักไปกี่ครั้งในไฟต์นี้ (ให้ชุดเทสต์อ่าน) */
+    let BA_ST_T     = null;   /* นาฬิกาถอดคลาส ba-stagger */
+
+    let BA_TRAP_NOW = '';     /* กับดักที่ติดอยู่กับ "ข้อที่กำลังตอบ" ('' = ไม่มี) */
+    let BA_TRAP_N   = 0;      /* ปล่อยกับดักไปกี่ครั้งในไฟต์นี้ */
+
+    let BA_EN_ANN   = false;  /* ประกาศเฟสคลั่งของไฟต์นี้ไปแล้วหรือยัง (edge-trigger) */
+
+    let BA_DD_LEFT  = 0;      /* เวลาที่เหลือของการร่าย (ms) · 0 = ไม่ได้ร่ายอยู่ */
+    let BA_DD_LAST  = 0;      /* เวลาที่ tick รอบก่อนทำงาน — ใช้คิดส่วนต่างจริง */
+    let BA_DD_HITS  = 0;      /* ตอบถูกไปกี่ข้อระหว่างร่าย */
+    let BA_DD_T     = null;   /* นาฬิกาของแถบนับถอยหลัง */
+    let BA_DD_NEXT  = 0;      /* ร่ายซ้ำได้เมื่อไหร่ */
+    let BA_DD_N     = 0;      /* ร่ายไปกี่ครั้งในไฟต์นี้ */
+    let BA_DD_FRESH = false;  /* เพิ่งเริ่มร่ายในทิกเดียวกับที่กำลังตัดสินข้ออยู่ */
+
+    let BA_HT_M     = null;   /* มอนสเตอร์ตัวที่สถานะชุดนี้ผูกอยู่ */
+
+    // ══ 2) ตัวอ่านสถานะ — คำนวณสดทุกครั้ง ไม่เก็บธงซ้อน ════════════════
+    /* (กติกาเดียวกับ baSceneOf ของ v6.1 · auBgmWant ของ v5.1) */
+    function baHtBoss() {
+      const g = baG();
+      if (!g || g.practiceMode) return false;
+      if (typeof baRsBossFight !== 'function') return false;
+      return !!baRsBossFight(g);
+    }
+
+    /* สัดส่วนเลือดบอส ณ ตอนนี้ — อ่านสดจากหลอดที่ผู้เล่นเห็นบนจอเป๊ะ
+       (ไม่ใช่ภาพนิ่ง BA_RS.mhp ของ v6.7 เพราะเกราะระลอกสองดัน monsterMaxHp
+       ขึ้นไปแล้ว เส้นแบ่งเฟสต้องตรงกับหลอดจริง ไม่ใช่ตรงกับหลอดตอนต้นไฟต์) */
+    function baHtFrac() {
+      const g = baG();
+      if (!g || !(g.monsterMaxHp > 0)) return 1;
+      return Math.max(0, g.monsterHp) / g.monsterMaxHp;
+    }
+
+    function baStOn() { return Date.now() < BA_ST_UNTIL; }
+    function baEnOn() { return baHtBoss() && baHtFrac() < BA_EN_AT; }
+    function baDdOn() { return BA_DD_LEFT > 0; }
+
+    // ══ 3) Stagger & Break ═════════════════════════════════════════════
+    /* **แช่แข็งเกจทั้งสามหลอดที่ baFighting() ตัวเดียว** ซึ่งเป็นตัวตัดสินร่วมของ
+       เกจ Fast ATB (v6.5) · เกจท่าไม้ตาย (v6.3) · เกจคำสาป (v6.8) · รีเจนเลือด
+       ของ v6.7 · รีเจนเกราะของ v6.4 · และการปล่อยสกิล — ทั้งหมดจึงหยุดพร้อมกัน
+       ท่านี้ลอกมาจาก baStunned() ของ v6.4 ตรง ๆ (ดูหัวข้อ Armor Break)
+       **ห้ามไปไล่ปิดทีละ tick** เพราะแต่ละตัวจดเวลาไว้ก่อนเช็กสถานะ ถ้าปิดผิดชั้น
+       เวลาที่ค้างจะสะสมแล้วเกจกระโดดเต็มทีเดียวตอนหมดสถานะชะงัก */
+    function baStPaint(on) {
+      const a = baArena();
+      if (a) a.classList.toggle('ba-stagger', !!on);
+    }
+
+    function baStClear() {
+      BA_ST_UNTIL = 0;
+      BA_ST_N = 0;
+      if (BA_ST_T) { clearTimeout(BA_ST_T); BA_ST_T = null; }
+      baStPaint(false);
+    }
+
+    function baStFire() {
+      BA_ST_UNTIL = Date.now() + BA_ST_MS;
+      BA_ST_N = 0;
+      BA_ST_TOT++;
+
+      /* ระงับรีเจนของ v6.7 ให้ชัดเจนด้วย — baFighting() ที่ถูกปิดไว้ก็ครอบอยู่แล้ว
+         แต่การปั๊มธงตรง ๆ ทำให้ทางเข้าเทสต์อ่านได้ว่า "ถูกระงับจริง" ไม่ใช่แค่
+         "บังเอิญไม่มีจังหวะไหนวิ่งผ่าน" */
+      try { BA_RS_SUPP = Math.max(BA_RS_SUPP || 0, BA_ST_UNTIL); } catch (e) {}
+
+      if (BA_ST_T) { clearTimeout(BA_ST_T); BA_ST_T = null; }
+      baStPaint(true);
+      BA_ST_T = setTimeout(function () {
+        BA_ST_T = null;
+        baStPaint(false);
+      }, BA_ST_MS + 40);
+
+      try { baSfx('BA_SH_BARRIER'); } catch (e) {}
+      baBannerText('💥 STAGGER BREAK · ' + (BA_ST_MS / 1000).toFixed(1) + ' วิ',
+                   'เกจทั้งสามหลอดแช่แข็ง · รีเจนหยุด · ดาเมจเข้าเลือดจริงเต็ม 100%');
+      if (baCanPlay()) {
+        baQuake();
+        baFlash('radial-gradient(circle at 72% 58%,rgba(255,200,69,.55),transparent 62%)');
+        const t = baSpot('baFoe');
+        if (t) baCbTip('💥 STAGGER', t);
+      }
+    }
+
+    /* นับเฉพาะ "ตอบถูกที่เข้าเงื่อนไข" ติดกัน — ตอบถูกแบบธรรมดาหรือตอบผิด
+       ล้างตัวนับทิ้งทั้งคู่ · เส้นความไวใช้ BA_PR_MS (1.0 วิ) ของ v6.9 ตัวเดียวกัน
+       **คนละเส้นกับ BA_FAST_MS (3 วิ) ของ v6.3** ซึ่งเป็นเส้น "ตอบไว = คริตแน่นอน" */
+    function baStCount(correct, spent, crit) {
+      if (!baHtBoss()) { BA_ST_N = 0; return; }
+      if (correct && (spent <= BA_PR_MS || crit)) {
+        BA_ST_N++;
+        if (BA_ST_N >= BA_ST_HITS && !baStOn()) baStFire();
+      } else {
+        BA_ST_N = 0;
+      }
+    }
+
+    // ══ 4) Question Traps ══════════════════════════════════════════════
+    /* **สุ่มด้วย baRand() ของ v6.1 ห้ามแตะ Math.random เด็ดขาด** (กับดักข้อ 32)
+       ชุดเทสต์ของ v4.7 ยึด Math.random ไว้เป็น "ลำดับค่า" ที่นับจำนวนครั้งเรียก
+       ไว้เป๊ะ ๆ การกินคิวของมันแม้แค่ตัวเดียวทำให้เทสต์ตกโดยที่ตรรกะเกมไม่ได้ผิด */
+    function baTrapClear() {
+      const gs = baScreen();
+      if (gs) gs.classList.remove('ba-cipher');
+      const ch = document.getElementById('gChoices');
+      if (ch) ch.classList.remove('ba-vanish');
+      BA_TRAP_NOW = '';
+    }
+
+    function baTrapRoll() {
+      baTrapClear();
+      if (!baHtBoss() || !baCanPlay()) return '';
+      if (baRand(100) >= BA_TRAP_P) return '';
+
+      /* Mirror Cipher พลิกได้ก็ต่อเมื่อมีอักษรให้พลิก — ระหว่างที่ v6.3 ซ่อนพินอิน
+         (Grand Absolute Silence) หรือ v6.6 ปล่อยควันดำอยู่ ยังพลิกได้ตามปกติ
+         เพราะทั้งสองอย่างไม่ได้ถอดโหนดทิ้ง แค่ทำให้มองไม่เห็น */
+      const kind = baRand(2) === 0 ? 'mirror' : 'vanish';
+
+      if (kind === 'mirror') {
+        const gs = baScreen();
+        if (!gs) return '';
+        gs.classList.add('ba-cipher');
+        BA_TRAP_NOW = 'mirror';
+        baBannerText('🪞 รหัสกระจกเงา · Mirror Cipher',
+                     'อักษรจีนกับพินอินบนการ์ดโจทย์ถูกพลิกกลับด้าน 1 ข้อ');
+      } else {
+        const ch = document.getElementById('gChoices');
+        if (!ch) return '';
+        ch.classList.add('ba-vanish');
+        BA_TRAP_NOW = 'vanish';
+        baBannerText('👻 ตัวเลือกเลือนหาย · Vanishing Choices',
+                     'ตัวเลือก ก-ง จางหายภายใน ' + (BA_TRAP_FADE / 1000).toFixed(1) +
+                     ' วิ — อ่านและตัดสินใจทันที');
+      }
+
+      BA_TRAP_N++;
+      try { baSfx('BA_SH_CURSE'); } catch (e) {}
+      return BA_TRAP_NOW;
+    }
+
+    // ══ 5) Enrage Berserk ══════════════════════════════════════════════
+    function baEnAnnounce() {
+      if (BA_EN_ANN || !baEnOn()) return;
+      BA_EN_ANN = true;
+      try { baSfx('BA_SH_QUAKE'); } catch (e) {}
+      baBannerText('🔥 ENRAGE BERSERK · เลือดต่ำกว่า ' + Math.round(BA_EN_AT * 100) + '%',
+                   'หลอดโจมตีปกติเร็วขึ้น x' + BA_EN_ATB + ' · ตอบผิดโดนสวนกลับ -' +
+                   BA_EN_HIT + '% HP และบอสดูดเลือดคืน +' + BA_EN_DRAIN + '%');
+      if (baCanPlay()) baFlash('radial-gradient(circle at 72% 60%,rgba(255,79,79,.5),transparent 62%)');
+    }
+
+    /* บอสดูดเลือดฟื้นตัวเอง — **บวกเข้า monsterHp ตรง ๆ ได้** เพราะเป็นฝั่งอสูร
+       ไม่ใช่ฝั่งฮีโร่ (ฝั่งฮีโร่ต้องผ่าน baHurtHero/cdHeal เสมอ · กับดักข้อ 19)
+       และต้องหนีบไม่ให้ล้นหลอดของตัวเอง */
+    function baEnDrain() {
+      const g = baG();
+      if (!g) return 0;
+      const room = Math.max(0, (g.monsterMaxHp || 0) - g.monsterHp);
+      if (!room) return 0;
+      const add = Math.min(room, Math.max(1, Math.round((g.monsterMaxHp || 1) * BA_EN_DRAIN / 100)));
+      g.monsterHp += add;
+      try { renderMonsterHp(); } catch (e) {}
+      try { baSyncFoe(); baBarPaint(); } catch (e) {}
+      const t = baSpot('baFoe');
+      if (t) baLater(function () { baFloat('🩸 +' + add, 'heal', t); }, BA_IMPACT);
+      return add;
+    }
+
+    // ══ 6) Doomsday DPS Check ══════════════════════════════════════════
+    /* แถบนับถอยหลังเป็นลูกของ <body> **ไม่ใช่ของกรอบสนาม** เพราะสเปกสั่งให้
+       "โชว์กลางจอ" · position:fixed + pointer-events:none จึงไม่กินเลย์เอาต์
+       และไม่ขวางการกดปุ่มเลย (elementFromPoint มองข้ามของที่ pointer-events:none
+       ชุดตรวจของชั้นอื่นจึงไม่กระทบ) · z-index 146 = เหนือจอมืดของ v6.3 (145)
+       แต่ใต้ม่านหยุดเกมของ v4.8.1 (190) และหน้าต่างระบบ (200) เสมอ */
+    function baDdEl() {
+      let el = document.getElementById('baDoom');
+      if (el) return el;
+      if (!document.body) return null;
+      el = document.createElement('div');
+      el.id = 'baDoom';
+      el.innerHTML =
+        '<div class="ba-doom-t"></div>' +
+        '<div class="ba-doom-bar"><span style="width:100%"></span></div>' +
+        '<div class="ba-doom-s"></div>';
+      document.body.appendChild(el);
+      return el;
+    }
+
+    function baDdPaint() {
+      const el = baDdEl();
+      if (!el) return;
+      if (!baDdOn()) { el.classList.remove('on'); return; }
+      const pct = Math.max(0, Math.min(100, BA_DD_LEFT / BA_DD_MS * 100));
+      const fill = el.querySelector('.ba-doom-bar > span');
+      if (fill) fill.style.width = pct + '%';
+      el.classList.toggle('hot', pct <= 40);
+      const t = el.querySelector('.ba-doom-t');
+      if (t) t.textContent = '☄️ DOOMSDAY · มหาเวทสังหาร ' + (BA_DD_LEFT / 1000).toFixed(1) + ' วิ';
+      const s = el.querySelector('.ba-doom-s');
+      if (s) {
+        s.textContent = 'ตอบถูกอีก ' + Math.max(0, BA_DD_NEED - BA_DD_HITS) + ' ข้อเพื่อขัดขวาง' +
+                        ' (' + BA_DD_HITS + '/' + BA_DD_NEED + ') · พลาด = -' + BA_DD_HIT + '% HP';
+      }
+      el.classList.add('on');
+    }
+
+    function baDdStop() {
+      if (BA_DD_T) { clearInterval(BA_DD_T); BA_DD_T = null; }
+      BA_DD_LEFT = 0;
+      BA_DD_HITS = 0;
+      BA_DD_FRESH = false;
+      const el = document.getElementById('baDoom');
+      if (el) el.classList.remove('on', 'hot');
+    }
+
+    function baDdClear() {
+      baDdStop();
+      BA_DD_NEXT = 0;
+    }
+
+    /* หนึ่งจังหวะของการนับถอยหลัง — **จดเวลาไว้ก่อนเช็กสถานะเสมอ** และ
+       **ข้ามจังหวะที่เกมหยุดอยู่ ไม่ใช่ทบ** (กติกาเดียวกับพิษของ v6.3 · รีเจนเกราะ
+       ของ v6.4 · Life Pulse ของ v6.7) ไม่งั้นนักเรียนที่สลับแอปไปสิบวินาที
+       จะกลับมาเจอมหาเวทลงเต็มหน้าโดยไม่ได้ทำอะไรผิด · baFighting() เป็นตัวตัดสิน
+       จุดเดียวอยู่แล้ว จึงหยุดตอนบอสชะงักด้วย ซึ่งคือรางวัลของการทำ Stagger */
+    function baDdTick() {
+      const now = Date.now();
+      const dt = Math.min(1000, Math.max(0, now - BA_DD_LAST));
+      BA_DD_LAST = now;
+      if (!baDdOn()) { baDdStop(); return; }
+
+      const g = baG();
+      if (!g || !baHtBoss() || g.monsterHp <= 0) { baDdEnd('อสูรล้มก่อน', false); return; }
+      if (baFighting()) BA_DD_LEFT = Math.max(0, BA_DD_LEFT - dt);
+      baDdPaint();
+      if (BA_DD_LEFT <= 0) baDdBoom();
+    }
+
+    function baDdStart() {
+      if (baDdOn() || !baHtBoss()) return false;
+      if (Date.now() < BA_DD_NEXT) return false;
+      BA_DD_LEFT  = BA_DD_MS;
+      BA_DD_LAST  = Date.now();
+      BA_DD_HITS  = 0;
+      BA_DD_FRESH = true;
+      BA_DD_N++;
+      baDdPaint();
+      if (BA_DD_T) clearInterval(BA_DD_T);
+      BA_DD_T = setInterval(function () {
+        try { baDdTick(); } catch (e) { baErr(e, 'ddTick'); baDdStop(); }
+      }, BA_DD_TICK);
+      try { baSfx('BA_SH_ROAR'); } catch (e) {}
+      baBannerText('☄️ DOOMSDAY DPS CHECK · ' + (BA_DD_MS / 1000).toFixed(1) + ' วิ',
+                   'บอสเริ่มร่ายมหาเวท — ตอบถูก ' + BA_DD_NEED + ' ข้อเพื่อขัดขวาง' +
+                   ' มิฉะนั้นเสีย HP ' + BA_DD_HIT + '%');
+      return true;
+    }
+
+    /* จบการร่าย — ทางเดียวที่ตั้ง BA_DD_NEXT เพื่อไม่ให้ร่ายซ้ำติด ๆ กัน */
+    function baDdEnd(why, sfxOk) {
+      baDdStop();
+      BA_DD_NEXT = Date.now() + BA_DD_GAP;
+      if (why) {
+        try { if (sfxOk) baSfx('BA_SH_SLASH'); } catch (e) {}
+      }
+    }
+
+    function baDdInterrupt() {
+      if (!baDdOn()) return false;
+      baDdEnd('interrupt', true);
+      baBannerText('⚔️ INTERRUPT สำเร็จ',
+                   'ขัดขวางมหาเวทได้ทัน — ร่ายใหม่ได้อีกครั้งในอีก ' +
+                   (BA_DD_GAP / 1000).toFixed(0) + ' วิ');
+      if (baCanPlay()) {
+        baFlash('radial-gradient(circle at 50% 58%,rgba(127,215,255,.5),transparent 64%)');
+        const t = baSpot('baFoe');
+        if (t) baCbTip('⚔️ INTERRUPT', t);
+      }
+      return true;
+    }
+
+    /* ขัดขวางไม่ทัน — **ดาเมจต้องผ่าน baHurtHero() จุดเดียวเสมอ** (กับดักข้อ 19)
+       เพราะมันยิงนอกจังหวะ resolveAnswer ถ้าฮีโร่ตายตรงนี้จะไม่มีใครสั่งคิวเทิร์นให้
+       baHurtHero ของ v6.3 เรียก baFell() ซึ่งสั่ง scheduleTurn ทับให้เองครบแล้ว */
+    function baDdBoom() {
+      baDdEnd('', false);
+      const g = baG();
+      if (!g || g.practiceMode) return;
+      try { baSfx('BA_SH_LASER'); } catch (e) {}
+      baBannerText('☄️ มหาวินาศลงเต็มหน้า', 'ขัดขวางไม่ทัน — ฮีโร่เสีย HP ' + BA_DD_HIT + '%');
+      if (baCanPlay()) {
+        baQuake();
+        baFlash('radial-gradient(circle at 50% 55%,rgba(255,79,79,.62),transparent 66%)');
+      }
+      baHurtHero(baPct(BA_DD_HIT));
+    }
+
+    // ══ 7) ตัวประสานเฟส — เรียกหลังเลือดบอสขยับเท่านั้น ═════════════════
+    /* เช็กที่นี่จุดเดียวจึงครอบทุกทางที่ทำให้เลือดบอสลด (ตอบถูก · สกิล ⚔️ ·
+       ไอเทมทลายผนึกของ v4.6 · การ์ดของ v4.7 · ดาเมจเจาะเกราะของ v6.9) */
+    function baHtSync() {
+      const g = baG();
+      if (!g) return;
+      if (!baHtBoss()) { if (baDdOn()) baDdStop(); return; }
+      if (g.monsterHp <= 0) { if (baDdOn()) baDdStop(); return; }
+      baEnAnnounce();
+      if (!baDdOn() && baHtFrac() < BA_DD_AT) baDdStart();
+    }
+
+    /* เปลี่ยนไฟต์ = ล้างสถานะทั้งชุด — ผูกกับ "ตัวอ็อบเจกต์มอนสเตอร์" ไม่ใช่ id
+       เพราะ renderMonster ถูกเรียกซ้ำหลายรอบต่อมอนสเตอร์ตัวเดียว
+       (กติกาเดียวกับ baFightSync ของ v6.3 · BA_RS_M ของ v6.7) */
+    function baHtReset() {
+      baStClear();
+      baTrapClear();
+      baDdClear();
+      BA_EN_ANN = false;
+      BA_ST_TOT = 0;
+      BA_TRAP_N = 0;
+      BA_DD_N = 0;
+    }
+
+    // ══ CSS ของแพตช์นี้ — ก้อนที่เจ็ด แยกจาก #baStyle · 2 · 3 · 4 · 5 · 6 ══
+    /* **ทุกกฎแตะแค่ transform · opacity · สี · เงา** ไม่มีกฎไหนเปลี่ยนขนาดกล่อง
+       ของอะไรที่อยู่ในสายเลย์เอาต์เลยสักกฎเดียว · **ไม่มี animation:infinite
+       สักตัว** (กับดักข้อ 31 — งานที่วิ่งถี่ตลอดเวลาทำให้ชุดเทสต์ที่รอเวลาแกว่ง) */
+    function baStyle7() {
+      if (document.getElementById('baStyle7')) return;
+      const css =
+        /* ── บอสชะงัก — inset box-shadow เท่านั้น **ห้ามใช้ border** เพราะ border
+           ดันเลย์เอาต์ และ **ห้ามใช้ filter บนกรอบสนาม** เพราะมันสร้าง containing
+           block ใหม่ (บทเรียนของ ac-mask ใน v4.8.1) */
+        '#baArena.ba-stagger{box-shadow:inset 0 0 0 2px rgba(255,200,69,.85),' +
+          'inset 0 0 26px rgba(255,200,69,.3)}' +
+        '#baArena.ba-stagger .ba-foe{opacity:.86}' +
+        /* หลอดที่ถูกแช่แข็งต้องดูออกว่าแช่แข็ง ไม่ใช่ดูเหมือนหลอดพัง */
+        '#baArena.ba-stagger .ba-foe .ba-plate .ba-bat-bar span,' +
+        '#baArena.ba-stagger .ba-foe .ba-plate .ba-atb-bar span,' +
+        '#baArena.ba-stagger .ba-foe .ba-plate .ba-cur-bar span{filter:grayscale(1) brightness(1.3)}' +
+
+        /* ── Mirror Cipher — พลิกเฉพาะโหนดข้อความ ไม่ได้พลิกทั้งการ์ด
+           **ชื่อคลาสต้องเป็น ba-cipher ห้ามใช้ ba-mirror เด็ดขาด** — v6.4 ใช้ชื่อนั้น
+           ไปแล้วกับสะเก็ดกระจกของ Mirrored Mirage ซึ่งตั้ง position:absolute
+           width:16px height:26px opacity:0 ไว้ ถ้าเอาไปแปะบน #gameScreen
+           หน้าจอเล่นทั้งใบจะยุบเหลือกล่อง 16x26 ที่มองไม่เห็น (กับดักข้อ 36)
+           ความจำเพาะ (2,1,0) จึงชนะ #baArena .g-word (1,1,0) ของ v6.0 ได้
+           **อย่าลดชั้นเลือกลง** และ **อย่าเติม display:inline-block** ซึ่งจะเปลี่ยน
+           กล่องจริงแล้วเลย์เอาต์ขยับทันที · transform บนบล็อกทำงานได้อยู่แล้ว */
+        '#gameScreen.ba-cipher #gWord,#gameScreen.ba-cipher #gPinyin{' +
+          'transform:scaleX(-1);transition:transform .18s ease}' +
+
+        /* ── Vanishing Choices — จางหายภายใน BA_TRAP_FADE แล้วค้างไว้ (forwards)
+           **ไม่แตะ pointer-events** ปุ่มยังกดได้ครบ สเปกสั่งให้ "อ่านและตัดสินใจ
+           ทันที" ไม่ได้สั่งให้กดไม่ได้ */
+        '@keyframes baVanish{0%{opacity:1}62%{opacity:.34}100%{opacity:.06}}' +
+        '#gChoices.ba-vanish .g-choice{animation:baVanish ' + BA_TRAP_FADE +
+          'ms ease-in forwards}' +
+
+        /* ── แถบนับถอยหลัง Doomsday — fixed + pointer-events:none
+           กว้างไม่เกิน 84vw จึงไม่มีทางดัน document.body.scrollWidth ให้ล้น */
+        '#baDoom{position:fixed;left:50%;top:34%;transform:translate(-50%,-50%) scale(.94);' +
+          'z-index:146;pointer-events:none;display:none;width:330px;max-width:84vw;' +
+          /* **ห้ามใช้ min() หรือ clamp()** เครื่องนักเรียนที่อัปเดตไม่ทันจะทิ้ง
+             ทั้งประกาศแล้วกล่องกางเต็มจอจนดัน scrollWidth ล้น (กับดักข้อ 15) */
+
+          'box-sizing:border-box;padding:8px 10px 9px;border-radius:12px;' +
+          'background:linear-gradient(180deg,rgba(28,6,10,.94),rgba(9,4,8,.94));' +
+          'border:1px solid rgba(255,79,79,.72);' +
+          'box-shadow:0 10px 30px rgba(0,0,0,.6),0 0 22px rgba(255,79,79,.28);' +
+          'opacity:0;transition:opacity .18s ease,transform .18s ease}' +
+        '#baDoom.on{display:block;opacity:1;transform:translate(-50%,-50%) scale(1)}' +
+        '#baDoom .ba-doom-t{font-size:12.5px;font-weight:800;letter-spacing:.3px;' +
+          'color:#ffd0d0;text-align:center;text-shadow:0 1px 4px rgba(0,0,0,.9)}' +
+        '#baDoom .ba-doom-bar{margin:6px 0 5px;height:7px;border-radius:4px;overflow:hidden;' +
+          'background:rgba(0,0,0,.66);border:1px solid rgba(255,255,255,.16)}' +
+        '#baDoom .ba-doom-bar > span{display:block;height:100%;width:100%;border-radius:4px;' +
+          'transition:width .1s linear;background:linear-gradient(90deg,#7a1020,#ff4f4f 62%,#ffd166)}' +
+        '#baDoom.hot .ba-doom-bar{border-color:rgba(255,79,79,.95);' +
+          'box-shadow:0 0 10px rgba(255,79,79,.7)}' +
+        '#baDoom .ba-doom-s{font-size:10.5px;line-height:1.35;text-align:center;color:#ffe9c9;' +
+          'text-shadow:0 1px 3px rgba(0,0,0,.9)}';
+      const st = document.createElement('style');
+      st.id = 'baStyle7';
+      st.textContent = css;
+      document.head.appendChild(st);
+    }
+
+
+    // ══ v7.0 · wrapper ทั้งหมด ══════════════════════════════════════════
+
+    /* ── แช่แข็งเกจทั้งสามหลอด + ระงับรีเจน ที่จุดเดียว ─────────────────
+       ต่อท้าย wrapper ของ v6.4 (ซึ่งเติม !baStunned() ไว้แล้ว) ไม่ได้เขียนทับ */
+    if (typeof baFighting === 'function') {
+      const _baStFight = baFighting;
+      baFighting = function () {
+        return _baStFight.apply(this, arguments) && !baStOn();
+      };
+    }
+
+    /* ── ปลดล็อก Damage Gate ของ v6.7 ระหว่างชะงัก ────────────────────
+       v6.7 เรียก baRsGate() ด้วย "ชื่อระดับบนสุด" จาก wrapper ของ baStrike
+       ซึ่ง resolve binding ตอนรัน การห่อที่นี่จึงมีผลกับทางนั้นครบ
+       (mangle.toplevel ของ build เป็น false ตลอดกาล ชื่อจึงรอดผ่านการย่อไฟล์) */
+    if (typeof baRsGate === 'function') {
+      const _baStGate = baRsGate;
+      baRsGate = function (dealt, crit, sup) {
+        if (baStOn()) {
+          const fb = document.getElementById('gFeedback');
+          if (fb && fb.textContent) fb.textContent += ' | 💥 STAGGER — ดาเมจเข้าเต็ม 100%';
+          return dealt;
+        }
+        return _baStGate.apply(this, arguments);
+      };
+    }
+
+    /* ── Enrage: หลอด Fast ATB ของ v6.5 วิ่งเร็วขึ้น ────────────────────
+       ใส่ที่ "wrapper ของสูตร" ไม่ไล่แก้ตามจุดเรียก (กฎเดียวกับ maxMpOf/goldMul
+       ของ v4.4 · questionMs ของ v4.6/v4.7 · hunterAtk/critChance ของ v6.3) */
+    if (typeof baBatFull === 'function') {
+      const _baEnBat = baBatFull;
+      baBatFull = function () {
+        const v = _baEnBat.apply(this, arguments);
+        try {
+          if (BA_EN_ATB > 1 && baEnOn()) return Math.max(600, Math.round(v / BA_EN_ATB));
+        } catch (e) { baErr(e, 'enBat'); }
+        return v;
+      };
+    }
+
+    /* ── ขึ้นข้อใหม่ = จุดสุ่มกับดัก ───────────────────────────────────
+       กับดักผูกกับ "ข้อที่กำลังตอบ" ไม่ใช่กับบัญชี จึงล้างที่นี่ทุกครั้งก่อนสุ่มใหม่
+       (กฎเดียวกับ G.helperUsed ของ v4.7.4 · AB_LIVE ของ v4.6) */
+    if (typeof startQuestionTimer === 'function') {
+      const _baHtStartQ = startQuestionTimer;
+      startQuestionTimer = function () {
+        const r = _baHtStartQ.apply(this, arguments);
+        try { baTrapRoll(); } catch (e) { baErr(e, 'htTrap'); }
+        return r;
+      };
+    }
+
+    /* ── ตัวเลือกที่จางหายต้องกลับมาให้เห็นตอนข้อจบ ───────────────────
+       ไม่งั้นแถบเขียว/แดงที่ v4.0 ระบายไว้ตอนเฉลยจะจางจนอ่านไม่ออก */
+    if (typeof clearQuestionTimer === 'function') {
+      const _baHtClearQ = clearQuestionTimer;
+      clearQuestionTimer = function () {
+        try {
+          const ch = document.getElementById('gChoices');
+          if (ch && ch.classList.contains('ba-vanish')) ch.classList.remove('ba-vanish');
+        } catch (e) { baErr(e, 'htClearQ'); }
+        return _baHtClearQ.apply(this, arguments);
+      };
+    }
+
+    /* ── Parry ของ v6.9 ล้างกับดักของแพตช์นี้ด้วย ───────────────────────
+       ทั้งสองอย่างเป็น Debuff ที่ "ฮีโร่" ติดอยู่ตรงตามนิยามของ baCbCleanse
+       (สถานะที่เป็นบัฟของอสูรยังไม่ถูกแตะเหมือนเดิม) */
+    if (typeof baCbCleanse === 'function') {
+      const _baHtCleanse = baCbCleanse;
+      baCbCleanse = function () {
+        let n = _baHtCleanse.apply(this, arguments) || 0;
+        try { if (BA_TRAP_NOW) { baTrapClear(); n++; } } catch (e) { baErr(e, 'htCleanse'); }
+        return n;
+      };
+    }
+
+    /* ── เลือดบอสขยับเมื่อไหร่ ต้องตรวจเฟสทันที ─────────────────────────
+       เรียกหลัง wrapper ของ v6.7 ทำงานจบ (เพดานดาเมจ → เกราะระลอกสอง → เช็กเกราะแตก)
+       ยอดที่อ่านได้ตรงนี้จึงเป็นยอดสุดท้ายจริง ๆ ไม่ใช่ยอดดิบที่กำลังจะถูกคืนกลับ */
+    if (typeof baStrike === 'function') {
+      const _baHtStrike = baStrike;
+      baStrike = function (dmg, crit, sup) {
+        const r = _baHtStrike.apply(this, arguments);
+        try { baHtSync(); } catch (e) { baErr(e, 'htStrike'); }
+        return r;
+      };
+    }
+
+    /* ทางอื่นที่ทำให้เลือดบอสลด (สกิล ⚔️ · ไอเทมทลายผนึก · การ์ด · ดาเมจเจาะของ v6.9)
+       **ข้ามระหว่าง BA_LIVE** ด้วยเหตุผลเดียวกับ v6.7 — ตอนนั้นดาเมจยังเป็นยอดดิบ
+       ที่ยังไม่ผ่านเพดาน ถ้าเช็กเลย Doomsday จะเริ่มร่ายจากเลือดที่กำลังจะถูกคืนกลับ */
+    if (typeof renderMonsterHp === 'function') {
+      const _baHtHp = renderMonsterHp;
+      renderMonsterHp = function () {
+        const r = _baHtHp.apply(this, arguments);
+        try { if (!BA_LIVE) baHtSync(); } catch (e) { baErr(e, 'htHp'); }
+        return r;
+      };
+    }
+
+    /* ── เปลี่ยนไฟต์/ฮีโร่ร่วง = ล้างสถานะทั้งชุด ───────────────────────── */
+    if (typeof baClearFight === 'function') {
+      const _baHtClearFight = baClearFight;
+      baClearFight = function () {
+        try { baHtReset(); } catch (e) { baErr(e, 'htClearFight'); }
+        return _baHtClearFight.apply(this, arguments);
+      };
+    }
+
+    /* ── จุดรวมของทั้งแพตช์ — wrapper ชั้นนอกสุดของ resolveAnswer ────────
+       ต้องล็อกภาพนิ่งไว้ก่อนเข้าไปข้างในเสมอ (HP · เวลาที่ใช้) เพราะ v4.0 กับ
+       v6.3-v6.9 แก้ HP ทั้งสองฝั่งไปหมดแล้วกว่าจะถึงคิวของเรา
+       ธงคริตของ v6.3 (BA_CRIT/BA_SUPER) ถูกเซ็ตค้างไว้จนถึงข้อถัดไป จึงอ่านได้ตรงนี้ */
+    if (typeof resolveAnswer === 'function') {
+      const _baHtResolve = resolveAnswer;
+      resolveAnswer = function (choice, btn, timedOut) {
+        const g = baG();
+        const m = g ? g.currentMonster : null;
+        const correct  = !!(m && !timedOut && choice === m.answer);
+        const practice = !!(g && g.practiceMode);
+        const hp0   = g ? g.hp : 0;
+        const spent = g ? Math.max(0, Date.now() - (g.questionStart || Date.now())) : 0;
+
+        const r = _baHtResolve.apply(this, arguments);
+
+        try { if (g && !practice) baHtAfter(correct, spent, hp0); }
+        catch (e) { baErr(e, 'htAfter'); }
+        return r;
+      };
+    }
+
+    /* ── ผลทั้งหมดของแพตช์นี้ที่ผูกกับ "การตอบ" เกิดที่นี่ที่เดียว ───────── */
+    function baHtAfter(correct, spent, hp0) {
+      const g = baG();
+      if (!g) return;
+
+      const fb  = document.getElementById('gFeedback');
+      const add = function (t) { if (fb && fb.textContent) fb.textContent += t; };
+      const crit = (typeof BA_CRIT !== 'undefined' && BA_CRIT) ||
+                   (typeof BA_SUPER !== 'undefined' && BA_SUPER);
+
+      /* 1) Stagger & Break — นับก่อนอย่างอื่น เพราะการชะงักมีผลกับข้อถัดไป */
+      baStCount(correct, spent, !!crit);
+
+      /* 2) Doomsday — นับข้อที่ตอบถูกระหว่างร่าย
+         **ข้ามข้อที่เพิ่งเป็นคนสั่งให้เริ่มร่ายเอง** (baHtSync ถูกเรียกจาก wrapper
+         ของ baStrike ซึ่งอยู่ในทิกเดียวกันนี้) ไม่งั้นหมัดที่พาเลือดบอสลงต่ำกว่า
+         20% จะถูกนับเป็นหนึ่งในสองข้อที่ต้องใช้ขัดขวางไปด้วยฟรี ๆ */
+      if (BA_DD_FRESH) {
+        BA_DD_FRESH = false;
+      } else if (correct && baDdOn()) {
+        BA_DD_HITS++;
+        baDdPaint();
+        if (BA_DD_HITS >= BA_DD_NEED) {
+          baDdInterrupt();
+          add(' | ⚔️ ขัดขวางมหาเวทสำเร็จ');
+        } else {
+          add(' | ☄️ ขัดขวางมหาเวท ' + BA_DD_HITS + '/' + BA_DD_NEED);
+        }
+      }
+
+      /* 3) Enrage — ตอบผิดในเฟสคลั่งโดนสวนกลับรุนแรง + บอสดูดเลือด
+         **ทำเป็นลำดับสุดท้ายเสมอ** เพราะ baHurtHero อาจพาฮีโร่ร่วง ซึ่งจะสั่ง
+         คิวเทิร์นทับของ v4.0 ทันที (กับดักข้อ 19) ของที่ต้องทำก่อนหน้าจึงต้องจบไปแล้ว
+         **ฮีโร่ที่ HP เหลือ 0 ไปแล้วจากดาเมจปกติจะไม่ถูกซ้ำ** — v4.0 สั่งให้ร่วง
+         ไปเรียบร้อยแล้ว การหักเพิ่มตรงนั้นคือการลงโทษสองต่อที่สเปกไม่ได้สั่ง */
+      if (!correct && hp0 > 0 && g.hp > 0 && baEnOn()) {
+        const heal = baEnDrain();
+        const dmg  = baPct(BA_EN_HIT);
+        add(' | 🔥 ENRAGE เคาน์เตอร์ -' + dmg + ' HP' + (heal ? ' · บอสดูดเลือด +' + heal : ''));
+        try { baSfx('BA_SH_QUAKE'); } catch (e) {}
+        if (baCanPlay()) baFlash('radial-gradient(circle at 28% 60%,rgba(255,79,79,.55),transparent 62%)');
+        baHurtHero(dmg);
+      }
+    }
+
+    /* ── มอนสเตอร์ตัวใหม่ = ไฟต์ใหม่ ─────────────────────────────────────
+       เกาะ renderMonster เพราะเป็นทางผ่านเดียวของทุกการขึ้นมอนสเตอร์
+       (baFightSync ของ v6.3 ก็เกาะทางเดียวกัน) และเทียบด้วยตัวอ็อบเจกต์
+       ไม่ใช่ id — Dynamic Question Flow ของ v6.8 เปลี่ยน id ของคำได้ทุกข้อ
+       โดยที่ยังเป็นมอนสเตอร์ตัวเดิม ถ้าเทียบด้วย id เกจจะถูกล้างทุกข้อ */
+    if (typeof renderMonster === 'function') {
+      const _baHtRender = renderMonster;
+      renderMonster = function () {
+        const r = _baHtRender.apply(this, arguments);
+        try {
+          const g = baG();
+          const m = g ? (g.currentMonster || null) : null;
+          if (m !== BA_HT_M) { BA_HT_M = m; baHtReset(); }
+          baStyle7();
+        } catch (e) { baErr(e, 'htRender'); }
+        return r;
+      };
+    }
+
+    if (typeof startGame === 'function') {
+      const _baHtStart = startGame;
+      startGame = function () {
+        const r = _baHtStart.apply(this, arguments);
+        try { BA_HT_M = null; baHtReset(); baStyle7(); } catch (e) { baErr(e, 'htStartGame'); }
+        return r;
+      };
+    }
+
+    if (typeof exitGame === 'function') {
+      const _baHtExit = exitGame;
+      exitGame = function () {
+        try { BA_HT_M = null; baHtReset(); } catch (e) { baErr(e, 'htExitGame'); }
+        return _baHtExit.apply(this, arguments);
+      };
+    }
+
+    /* ── ทางเข้าสาธารณะสำหรับชุดเทสต์ — ต่อท้ายของ v6.9 ไม่ได้เขียนทับ ── */
+    if (typeof baBattleAudit === 'function') {
+      const _baHtAudit = baBattleAudit;
+      baBattleAudit = function () {
+        const o = _baHtAudit.apply(this, arguments) || {};
+        const el = document.getElementById('baDoom');
+        o.hiTier = {
+          boss: baHtBoss(),
+          frac: baHtFrac(),
+          stagger: {
+            need: BA_ST_HITS, ms: BA_ST_MS,
+            n: BA_ST_N, on: baStOn(), until: BA_ST_UNTIL, total: BA_ST_TOT,
+            marked: !!(baArena() && baArena().classList.contains('ba-stagger'))
+          },
+          trap: {
+            p: BA_TRAP_P, fadeMs: BA_TRAP_FADE, now: BA_TRAP_NOW, n: BA_TRAP_N,
+            mirror: !!(baScreen() && baScreen().classList.contains('ba-cipher')),
+            vanish: !!(document.getElementById('gChoices') &&
+                       document.getElementById('gChoices').classList.contains('ba-vanish'))
+          },
+          enrage: {
+            at: BA_EN_AT, mul: BA_EN_ATB, hit: BA_EN_HIT, drain: BA_EN_DRAIN,
+            on: baEnOn(), announced: BA_EN_ANN, batMs: baBatFull()
+          },
+          doom: {
+            at: BA_DD_AT, ms: BA_DD_MS, need: BA_DD_NEED, hit: BA_DD_HIT, gapMs: BA_DD_GAP,
+            on: baDdOn(), left: BA_DD_LEFT, hits: BA_DD_HITS, n: BA_DD_N,
+            next: BA_DD_NEXT, fresh: BA_DD_FRESH,
+            shown: !!(el && el.classList.contains('on'))
+          }
+        };
+        return o;
+      };
+    }
+
+    (function baInstall70() {
+      try {
+        baStyle7();
+        baDdEl();     /* สร้างแถบไว้ล่วงหน้าครั้งเดียว — display:none จนกว่าจะร่ายจริง */
+      } catch (e) { baErr(e, 'install70'); }
+    })();
+
     (function baInstall() {
       try {
         /* .g-monster-area อยู่ใน HTML แบบสแตติกอยู่แล้ว จึงสร้างได้ตั้งแต่โหลดหน้า

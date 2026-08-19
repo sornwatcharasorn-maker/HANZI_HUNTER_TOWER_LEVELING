@@ -362,10 +362,12 @@ async function goFloor(page, f) {
   ok(run.bat > 12 && run.bat < 60, 'เกจโจมตีปกติเดินจริง (' + run.bat.toFixed(1) + '% ใน ' + run.ms + 'ms)');
   ok(run.atb > 3 && run.atb < run.bat, 'เกจท่าไม้ตายเดินช้ากว่าเกจโจมตีปกติ (' + run.atb.toFixed(1) + '%)');
 
+  /* **ต้องตอบช้ากว่า BA_PR_MS (1.0 วิ) ของ v6.9** ไม่งั้น Parry Strike จะดันเกจ
+     ถอยเพิ่มอีก 30% แล้วเคสนี้จะวัดแรงดันของ v6.5 ปนกับของ v6.9 (90→35 แทน 90→65) */
   const push = await page.evaluate(() => {
     BA_BAT = 90;
     const before = BA_BAT;
-    G.questionStart = Date.now();
+    G.questionStart = Date.now() - 2500;
     const m = G.currentMonster;
     resolveAnswer(m.answer, null, false);
     return { before, after: BA_BAT };
@@ -374,7 +376,11 @@ async function goFloor(page, f) {
      'ตอบถูกดันเกจโจมตีปกติถอย ~25% (' + push.before + '→' + push.after.toFixed(1) + ')');
 
   await clearOverlays(page);
+  /* ปิดหน้าต่าง Parry ของ v6.9 ก่อนเสมอ — ระหว่างหน้าต่างนั้นเทิร์นโจมตีของอสูร
+     ถูกยกเลิกโดยเจตนา ถ้าไม่ปิดจะวัดได้ว่า "อสูรไม่ฟาด" ทั้งที่ระบบทำงานถูก */
   const fire = await page.evaluate(async () => {
+    if (typeof BA_PR_UNTIL !== 'undefined') BA_PR_UNTIL = 0;
+    G.streak = 0;   /* Shadow Ward ของ v6.9 หักดาเมจที่รับ 15% ตั้งแต่คอมโบ 5 */
     G.hp = G.maxHp;
     const hp0 = G.hp;
     BA_BAT = 99.9;

@@ -25078,6 +25078,428 @@
       } catch (e) { baErr(e, 'install67'); }
     })();
 
+
+    /* ══════════════════════════════════════════════════════════════════
+       Patch v6.8 · TRIPLE GAUGE · DETERMINISTIC CURSE ROTATION
+                  + DYNAMIC QUESTION FLOW
+       ══════════════════════════════════════════════════════════════════
+       อยู่ในเนมสเปซ ba ของชั้น v6.0 เดิม **ไม่ได้ตั้งพรีฟิกซ์ใหม่** เพราะเป็นการ
+       ต่อยอดชั้นเดียวกัน (กติกาเดียวกับ Patch v6.1 · v6.2 · v6.3 · v6.4 · v6.5
+       · v6.6 · v6.7) **ไม่แตะโค้ดของ v4.0-v5.9 เลยแม้แต่บรรทัดเดียว**
+
+       สองเรื่องในแพตช์เดียว
+         1) หลอดที่สาม — Abyssal Curse Gauge เต็มทุก 7.0 วิ แล้วปล่อยคำสาป
+            วนลูปตามลำดับ 1-2-3 แน่นอน 100% (ไม่มีการสุ่มดวงสักจุดเดียว)
+            **เฉพาะไฟต์บอสเท่านั้น** — บอสประจำโซน 4/8/12/16/20 กับ Kamish 21-25
+         2) Dynamic Question Flow — ตอบจบข้อ (ถูกหรือผิดก็ตาม) แล้วเปลี่ยนโจทย์
+            เป็นคำใหม่ทันที พร้อมสลับตำแหน่งชอยส์ · รีเซ็ตหลอดเวลาให้เต็ม ·
+            ล้างสีปุ่ม  **ทุกระดับ** (Normal / Elite / Mini Boss / Boss)
+
+       **ข้อจำกัดที่ตัดสินรูปร่างของทั้งแพตช์ ยังเป็นข้อเดิมของ v6.0:
+       ห้ามให้ความสูงการ์ดโจทย์ขยับแม้แต่พิกเซลเดียว (340.8px · 354.8px ที่จอ 320)**
+       หลอดที่สามจึงไม่ได้ "ต่อลงล่าง" แต่ **แบ่งรางเดิมจากสองช่องเป็นสามช่อง**
+       ช่องว่างใต้ .ba-row มีแค่ 4px และหลอดคู่ของ v6.5 กินเต็มพอดีอยู่แล้ว
+       การเพิ่มแถวที่สองจะถูก overflow:hidden ของกรอบสนามตัดหัวขาด (ดูหัวข้อ BA_H)
+
+       ทำไมแทบไม่ต้องเขียนกลไกใหม่เลย — สี่ชั้นก่อนหน้าทำทุกอย่างผ่าน
+       "ฟังก์ชันตัวเดียวต่อหนึ่งหน้าที่" ไว้แล้ว แพตช์นี้จึงยืมของเดิมทั้งหมด
+         · จอดับ            → baBlackout() ของ v6.3
+         · ล็อกปุ่มเป็นสีเทา → baStone() ของ v6.3 (baClearQ ล้างคลาสให้เองทุกข้อ)
+         · บีบเวลาข้อ       → resumeQuestionTimer() ของ v4.0 ท่าเดียวกับ baWarpClock
+         · แบนเนอร์/เสียง   → baBannerText() · baSfx() ของ v6.3/v6.6            */
+
+    /* ── 1) ค่าคงที่ของหลอดคำสาป — ข้อความบนแบนเนอร์ประกอบจากค่าพวกนี้เอง
+       จึงไม่มีทางที่ตัวเลขบนจอกับตัวเลขที่ทำงานจริงจะเพี้ยนกัน
+       (กติกาเดียวกับข้อความราคาร้านค้าของ v4.7.9.1 · BA_SKILLS ของ v6.3) ── */
+    const BA_CUR_MS   = 7000;   /* เกจคำสาปเต็มทุก 7.0 วินาที */
+    const BA_CUR_PUSH = 10;     /* ตอบถูกดันถอยได้เพียง 10% — บอสจึงได้ปล่อยแน่นอน */
+    const BA_CUR_BLK  = 2000;   /* รอบที่ 1 · Abyssal Blackout — จอดับกี่มิลลิวินาที */
+    const BA_CUR_SEAL = 4000;   /* รอบที่ 2 · Seal of Silence — ล็อกปุ่มกี่มิลลิวินาที */
+    const BA_CUR_HAST = 2500;   /* รอบที่ 3 · Panic Haste — เวลาตอบข้อถัดไปเหลือเท่านี้ */
+
+    /* สถานะของ "การต่อสู้ตัวที่ยืนอยู่" ทั้งหมด ไม่ต้องเซฟสักตัว
+       (กฎเดียวกับ BA_FIGHT_M ของ v6.3 · BA_BAR ของ v6.4 · BA_RS ของ v6.7) */
+    let BA_CUR      = 0;      /* เกจคำสาป 0-100 */
+    let BA_CUR_K    = 0;      /* คิวคำสาป — ชี้ว่ารอบถัดไปคือใบไหน (0-1-2 วนลูป) */
+    let BA_CUR_LAST = 0;      /* เวลาที่ tick รอบก่อนทำงาน — ใช้คิดส่วนต่างจริง */
+    let BA_CUR_HZ   = false;  /* Panic Haste ค้างรอ "ข้อถัดไป" อยู่ไหม */
+    let BA_CUR_N    = 0;      /* ปล่อยคำสาปไปแล้วกี่ครั้งในไฟต์นี้ (ให้ชุดเทสต์อ่าน) */
+    let BA_DQ_M     = null;   /* มอนสเตอร์ที่เพิ่งตัดสินข้อไป = สั่งเปลี่ยนโจทย์รอบหน้า */
+    let BA_DQ_N     = 0;      /* เปลี่ยนโจทย์ไปแล้วกี่ครั้งในรอบการเล่นนี้ */
+
+    /* ── 2) คิวคำสาปวนลูป 1-2-3 แน่นอน ไม่มีสุ่มดวง ─────────────────────
+       **ห้ามเปลี่ยนไปสุ่มเด็ดขาด** — นอกจากจะผิดสเปกแล้ว การแตะ Math.random
+       ที่นี่ยังไปกินคิวของชุดเทสต์ที่ยึดลำดับค่าไว้ด้วย (กับดักข้อ 32)
+       ผู้เล่นจึงคาดเดาได้ว่ารอบหน้าเจออะไร = วางแผนรับมือได้ ไม่ใช่ลุ้นดวงล้วน */
+    const BA_CURSES = [
+      { id: 'blackout', ico: '🌑', name: 'ม่านดับเหวลึก', en: 'Abyssal Blackout',
+        s: 'BA_SH_CURSE',
+        desc: 'จอดับสนิท ' + (BA_CUR_BLK / 1000).toFixed(1) + ' วิ — มองไม่เห็นทั้งการ์ดโจทย์และตัวเลือก',
+        run: function () { baBlackout(BA_CUR_BLK); } },
+
+      { id: 'seal', ico: '🔒', name: 'ผนึกความเงียบงัน', en: 'Seal of Silence',
+        s: 'BA_SH_BARRIER',
+        desc: 'ล็อกปุ่มคำตอบทั้งหมด ' + (BA_CUR_SEAL / 1000).toFixed(1) + ' วิ — หลอดโจมตียังเดินตามปกติ',
+        run: function () { baStone(BA_CUR_SEAL); } },
+
+      { id: 'haste', ico: '⏳', name: 'เร่งวิกลจริต', en: 'Panic Haste',
+        s: 'BA_SH_QUAKE',
+        desc: 'บีบเวลาตอบของโจทย์ข้อถัดไปเหลือ ' + (BA_CUR_HAST / 1000).toFixed(1) + ' วิ',
+        run: function () { BA_CUR_HZ = true; } }
+    ];
+
+    /* ไฟต์นี้ต้องมีหลอดคำสาปไหม — **ใช้ตัวตัดสินเดียวกับ v6.7 เป๊ะ**
+       (baRsBossFight) คือชั้นบอสจริงของแผนผังหอคอย 4/8/12/16/20 กับ Kamish
+       ของโหมดเหวลึก · อีลีทไม่นับ ตามที่สเปกพูดถึง "บอส" อย่างเดียว
+       ตกกลับไปอ่าน baIsBossFloor เองถ้าชั้น v6.7 ถูกถอดออก */
+    function baCurOn() {
+      const g = baG();
+      if (!g || g.practiceMode || !g.currentMonster) return false;
+      if (typeof baRsBossFight === 'function') return !!baRsBossFight(g);
+      return baIsBossFloor(Math.round(g.floor || 1));
+    }
+
+    /* แทรกหลอดใบที่สามลงในแผ่นป้ายเดิม — **ต้องกันแทรกซ้ำเอง** (กับดักข้อ 2)
+       ท่าเดียวกับ baBatEnsure() ของ v6.5 จึงไม่ต้องไปแก้ baBuild() ของ v6.0 เลย */
+    function baCurEnsure() {
+      const plate = document.querySelector('#baArena .ba-foe .ba-plate');
+      if (!plate || plate.querySelector('.ba-cur-bar')) return;
+      const el = document.createElement('div');
+      el.className = 'ba-cur-bar';
+      el.id = 'baCurBar';
+      el.innerHTML = '<span style="width:0%"></span>';
+      plate.appendChild(el);
+    }
+
+    /* คลาส ba-curse บนกรอบสนามเป็นตัวสลับ "ราง 2 ช่อง ↔ ราง 3 ช่อง"
+       ไฟต์ที่ไม่ใช่บอสจึงกลับไปเป็นหลอดคู่ของ v6.5 เหมือนเดิมทุกประการ */
+    function baCurPaint() {
+      const a = baArena();
+      const on = baCurOn();
+      if (a) a.classList.toggle('ba-curse', on);
+      baCurEnsure();
+      const box = document.getElementById('baCurBar');
+      if (!box) return;
+      const fill = box.firstElementChild;
+      const v = Math.max(0, Math.min(100, BA_CUR));
+      if (fill) fill.style.width = v + '%';
+      box.classList.toggle('hot', v >= 80);
+    }
+
+    function baCurPush(p) {
+      BA_CUR = Math.max(0, BA_CUR - Math.max(0, p));
+      baCurPaint();
+    }
+
+    function baCurReset() {
+      BA_CUR = 0; BA_CUR_K = 0; BA_CUR_N = 0; BA_CUR_HZ = false;
+      BA_CUR_LAST = Date.now();
+      /* ธงเปลี่ยนโจทย์ผูกกับ "ไฟต์" เหมือนกัน — มอนสเตอร์ตัวใหม่ถูกสร้างโดย
+         nextMonster ซึ่งได้โจทย์สดมาอยู่แล้ว ไม่ต้องเปลี่ยนซ้ำให้เสียคำฟรี */
+      BA_DQ_M = null;
+      baCurPaint();
+    }
+
+    /* หนึ่งจังหวะของเกจ — **จดเวลาไว้ก่อนเช็กสถานะเสมอ** ไม่งั้นตอนกลับมาจาก
+       สถานะหยุด/สลับแท็บ ส่วนต่างจะกลายเป็นหลายวินาทีแล้วเกจกระโดดเต็มทีเดียว
+       (บทเรียนเดียวกับ baAtbTick ของ v6.3 · baBatTick ของ v6.5)
+       **เกาะนาฬิกาของ v6.3 ไม่ได้ตั้งนาฬิกาใบที่สาม** (กับดักข้อ 31 — งานที่
+       วิ่งถี่ตลอดเวลาทำให้ชุดเทสต์ที่รอเวลาแกว่ง) อายุจึงเท่ากับเกจ ATB เป๊ะ
+       คือติดตอน startQuestionTimer และถอดตอน clearQuestionTimer */
+    function baCurTick() {
+      const now = Date.now();
+      const dt = Math.min(1000, Math.max(0, now - BA_CUR_LAST));
+      BA_CUR_LAST = now;
+      if (!baCurOn()) { if (BA_CUR) BA_CUR = 0; baCurPaint(); return; }
+      if (!baFighting()) { baCurPaint(); return; }
+      BA_CUR += dt / (BA_CUR_MS || 7000) * 100;
+      if (BA_CUR >= 100) { baCurFire(); return; }
+      baCurPaint();
+    }
+
+    /* เกจเต็ม = ปล่อยคำสาปใบที่ถึงคิว แล้วเลื่อนคิวไปใบถัดไปทันที
+       **ไม่ทำร้าย HP สักหน่วยเดียว** — สามใบนี้เป็นสถานะกดดันล้วน ๆ ดาเมจยังเป็น
+       หน้าที่ของหลอดโจมตีปกติ (v6.5) กับหลอดท่าไม้ตาย (v6.3) ตามเดิม
+       ถ้าวันหนึ่งจะให้คำสาปหัก HP ด้วย **ต้องผ่าน baHurtHero() จุดเดียวเสมอ**
+       ห้ามลบ HP ตรง ๆ เพราะยิงนอกจังหวะ resolveAnswer (กับดักข้อ 19) */
+    function baCurFire() {
+      BA_CUR = 0;
+      baCurPaint();
+      if (!baCurOn() || !baFighting()) return;
+
+      const k = BA_CUR_K % BA_CURSES.length;
+      const c = BA_CURSES[k];
+      BA_CUR_K = (k + 1) % BA_CURSES.length;
+      BA_CUR_N++;
+
+      try { baSfx(c.s); } catch (e) {}
+      baBannerText('🌀 ' + c.ico + ' ' + c.name + ' · ' + c.en,
+                   'คำสาปวนลูปลำดับที่ ' + (k + 1) + '/' + BA_CURSES.length + ' — ' + c.desc);
+      if (baCanPlay()) {
+        baPose('baFoe', 'ba-atk-l', BA_LUNGE);
+        baFoeAct(Math.round(BA_ACT_MS * 0.7));
+      }
+      baQuake();
+      baFlash('radial-gradient(circle at 74% 58%,rgba(160,32,240,.5),transparent 62%)');
+      try { c.run(); } catch (e) { baErr(e, 'curse:' + c.en); }
+    }
+
+    /* Panic Haste — บีบเวลาของ "ข้อถัดไป" ตอนที่นาฬิกาข้อนั้นเพิ่งถูกตั้งเสร็จ
+       **resumeQuestionTimer ของ v4.0 ตั้งนาฬิกาใบใหม่โดยไม่ล้างใบเก่า** เพราะมัน
+       ถูกเขียนไว้ใช้ต่อจากจังหวะแช่แข็งซึ่งล้างให้แล้ว เรียกดื้อ ๆ จะเหลือ interval
+       ใบเก่าเดินค้างไปจนกว่าจะมีใครล้าง — ล้างเองก่อนเสมอ
+       **ไม่แตะ G.questionStart** ตัววัด "ตอบไว" จึงยังซื่อสัตย์ (ท่าเดียวกับ baWarpClock)
+       และหนีบด้วย Math.min เพื่อกันเคสที่เวลาที่เหลือน้อยกว่า 2.5 วิ อยู่แล้ว
+       ไม่ให้คำสาปกลายเป็นบัฟต่อเวลาให้ผู้เล่น */
+    function baCurHasteApply() {
+      if (typeof resumeQuestionTimer !== 'function') return 0;
+      if (typeof QUESTION_ENDS === 'undefined') return 0;
+      const left = Math.max(0, QUESTION_ENDS - Date.now());
+      if (!left) return 0;
+      const want = Math.min(left, BA_CUR_HAST);
+      try {
+        if (QUESTION_TIMER) { clearTimeout(QUESTION_TIMER); QUESTION_TIMER = null; }
+        if (QUESTION_TICK)  { clearInterval(QUESTION_TICK); QUESTION_TICK = null; }
+      } catch (e) {}
+      resumeQuestionTimer(want);
+      return want;
+    }
+
+    /* ── 3) Dynamic Question Flow ────────────────────────────────────
+       เปลี่ยน "โจทย์" โดยไม่เปลี่ยน "อ็อบเจกต์มอนสเตอร์" — สำคัญมาก
+       ทั้ง BA_FIGHT_M (v6.3) · BA_BAR (v6.4) · BA_INC_M (v6.6) · BA_RS (v6.7)
+       ใช้ "ตัวอ็อบเจกต์" เป็นตัวจับว่าเป็นไฟต์เดิมหรือไฟต์ใหม่ ถ้าสร้างก้อนใหม่ทับ
+       เกราะจะถูกตั้งใหม่ · สถานะที่สั่งว่า "ตลอดการต่อสู้" จะหลุด · เกจทั้งสามจะรีเซ็ต
+       ทุกครั้งที่ตอบหนึ่งข้อ = บอสกลายเป็นด่านเปล่าทันที
+
+       ที่ยังต้องปักหมุดคือ **หน้าตาอสูรกับสกิลประจำตัว** ซึ่งเลือกจาก m.id
+       (baFoeIdOf ของ v6.2 · baFoeSlot ของ v6.3 · baShAbyssOf ของ v6.6)
+       ถ้าไม่ปักหมุด อสูรจะเปลี่ยนหน้าและเปลี่ยนสกิลทุกครั้งที่เปลี่ยนโจทย์ */
+    function baDqSwap(m) {
+      const g = baG();
+      if (!g || !m || typeof getMonster !== 'function') return false;
+      let fresh = null;
+      try { fresh = getMonster(g.floor); } catch (e) { baErr(e, 'dqBuild'); return false; }
+      if (!fresh || !fresh.choices || !fresh.choices.length) return false;
+
+      /* ปักหมุดครั้งแรกที่เปลี่ยนโจทย์ — หลังจากนี้ m.id เป็นของ "คำ" ล้วน ๆ
+         ส่วน m.baPin เป็นของ "ตัวอสูร" ที่ยืนอยู่ตรงหน้า */
+      if (typeof m.baPin !== 'number') m.baPin = m.id;
+
+      m.id         = fresh.id;
+      m.word       = fresh.word;
+      m.pinyin     = fresh.pinyin;
+      m.answer     = fresh.answer;
+      m.choices    = fresh.choices;
+      m.choiceMeta = fresh.choiceMeta;
+      m.tier       = fresh.tier;
+      m.revealed   = [];        /* 👁️ ที่เปิดไว้กับคำเก่าใช้กับคำใหม่ไม่ได้ */
+      m.shuffleCount = 0;
+      m._rendered  = false;     /* = ข้อใหม่จริง renderMonster จึงไม่ขึ้นป้าย "สับเปลี่ยนตำแหน่ง" */
+
+      /* SRS กันคำซ้ำของ v4.0 อ่านจาก G.recentIds ซึ่ง nextMonster เป็นคนดันคิวให้
+         เปลี่ยนโจทย์เองก็ต้องดันเองด้วย ไม่งั้นคำเดิมจะวนกลับมาซ้ำติด ๆ กัน */
+      if (!Array.isArray(g.recentIds)) g.recentIds = [];
+      g.recentIds.push(m.id);
+      if (g.recentIds.length > 3) g.recentIds.shift();
+
+      try { if (typeof skillTip === 'function') skillTip(''); } catch (e) {}
+      BA_DQ_N++;
+      return true;
+    }
+
+    /* เรียกฟังก์ชันที่เลือกอสูรจาก m.id โดยสวมหมุดให้ชั่วคราว
+       สั้นกว่าและปลอดภัยกว่าการคัดลอกตรรกะของสามฟังก์ชันนั้นออกมาเขียนซ้ำ
+       (ซึ่งจะกลายเป็นสารบัญชุดที่สองที่ต้องซิงก์กันตลอดไป) */
+    function baDqPinned(orig, ctx, args) {
+      const g = args && args[0];
+      const m = g && g.currentMonster;
+      if (!m || typeof m.baPin !== 'number' || m.baPin === m.id) return orig.apply(ctx, args);
+      const real = m.id;
+      m.id = m.baPin;
+      try { return orig.apply(ctx, args); }
+      finally { m.id = real; }
+    }
+
+    // ══ CSS ของแพตช์นี้ — ก้อนที่ห้า แยกจาก #baStyle · 2 · 3 · 4 ════════
+    /* **ทุกกฎแตะแค่ตำแหน่ง/สีของของที่เป็น absolute อยู่แล้ว** ไม่มีกฎไหน
+       เปลี่ยนขนาดกล่องของอะไรที่อยู่ในสายเลย์เอาต์เลยสักกฎเดียว
+       ความจำเพาะเขียนเป็น (1,5,0) ทั้งชุด **อย่าลดชั้นเลือกลง** — ของ v6.5
+       เป็น (1,2,0) และ baStyle3() ย้ายตัวเองไปท้าย head ได้ ถ้าเขียนเท่ากัน
+       ลำดับจะกลายเป็นตัวตัดสินแล้วหลอดสามใบทับกันสนิทโดยไม่มี error ให้เห็น */
+    function baStyle5() {
+      if (document.getElementById('baStyle5')) return;
+      const css =
+        /* ── ราง 3 ช่องของฝั่งอสูร — **แบ่งรางเดิม ไม่ได้ต่อลงล่าง** ──────
+           ไม่มีคลาส ba-curse (ไฟต์ที่ไม่ใช่บอส) = กลับไปเป็นหลอดคู่ 46/54 ของ v6.5 */
+        '#baArena .ba-foe .ba-plate .ba-cur-bar{position:absolute;left:70%;right:0;top:100%;' +
+          'box-sizing:border-box;margin-top:1px;height:3px;border-radius:2px;overflow:hidden;' +
+          'display:none;background:rgba(0,0,0,.62);border:1px solid rgba(255,255,255,.14)}' +
+        '#baArena .ba-foe .ba-plate .ba-cur-bar span{display:block;height:100%;width:0;' +
+          'border-radius:2px;transition:width .14s linear;' +
+          'background:linear-gradient(90deg,#2a0b3d,#a020f0 58%,#ff7bff)}' +
+        '#baArena .ba-foe .ba-plate .ba-cur-bar.hot{border-color:rgba(200,110,255,.95);' +
+          'box-shadow:0 0 8px rgba(200,110,255,.75)}' +
+        '#baArena.ba-curse .ba-foe .ba-plate .ba-cur-bar{display:block}' +
+        '#baArena.ba-curse .ba-foe .ba-plate .ba-bat-bar{left:0;width:30%}' +
+        '#baArena.ba-curse .ba-foe .ba-plate .ba-atb-bar{left:35%;right:auto;width:30%}';
+      const st = document.createElement('style');
+      st.id = 'baStyle5';
+      st.textContent = css;
+      document.head.appendChild(st);
+    }
+
+
+    // ══ v6.8 · wrapper ทั้งหมด ══════════════════════════════════════════
+
+    /* ── เกจคำสาปเกาะนาฬิกาของเกจ ATB — ไม่ได้ตั้งนาฬิกาใบใหม่ ────────── */
+    if (typeof baAtbTick === 'function') {
+      const _baCurAtb = baAtbTick;
+      baAtbTick = function () {
+        const r = _baCurAtb.apply(this, arguments);
+        try { baCurTick(); } catch (e) { baErr(e, 'curTick'); }
+        return r;
+      };
+    }
+
+    /* ── ตอบถูกดันเกจคำสาปถอย 10% (น้อยกว่าอีกสองหลอดมาก โดยตั้งใจ) ───── */
+    if (typeof baAfterAnswer === 'function') {
+      const _baCurAfter = baAfterAnswer;
+      baAfterAnswer = function (correct) {
+        const r = _baCurAfter.apply(this, arguments);
+        try { if (correct) baCurPush(BA_CUR_PUSH); else baCurPaint(); }
+        catch (e) { baErr(e, 'curAfter'); }
+        return r;
+      };
+    }
+
+    /* ── นาฬิกาข้อใหม่ = จุดกินคำสาป Panic Haste + จุดตั้งต้นส่วนต่างเวลา ── */
+    if (typeof startQuestionTimer === 'function') {
+      const _baCurStartQ = startQuestionTimer;
+      startQuestionTimer = function () {
+        const r = _baCurStartQ.apply(this, arguments);
+        try {
+          BA_CUR_LAST = Date.now();
+          if (BA_CUR_HZ) {
+            BA_CUR_HZ = false;
+            const ms = baCurHasteApply();
+            if (ms) {
+              baBannerText('⏳ เร่งวิกลจริต · Panic Haste',
+                           'เวลาตอบข้อนี้ถูกบีบเหลือ ' + (ms / 1000).toFixed(1) + ' วิ');
+            }
+          }
+          baCurPaint();
+        } catch (e) { baErr(e, 'curStartQ'); }
+        return r;
+      };
+    }
+
+    /* ── เปลี่ยนไฟต์/ฮีโร่ร่วง/ออกจากเกม = ล้างคิวคำสาปกลับไปเริ่มที่ใบที่ 1 ── */
+    if (typeof baClearFight === 'function') {
+      const _baCurClearFight = baClearFight;
+      baClearFight = function () {
+        try { baCurReset(); } catch (e) { baErr(e, 'curClearFight'); }
+        return _baCurClearFight.apply(this, arguments);
+      };
+    }
+
+    /* ── หมุดหน้าอสูร — สวมให้สามฟังก์ชันที่เลือกจาก m.id เท่านั้น ─────── */
+    if (typeof baFoeIdOf === 'function') {
+      const _baDqFoeId = baFoeIdOf;
+      baFoeIdOf = function () { return baDqPinned(_baDqFoeId, this, arguments); };
+    }
+    if (typeof baFoeSlot === 'function') {
+      const _baDqSlot = baFoeSlot;
+      baFoeSlot = function () { return baDqPinned(_baDqSlot, this, arguments); };
+    }
+    if (typeof baShAbyssOf === 'function') {
+      const _baDqShAbyss = baShAbyssOf;
+      baShAbyssOf = function () { return baDqPinned(_baDqShAbyss, this, arguments); };
+    }
+
+    /* ── ตัดสินข้อจบแล้ว = ตั้งธงว่า "ข้อถัดไปต้องเป็นคำใหม่" ────────────
+       ตั้งธงเฉย ๆ ไม่เปลี่ยนตรงนี้ เพราะ v4.0 ยังต้องใช้ m.answer เขียนบรรทัด
+       ผลลัพธ์ และ baHideAnswer ของ v6.3 ยังต้องใช้มันตัดข้อความเฉลยทิ้งต่ออีกที
+       เทียบ "ตัวอ็อบเจกต์" เพื่อกันเคสที่มอนสเตอร์ตายแล้ว nextMonster สร้างตัวใหม่
+       ระหว่างทาง — ตัวใหม่ได้คำสดมาอยู่แล้ว ไม่ต้องเปลี่ยนซ้ำให้เสียคำฟรี */
+    if (typeof resolveAnswer === 'function') {
+      const _baDqResolve = resolveAnswer;
+      resolveAnswer = function () {
+        const g = baG();
+        const m = g ? g.currentMonster : null;
+        const practice = !!(g && g.practiceMode);
+        const r = _baDqResolve.apply(this, arguments);
+        try {
+          /* โหมดฝึกจุดอ่อนไม่เปลี่ยนโจทย์ — จุดประสงค์ของโหมดนั้นคือวนคำที่เพิ่งพลาด
+             จนกว่าจะตอบถูก ถ้าสลับคำทิ้งทุกครั้งที่พลาด การฝึกจะไม่เกิดขึ้นเลย */
+          if (m && !practice && g && g.currentMonster === m) BA_DQ_M = m;
+        } catch (e) { baErr(e, 'dqResolve'); }
+        return r;
+      };
+    }
+
+    /* ── วาดข้อถัดไป = จังหวะเปลี่ยนโจทย์จริง ───────────────────────────
+       ทำ **ก่อน** ให้ของเดิมทำงาน เพราะ renderMonster ของ v4.0 เป็นคนวาดคำ ·
+       วาดปุ่มใหม่ทั้งแถว (ล้างสีปุ่มทิ้งเองอยู่แล้ว) · แล้วปิดท้ายด้วย
+       startQuestionTimer() ซึ่งรีเซ็ตหลอดเวลาให้เต็มเสมอ — ครบสามข้อของสเปก
+       โดยไม่ต้องแตะโค้ดของ v4.0 สักบรรทัด */
+    if (typeof renderMonster === 'function') {
+      const _baDqRender = renderMonster;
+      renderMonster = function () {
+        try {
+          const g = baG();
+          const m = g ? g.currentMonster : null;
+          if (m && m === BA_DQ_M) { BA_DQ_M = null; baDqSwap(m); }
+        } catch (e) { baErr(e, 'dqRender'); }
+        return _baDqRender.apply(this, arguments);
+      };
+    }
+
+    /* ── ทางเข้าสาธารณะสำหรับชุดเทสต์ — ต่อท้ายของ v6.7 ไม่ได้เขียนทับ ── */
+    if (typeof baBattleAudit === 'function') {
+      const _baCurAudit = baBattleAudit;
+      baBattleAudit = function () {
+        const o = _baCurAudit.apply(this, arguments) || {};
+        const a = baArena();
+        const k = BA_CUR_K % BA_CURSES.length;
+        o.curse = {
+          on: baCurOn(),
+          shown: !!(a && a.classList.contains('ba-curse')),
+          bar: !!document.getElementById('baCurBar'),
+          ms: BA_CUR_MS, push: BA_CUR_PUSH,
+          blackMs: BA_CUR_BLK, sealMs: BA_CUR_SEAL, hasteMs: BA_CUR_HAST,
+          gauge: Math.round(BA_CUR * 100) / 100,
+          k: k, next: BA_CURSES[k].id,
+          order: BA_CURSES.map(function (c) { return c.id; }),
+          fired: BA_CUR_N, haste: BA_CUR_HZ
+        };
+        o.flow = {
+          pending: !!BA_DQ_M,
+          swaps: BA_DQ_N,
+          pin: (function () {
+            const g = baG();
+            const m = g ? g.currentMonster : null;
+            return (m && typeof m.baPin === 'number') ? m.baPin : null;
+          })(),
+          id: (function () {
+            const g = baG();
+            const m = g ? g.currentMonster : null;
+            return (m && typeof m.id === 'number') ? m.id : null;
+          })()
+        };
+        return o;
+      };
+    }
+
+    (function baInstall68() {
+      try {
+        baStyle5();
+        /* หลอดใบที่สามถูกแทรกแบบ lazy เหมือน baBatEnsure ของ v6.5 จึงไม่ต้อง
+           แตะ baBuild() ของ v6.0 เลย · เรียกครั้งแรกที่นี่เผื่อสนามถูกสร้างไปแล้ว */
+        baCurPaint();
+      } catch (e) { baErr(e, 'install68'); }
+    })();
+
     (function baInstall() {
       try {
         /* .g-monster-area อยู่ใน HTML แบบสแตติกอยู่แล้ว จึงสร้างได้ตั้งแต่โหลดหน้า

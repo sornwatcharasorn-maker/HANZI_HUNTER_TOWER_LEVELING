@@ -27560,6 +27560,42 @@
     }
     function baThpOf(r) { return r ? baThp(r.words, r.acc, r.loops) : 0; }
 
+    /* ── Rank & Management Sync (แพตช์ซ่อม) ──────────────────────────────────
+       ดัชนีของ FB_LIVE ที่ค้นได้ทั้งด้วย "คีย์โหนด" และด้วย "รหัสฮันเตอร์ในตัว payload"
+
+       **จำเป็น ไม่ใช่การเผื่อไว้เฉย ๆ** — fbPush ของ v5.3 เขียนโหนดที่
+       `encodeURIComponent(u)` แต่ payload พก `u` ดิบไปด้วย รหัสฮันเตอร์ที่มีอักษรไทย
+       เว้นวรรค หรือจุด จึงทำให้ "คีย์" กับ "u" คนละสตริงกัน · baDecorate อ่านรหัสจาก
+       DOM (ซึ่งคือ `u` ดิบ) แล้วค้น FB_LIVE ด้วยรหัสนั้น พอค้นไม่เจอจะได้ {} แล้ว
+       baLvRank(undefined) หนีบเป็น 1 → **ป้ายขึ้น E-RANK ทั้งที่เลเวล 45** ซึ่งคือ
+       อาการที่แพตช์นี้ซ่อม (วัดจริงแล้วเกิดกับทุกคนที่รหัสฮันเตอร์ไม่ใช่ ASCII ล้วน) */
+    function baLiveMap() {
+      const live = (typeof FB_LIVE === 'object' && FB_LIVE) ? FB_LIVE : {};
+      const map = {};
+      Object.keys(live).forEach(function (k) {
+        const r = live[k];
+        if (!r || typeof r !== 'object') return;
+        map[k] = r;
+        const u = String(r.u || '');
+        if (u && !map[u]) map[u] = r;
+        try { const d = decodeURIComponent(k); if (d && !map[d]) map[d] = r; } catch (e) {}
+      });
+      return map;
+    }
+
+    /* เลเวลที่ใช้คิดแรงค์ — อ่านจาก "ตัวเลขที่ขึ้นจอจริง" ก่อนเสมอ แล้วค่อยตกไปที่ FB_LIVE
+       ป้ายแรงค์จึงผูกกับเลเวลที่ครูเห็นตรงหน้าเป็นคู่เดียวกันเสมอ ไม่มีทางเป็นคนละชุดกันได้
+       (RTDB ส่งสัญญาณมาเป็น "ฟิลด์เดี่ยว" ได้ FB_LIVE จึงขาด lv ไปชั่วขณะได้จริง
+        แต่ตัวเลขบนจอมาจากรอบที่แล้วซึ่งถูกต้องอยู่ — ยึดของบนจอจึงแม่นกว่า) */
+    function baRowLv(cell, r) {
+      try {
+        const b = cell && cell.querySelector('b');
+        const n = b ? parseInt(String(b.textContent).replace(/[^0-9]/g, ''), 10) : NaN;
+        if (n === n && n > 0) return n;
+      } catch (e) {}
+      return Math.max(1, Math.round(+((r && r.lv) || 1)));
+    }
+
     /* Anti-Spam — แม่นยำต่ำแต่เลเวลสูงผิดปกติ
        **ต้องมีเกณฑ์จำนวนข้อขั้นต่ำด้วย** ไม่งั้นบัญชีที่เพิ่งสมัครแล้วตอบผิดข้อเดียว
        (แม่นยำ 0%) จะติดแถบเตือนทันทีทั้งที่ยังไม่ได้ทำอะไรผิด */
@@ -27856,7 +27892,7 @@
     function baDecorate() {
       const body = document.getElementById('fbBody');
       if (!body) return;
-      const order = [], live = (typeof FB_LIVE === 'object' && FB_LIVE) ? FB_LIVE : {};
+      const order = [], live = baLiveMap();
 
       Array.prototype.forEach.call(body.rows, function (tr) {
         const td = tr.cells;
@@ -27878,7 +27914,7 @@
                 ที่เปลี่ยนคือ "ป้ายที่ครูอ่าน" เท่านั้น) */
         const sub1 = td[1].querySelector('.gm-sub');
         if (sub1) {
-          const rk = baLvRank(r.lv);
+          const rk = baLvRank(baRowLv(td[1], r));
           sub1.textContent = rk.label;
           sub1.title = 'เลเวล ' + baLvRankFrom(rk) + '-' + rk.to + ' · ' + rk.name;
         }
@@ -27985,8 +28021,60 @@
       fbPayload = function (user, a) {
         const p = _baFbPayload.apply(this, arguments) || {};
         try { p.loops = Math.max(0, Math.round((a && a.towerClears) || 0)); } catch (e) { baGmErr(e, 'payload'); }
+        /* เครื่องที่เล่นไปด้วยและกางห้องควบคุมค้างไว้ด้วย (ครูที่ทดลองเล่นเอง) — ให้ตาราง
+           จัดการขยับตามทันทีที่มีการส่งข้อมูลออก · ตัวสั่งวาดเช็ก #gmPanel.active ให้เองอยู่แล้ว
+           เครื่องนักเรียนที่ไม่มีแผงเปิดจึงจบตั้งแต่บรรทัดแรก ไม่มีต้นทุน */
+        try { baGmSyncSoon(); } catch (e) { baGmErr(e, 'payload:paint'); }
         return p;
       };
+    }
+
+    /* ── Real-time Sync ของตารางจัดการ (#gmBody) ────────────────────────────
+       v5.7 ประกอบลายเซ็นจาก "ฟิลด์ที่ตัวเองเขียนลง store จริง" เท่านั้น ซึ่งถูกต้องตามกติกา
+       แต่ยังขาดสองตัวที่ **ถูกเขียนลง store จริงเหมือนกัน** คือ `words` (v5.7 เขียนลง
+       a.lrWords) กับ `loops` (ชั้นนี้เขียนลง a.towerClears เอง) — ขาดไปแล้วสัญญาณที่
+       ขยับแค่สองตัวนี้จะถูกมองว่า "ไม่มีอะไรเปลี่ยน" แล้ว #gmBody กับคอลัมน์ 🏆 THP
+       ค้างเป็นของเก่าจนกว่าจะมีค่าอื่นขยับ · เติมเข้าไปจึงไม่ผิดกฎของ v5.7 และไม่ได้
+       ทำให้ localStorage ถูกเขียนฟรีสักครั้ง (ทั้งคู่มีปลายทางในทะเบียนอยู่แล้ว) */
+    if (typeof lrSig === 'function') {
+      const _baLrSig = lrSig;
+      lrSig = function (rows) {
+        const sig = _baLrSig.apply(this, arguments);
+        try {
+          return sig + '|' + (rows || []).map(function (r) {
+            return String((r && r.u) || '') + ':' +
+                   Math.max(0, Math.round(+((r && r.words) || 0))) + ':' +
+                   Math.max(0, Math.round(+((r && r.loops) || 0)));
+          }).sort().join(',');
+        } catch (e) { baGmErr(e, 'sig'); return sig; }
+      };
+    }
+
+    /* วาด #gmBody ใหม่เมื่อสัญญาณเปลี่ยนค่าจริง — หน่วง 1 เฟรมแล้วยุบเป็นครั้งเดียว
+       EXP · ทอง · ถูก/ผิด · ชั้น · แรงค์ ในตารางจัดการจึงขยับตามสัญญาณสดโดยที่ครู
+       ไม่ต้องกดอะไรเลย
+
+       **ห้ามวาดตอนอยู่กลาง gmRender** (ธง LR_IN ของ v5.7) — v5.3 เรียก fbPaint จากท้าย
+       gmRender อยู่แล้ว วาดตรงนั้นจะวนซ้อนกันไม่จบ · และตอน LR_IN เป็นจริงก็ไม่ต้องวาดอยู่ดี
+       เพราะ v5.7 เติมทะเบียนเสร็จ **ก่อน** ปล่อยให้ของเดิมวาด รอบที่กำลังวิ่งอยู่จึงเห็นค่าใหม่ครบแล้ว
+       ลูปจบเองเสมอ เพราะรอบถัดไป lrApply เห็นค่าตรงกันหมดแล้วคืน 0 (กติกาเดียวกับ lrPaintSoon) */
+    let BA_GM_RAF   = 0;
+    let BA_GM_SYNCN = 0;
+    function baGmSyncSoon() {
+      if (BA_GM_RAF) return;
+      if (typeof LR_IN !== 'undefined' && LR_IN) return;
+      const run = function () {
+        BA_GM_RAF = 0;
+        try {
+          if (typeof LR_IN !== 'undefined' && LR_IN) return;
+          const p = document.getElementById('gmPanel');
+          if (!p || !p.classList.contains('active')) return;
+          if (!document.getElementById('gmBody')) return;
+          BA_GM_SYNCN++;
+          gmRender();
+        } catch (e) { baGmErr(e, 'syncSoon'); }
+      };
+      try { BA_GM_RAF = requestAnimationFrame(run); } catch (e) { BA_GM_RAF = 0; run(); }
     }
 
     /* v5.7 ปั้นแถวสดลงทะเบียนของเครื่องครู — พารอบเคลียร์ไปด้วยเพื่อให้ตารางจัดการ
@@ -28000,6 +28088,8 @@
           const lp = Math.max(0, Math.round(+((r && r.loops) || 0)));
           if (lp > 0 && (a.towerClears || 0) < lp) { a.towerClears = lp; extra = 1; }
         } catch (e) { baGmErr(e, 'lrApply'); }
+        /* มีค่าเปลี่ยนจริงเท่านั้นถึงสั่งวาด — ไม่มีอะไรเปลี่ยน = ไม่มีต้นทุนสักหน่วย */
+        if (n + extra > 0) { try { baGmSyncSoon(); } catch (e) { baGmErr(e, 'lrApply:paint'); } }
         return n + extra;
       };
     }
@@ -28068,6 +28158,8 @@
           rank: { hold: BA_RK_HOLD, tiers: BA_LVRANK.length, max: BA_LVRANK[BA_LVRANK.length - 1].to,
                   pos: Object.keys(BA_RK_POS).length, shift: Object.keys(BA_RK_SHIFT).length },
           thp: { div: BA_LOOP_DIV },
+          sync: { renders: BA_GM_SYNCN, pending: !!BA_GM_RAF,
+                  keys: Object.keys(baLiveMap()).length },
           susp: { acc: BA_TH_ACC, lv: BA_TH_LV, min: BA_TH_MIN },
           dom: { tools: !!document.getElementById('baGmTools'),
                  th: !!document.getElementById('baThpTh'),

@@ -554,6 +554,126 @@ async function confirmOk(page) {
     await ctx.close();
   }
 
+  // ═══ 12 · Rank & Management Sync (แพตช์ซ่อม) ═══════════════════
+  {
+    say('\n═══ 12 · ป้ายแรงค์ตามเลเวลที่ขึ้นจอจริง + ตารางจัดการอัปเดตสด ═══');
+    const { ctx, page, errs } = await fresh(browser);
+    await enterPanel(page);
+
+    /* 12.1 ไล่ขั้นแรงค์ครบทั้งสิบขั้น — อ่านจาก DOM จริง ไม่ใช่จากตารางในโค้ด */
+    const tiers = [[5, 'E-RANK'], [15, 'D-RANK'], [25, 'C-RANK'], [35, 'B-RANK'], [45, 'A-RANK'],
+                   [55, 'S-RANK'], [65, 'SS-RANK'], [75, 'SSS-RANK'], [85, 'National Level'],
+                   [95, 'Shadow Monarch']];
+    await seed(page, tiers.map(function (t, i) { return live('lv' + t[0], { lv: t[0], mfloor: 20 - i }); }));
+    const got = await page.evaluate(() => {
+      const o = {};
+      [].forEach.call(document.querySelectorAll('#fbBody tr'), function (tr) {
+        if (!tr.cells || tr.cells.length < 2) return;
+        const b = tr.cells[1].querySelector('b');
+        const sub = tr.cells[1].querySelector('.gm-sub');
+        if (b && sub) o[b.textContent.trim()] = sub.textContent.trim();
+      });
+      return o;
+    });
+    tiers.forEach(function (t) { eq('Lv ' + t[0] + ' → ' + t[1], got[String(t[0])], t[1]); });
+    ok('ไม่มีแถวไหนเหลือ E-RANK ค้าง (นอกจาก Lv 5)',
+       Object.keys(got).filter(function (k) { return got[k] === 'E-RANK'; }).length === 1, got);
+
+    /* 12.2 คีย์โหนด ≠ รหัสใน payload — อาการเดิมคือตกเป็น E-RANK ทั้งที่เลเวล 45
+           fbPush เขียนโหนดที่ encodeURIComponent(u) แต่ payload พก u ดิบไปด้วย */
+    await page.evaluate(function (r) {
+      FB_LIVE = {}; FB_LIVE['%E0%B8%81%E0%B8%B2'] = r; FB_MST = 'live'; fbPaint();
+    }, live('\u0e01\u0e32', { lv: 45 }));
+    await page.waitForTimeout(250);
+    eq('รหัสฮันเตอร์ที่ถูก encode เป็นคีย์โหนด — ยังได้ A-RANK',
+       await page.evaluate(() => {
+         const sub = document.querySelector('#fbBody tr td:nth-child(2) .gm-sub');
+         return sub ? sub.textContent.trim() : '';
+       }), 'A-RANK');
+
+    /* 12.3 สัญญาณที่มาเป็นฟิลด์เดี่ยว (ขาด lv) — ป้ายต้องตรงกับเลขที่ขึ้นจอเสมอ */
+    const pair = await page.evaluate(function (r) {
+      delete r.lv;
+      FB_LIVE = {}; FB_LIVE.p1 = r; FB_MST = 'live'; fbPaint();
+      const tr = document.querySelector('#fbBody tr');
+      return { lv: tr.cells[1].querySelector('b').textContent.trim(),
+               sub: tr.cells[1].querySelector('.gm-sub').textContent.trim(),
+               want: baLvRank(parseInt(tr.cells[1].querySelector('b').textContent, 10)).label };
+    }, live('p1'));
+    eq('สัญญาณขาด lv — ป้ายยังตรงกับเลขที่ขึ้นจอ', pair.sub, pair.want);
+
+    /* 12.4 ตารางจัดการ (#gmBody) ขยับตามสัญญาณโดยครูไม่ต้องกดอะไร */
+    await page.evaluate(function (r) {
+      FB_LIVE = {}; FB_LIVE.s9 = r; FB_MST = 'live'; gmRender();
+    }, live('s9', { lv: 33, exp: 100, gold: 1000, corr: 50, wrong: 10, words: 80, loops: 0 }));
+    await page.waitForTimeout(500);
+    const before = await page.evaluate(() => {
+      const a = loadStore().s9 || {};
+      return { exp: a.exp, gold: a.gold, corr: a.correct, wrong: a.wrong,
+               words: a.lrWords, loops: a.towerClears || 0 };
+    });
+    eq('ตั้งต้น — ทะเบียนตรงกับสัญญาณ', before,
+       { exp: 100, gold: 1000, corr: 50, wrong: 10, words: 80, loops: 0 });
+
+    await page.evaluate(() => {
+      const r = FB_LIVE.s9;
+      r.exp = 480; r.gold = 7777; r.corr = 90; r.wrong = 12; r.at = Date.now();
+      fbPaint();
+    });
+    await page.waitForTimeout(650);
+    const afterStats = await page.evaluate(() => {
+      const a = loadStore().s9 || {};
+      /* ทะเบียนยังมีแถวสดของเคสก่อนหน้าค้างอยู่ — ต้องเจาะหาแถวของ s9 เอง
+         หยิบแถวแรกจะได้ของคนอื่นแล้วเคสตกด้วยเหตุผลผิด */
+      const tr = [].filter.call(document.querySelectorAll('#gmBody tr'), function (x) {
+        return /@s9(\s|·|$)/.test(x.textContent);
+      })[0];
+      const txt = tr ? [].map.call(tr.cells, function (c) { return c.textContent; }).join(' | ') : '';
+      return { store: { exp: a.exp, gold: a.gold, corr: a.correct, wrong: a.wrong }, txt: txt };
+    });
+    eq('EXP · ทอง · ถูก/ผิด เข้าทะเบียนครบ',
+       afterStats.store, { exp: 480, gold: 7777, corr: 90, wrong: 12 });
+    ok('#gmBody วาดค่าใหม่เองโดยไม่ต้องกดรีเฟรช',
+       /480/.test(afterStats.txt) && /7777/.test(afterStats.txt) && /90/.test(afterStats.txt),
+       afterStats.txt);
+
+    /* 12.5 สัญญาณที่ขยับแค่ words/loops ก็ต้องถึงทะเบียน — ก่อนแพตช์นี้ลายเซ็นไม่ครอบ */
+    const thpBefore = await page.evaluate(() => {
+      const c = document.querySelector('#fbBody .ba-thp'); return c ? c.textContent : '';
+    });
+    await page.evaluate(() => { const r = FB_LIVE.s9; r.words = 222; r.loops = 3; r.at = Date.now(); fbPaint(); });
+    await page.waitForTimeout(650);
+    const wl = await page.evaluate(() => {
+      const a = loadStore().s9 || {};
+      const c = document.querySelector('#fbBody .ba-thp');
+      return { words: a.lrWords, loops: a.towerClears, thp: c ? c.textContent : '' };
+    });
+    eq('words ลงทะเบียนแล้ว', wl.words, 222);
+    eq('รอบเคลียร์ลงทะเบียนแล้ว', wl.loops, 3);
+    ok('คอลัมน์ THP ขยับตาม', wl.thp !== thpBefore && +wl.thp > 0, [thpBefore, wl.thp]);
+
+    /* 12.6 ไม่มีอะไรเปลี่ยน = ต้องไม่วาดซ้ำ และต้องไม่วนไม่รู้จบ */
+    const n0 = await page.evaluate(() => baBattleAudit().gmAdmin.sync.renders);
+    await page.evaluate(() => { for (let i = 0; i < 6; i++) fbPaint(); });
+    await page.waitForTimeout(800);
+    const n1 = await page.evaluate(() => baBattleAudit().gmAdmin.sync.renders);
+    eq('สัญญาณซ้ำของเดิมไม่สั่งวาดเพิ่มสักครั้ง', n1, n0);
+    ok('วาดไปแล้วอย่างน้อยหนึ่งรอบตอนค่าเปลี่ยน', n0 >= 1, n0);
+    ok('คิว rAF ไม่ค้าง',
+       await page.evaluate(() => baBattleAudit().gmAdmin.sync.pending) === false);
+
+    /* 12.7 ดัชนีของ FB_LIVE ค้นได้ทั้งสองทาง */
+    eq('ดัชนีค้นได้ทั้งคีย์โหนดและรหัสใน payload',
+       await page.evaluate(function (r) {
+         FB_LIVE = {}; FB_LIVE['%E0%B8%82'] = r;
+         const m = baLiveMap();
+         return [!!m['%E0%B8%82'], !!m['\u0e02'], m['\u0e02'] === m['%E0%B8%82']];
+       }, live('\u0e02')), [true, true, true]);
+
+    ok('ไม่มี pageerror', errs.length === 0, errs);
+    await ctx.close();
+  }
+
   await browser.close();
   say('\n══════════════════════════════════');
   say('  ✅ ผ่าน ' + PASS + '   ❌ ตก ' + FAIL);

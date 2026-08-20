@@ -130,7 +130,9 @@ async function enterGame(page) {
     ok('ไอคอนครบ 9 ใบ', info.icoCount === 9, info.icoCount);
     ok('สไตล์ #miStyle มีใบเดียว', info.styleCount === 1, info.styleCount);
     ok('ภาพ decode ได้ครบทุกใบ', info.btns.every(b => b.decoded));
-    ok('ภาพต้นทาง 72px ครบทุกใบ', info.btns.every(b => b.natural === 72),
+    /* v7.8 ย่อจาก 72px → 64px เพื่อคืนที่ให้ตารางรวม — แสดงจริง 20-22 CSS px
+       จึงยังคมถึง DPR 2.9 (ของเดิม 3.2) ตาเปล่าแยกไม่ออก */
+    ok('ภาพต้นทาง 64px ครบทุกใบ', info.btns.every(b => b.natural === 64),
        info.btns.map(b => b.natural));
     ok('เป็น data URI WebP ทุกใบ (ไม่มีคำขอออกเน็ต)', info.btns.every(b => b.isData));
     ok('ไอคอนอยู่ในกรอบปุ่ม ไม่ล้นออกไป', info.btns.every(b => b.inside));

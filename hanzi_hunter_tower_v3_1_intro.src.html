@@ -28423,6 +28423,422 @@
     })();
 
 
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Patch v7.4 · GM MODULAR RESET · AUTH PRESERVATION · EXPLICIT LOOP COUNTER
+    //  (รีเซ็ตแยกส่วน 4 แบบโดยไม่แตะรหัสผ่าน · ตัวนับรอบเคลียร์หอคอยที่โชว์เสมอ)
+    // --------------------------------------------------------------------------
+    //  อยู่ในเนมสเปซ `ba` ของชั้น v6.0 เดิม ไม่ได้ตั้งพรีฟิกซ์ใหม่
+    //  (กติกาเดียวกับ v6.1-v7.3) ทุกอย่างขึ้นต้นด้วย baMr / BA_MR (รีเซ็ต)
+    //  กับ baLc / BA_LC (ตัวนับรอบ)
+    //
+    //  **ไม่แก้โค้ดของ v4.0-v7.3 เลยแม้แต่บรรทัดเดียว** — ห่อฟังก์ชันอย่างเดียว
+    //  ฟังก์ชันที่ถูกห่อ: gmResetProgress · baDecorate · baGmRows
+    //
+    //  ── ข้อจำกัดเดิมที่ยังต้องเคารพ ────────────────────────────────────────────
+    //  1. **ความสูงการ์ดโจทย์ห้ามขยับ** (340.8px / 354.8px ที่จอ 320) — แพตช์นี้
+    //     ไม่แตะหน้าจอเล่นเลยแม้แต่พิกเซลเดียว ทุกอย่างอยู่ในห้องควบคุม GM
+    //     ซึ่งเป็นชั้นทึบเต็มจอที่ต้องใช้ TEACHER_PIN ถึงจะเปิดได้
+    //  2. **ห้ามแตะแถวปุ่มล่าง** (กับดักข้อ 11) · **ห้ามยัดปุ่มลงคอลัมน์ ⚙️ จัดการ**
+    //     (กับดักข้อ 9) — คอลัมน์นั้นเต็มด้วยปุ่มไอคอน 6 ใบพอดีอยู่แล้ว
+    //     แพตช์นี้จึง **ไม่เพิ่ม/ไม่ลดปุ่มสักใบ** ปุ่ม 🔄 ใบเดิมเปลี่ยนหน้าที่จาก
+    //     "ล้างทั้งหมดทันที" เป็น "เปิดเมนูเลือกโหมดรีเซ็ต" แทน
+    //  3. **ห้ามแทรกคอลัมน์ใหม่ในตาราง LIVE** — `xpDomRows()` ของ v5.5 กับชุดเทสต์
+    //     ของ v5.3 อ่าน td[1]..td[8] ตามตำแหน่งตายตัว · ตัวนับรอบจึงเขียนอยู่
+    //     **ในคอลัมน์เดิม** (td[3] ของ #fbBody · td[2] ของ #gmBody) ไม่ได้กินช่องใหม่
+    //     และ **ต้องคง `<b>` ที่หุ้มชั้นสูงสุดไว้เป็นตัวเลขตัวแรกของช่องเสมอ**
+    //     เพราะ xpDomRows อ่าน `num(td[3].querySelector('b'))` เป็นทางหลัก
+    // ══════════════════════════════════════════════════════════════════════════
+
+    const BA_MR_VER = '7.4';
+
+    /* ── 1. Auth-Safe Reset Engine ───────────────────────────────────────────
+       สเปกสั่งไว้ชัดว่า "ห้ามลบ Auth Node" — นักเรียนต้องล็อกอินด้วยรหัสเดิมได้ทันที
+       หลังครูกดรีเซ็ต ไม่ว่าจะรีเซ็ตแบบไหนก็ตาม
+
+       ฟิลด์ที่แปลว่า "ตัวตน" ในเกมนี้คือ 5 ตัวตามสเปก แปลงชื่อเป็นของจริงในซอร์สได้ว่า
+         u → user · name → name · pass/pin → pw · class → classroom · registeredAt → createdAt
+       บวก `frozen` อีกหนึ่งตัว **โดยจำเป็น ไม่ใช่การเผื่อไว้** — ถ้าไม่คงไว้
+       การกดรีเซ็ตจะปลดระงับสิทธิ์ให้คนที่ครูเพิ่งกด ❄️ ระงับไปโดยไม่ตั้งใจ
+
+       `pw` ที่ไม่ขยับยังแปลว่า **แฮชบนคลาวด์ของ v5.8 (`pwh`) ไม่ต้องขยับตามด้วย**
+       ทางที่ v5.8 ดักไว้ที่ `withStudent` จึงเงียบไปเองอย่างถูกต้อง — ตรงกับที่
+       เอกสารของ v5.8 เขียนไว้ว่า "gmResetProgress เก็บ pw เดิมไว้ แฮชจึงไม่ขยับ" */
+    const BA_MR_AUTH = ['user', 'name', 'pw', 'classroom', 'createdAt', 'frozen'];
+
+    /* ของฝั่งครูที่ไม่ใช่ "ความคืบหน้าของผู้เล่น" จึงไม่ควรหายไปกับการรีเซ็ตเช่นกัน
+       (v4.3 เคยคงชุดนี้ไว้ให้แล้วผ่าน wrapper ของ gmResetProgress — เอามารวมไว้ที่เดียว
+        เพราะทางใหม่ไม่ได้วิ่งผ่าน wrapper ตัวนั้นอีกต่อไป) */
+    const BA_MR_KEEP = BA_MR_AUTH.concat(['gcLog', 'sessions', 'loginCount', 'lastLogin', 'playMs']);
+
+    /* สารบัญโหมดรีเซ็ต — ข้อความบนเมนูกับหน้าต่างยืนยันประกอบจากก้อนนี้ก้อนเดียว
+       จึงไม่มีทางที่ข้อความบนจอกับสิ่งที่ทำงานจริงจะเพี้ยนกัน
+       (กติกาเดียวกับราคาร้านค้าของ v4.7.9.1) */
+    const BA_MR_MODES = [
+      { id: 'full',  icon: '🧹', name: 'ล้างทั้งหมด (คง Auth)',
+        sub: 'เลเวล · EXP · ทอง · ชั้น · รอบ · ค่าพลัง · กระเป๋า · คลังคำศัพท์ · เควส' },
+      { id: 'level', icon: '👑', name: 'ล้างเลเวล / EXP',
+        sub: 'เลเวล 1 · EXP 0 — คงชั้น · ทอง · คลังคำศัพท์' },
+      { id: 'floor', icon: '🗼', name: 'ล้างชั้นหอคอย',
+        sub: 'ชั้น 1 · ชั้นสูงสุด 1 · รอบ 0 — คงเลเวล · ทอง · คลังคำศัพท์' },
+      { id: 'gold',  icon: '🪙', name: 'ล้างทอง',
+        sub: 'ทอง 0 — คงเลเวล · ชั้น · คลังคำศัพท์' }
+    ];
+    const BA_MR_BY = {};
+    BA_MR_MODES.forEach(function (m) { BA_MR_BY[m.id] = m; });
+
+    let BA_MR_USER = '';   /* ฮันเตอร์ที่เมนูกำลังเปิดค้างอยู่ — ของรอบการเปิดหน้า ไม่ต้องเซฟ */
+    let BA_MR_N    = 0;    /* รีเซ็ตไปแล้วกี่ครั้งในรอบนี้ (ชุดเทสต์อ่าน) */
+    let BA_MR_LAST = null; /* ผลของการรีเซ็ตครั้งล่าสุด (ชุดเทสต์อ่าน) */
+
+    function baMrErr(e, w) { try { baErr(e, 'mr74:' + w); } catch (x) {} }
+
+    /* ตัวเลขที่จะเอาไปแปะบนจอ — หนีบให้เป็นจำนวนเต็มไม่ติดลบเสมอ
+       ไม่ได้ตกไปเป็น 1 ให้เอง เพราะสเปกต้องการให้ชั้นสูงสุด 0 โชว์เป็น "0 / 20" จริง ๆ */
+    function baLcInt(v) { const n = Math.round(+v); return (n === n && n > 0) ? n : 0; }
+
+    function baMrSnap(a) {
+      const o = {};
+      if (!a) return o;
+      BA_MR_KEEP.forEach(function (k) { if (a[k] !== undefined) o[k] = a[k]; });
+      return o;
+    }
+
+    /* คืนฟิลด์ Auth ทับเสมอหลังรีเซ็ตทุกโหมด แล้วรายงานว่าต้องซ่อมไปกี่ตัว
+       **เป็นตาข่ายกันพลาด ไม่ใช่ทางหลัก** — โหมดแยกส่วนไม่ได้แตะฟิลด์พวกนี้อยู่แล้ว
+       ส่วนโหมดล้างทั้งหมดสร้างบัญชีใหม่จาก blankAccount ซึ่งรับ user/name/pw/room ไปตั้งแต่ต้น
+       ถ้าวันหนึ่งมีใครแก้ blankAccount แล้วเผลอทิ้งฟิลด์ไหนไป ตัวนี้จะเก็บให้ทันที */
+    function baMrRestore(a, snap) {
+      const fixed = [];
+      if (!a || !snap) return fixed;
+      Object.keys(snap).forEach(function (k) {
+        if (a[k] === snap[k]) return;
+        a[k] = snap[k];
+        if (BA_MR_AUTH.indexOf(k) >= 0) fixed.push(k);
+      });
+      return fixed;
+    }
+
+    /* ── ลงมือรีเซ็ตจริง — จุดเดียวของทั้งแพตช์ ─────────────────────────────
+       ทุกทาง (ปุ่ม 🔄 · เมนู · ชุดเทสต์) ไหลมาลงที่นี่ */
+    function baMrApply(user, mode) {
+      const u = String(user || '').trim();
+      const m = BA_MR_BY[mode] ? mode : 'full';
+      if (!u) return null;
+
+      let s;
+      try { s = loadStore(); } catch (e) { baMrErr(e, 'load'); return null; }
+      const old = s[u];
+      if (!old) return null;
+
+      const snap  = baMrSnap(old);
+      const before = { level: old.level || 1, exp: old.exp || 0, gold: old.gold || 0,
+                       floor: old.floor || 1, maxFloor: old.maxFloor || 1,
+                       loops: old.towerClears || 0 };
+
+      try {
+        if (m === 'full') {
+          /* บัญชีใหม่เอี่ยมที่ผ่าน migrateAccount ครบทุกชั้น — ฟิลด์ของ v4.2-v5.2
+             (quest · codex · trFloors · ab · cd · tq · cs) จึงถูกตั้งค่าเริ่มต้นให้เองครบ
+             โดยไม่ต้องไล่ล้างทีละก้อนแล้วลืมก้อนใหม่ที่จะเพิ่มมาทีหลัง
+             · ค่าพลัง (atk/def ในสเปก = stats ของเกมนี้) ถูกคำนวณใหม่จากเลเวล 1
+               โดย computeStats ที่อยู่ใน migrateAccount จึงกลับเป็นฐาน 10 ทุกช่อง */
+          s[u] = blankAccount(snap.user || u, snap.name || u, snap.pw, snap.classroom);
+        } else if (m === 'level') {
+          old.level = 1; old.exp = 0; old.maxExp = expForLevel(1);
+        } else if (m === 'floor') {
+          /* สเปกเขียนว่า maxFloor:0 — แต่ migrateAccount ของ v4.0 หนีบ
+             `maxFloor < 1 → maxFloor = floor` ทุกครั้งที่อ่าน store ค่า 0 จึงเก็บไม่อยู่
+             และการไปแก้ v4.0 จะพังทั้งเกม (rankOfFloor/zoneOf/computeStats อ่านค่านี้)
+             จึงตั้งเป็น 1 ซึ่งคือ "ยังไม่เคยเคลียร์ชั้นไหนเลย" ตามความหมายเดิมของ v4.0
+             — ตัวนับรอบที่โชว์ "(รอบที่ 0)" เป็นตัวบอกว่าถูกล้างแล้วอยู่ดี */
+          old.floor = 1; old.maxFloor = 1; old.floorProgress = 0;
+          old.bossClears = 0; old.towerClears = 0;
+          old.trFloors = {};                       /* บันทึกรายชั้นของเรดาร์ v4.5 */
+        } else if (m === 'gold') {
+          /* ทองในกระเป๋าเท่านั้น — `totalGoldEarned` เป็นสถิติตลอดชีพที่เควส L6 ของ v4.2
+             ใช้เป็นเงื่อนไข ไม่ใช่ยอดคงเหลือ จึงไม่ถูกแตะตามสเปก */
+          old.gold = 0;
+        }
+      } catch (e) { baMrErr(e, 'apply'); return null; }
+
+      const fixed = baMrRestore(s[u], snap);
+      const def = BA_MR_BY[m];
+      try { if (typeof gcPush === 'function') gcPush(s[u], def.icon, 'GM รีเซ็ต — ' + def.name); }
+      catch (e) { baMrErr(e, 'log'); }
+
+      try { saveStore(s); } catch (e) { baMrErr(e, 'save'); return null; }
+
+      BA_MR_N++;
+      const a2 = (function () { try { return loadStore()[u] || {}; } catch (e) { return {}; } })();
+      BA_MR_LAST = {
+        user: u, mode: m, fixed: fixed, before: before,
+        after: { level: a2.level || 1, exp: a2.exp || 0, gold: a2.gold || 0,
+                 floor: a2.floor || 1, maxFloor: a2.maxFloor || 1,
+                 loops: a2.towerClears || 0 },
+        auth: BA_MR_AUTH.every(function (k) { return snap[k] === undefined || a2[k] === snap[k]; })
+      };
+
+      baMrLive(u);
+      try { if (typeof gmRender === 'function') gmRender(); } catch (e) { baMrErr(e, 'render'); }
+      try { if (typeof fbPaint === 'function') fbPaint(); } catch (e) { baMrErr(e, 'paint'); }
+      return BA_MR_LAST;
+    }
+
+    /* ครูรีเซ็ตบัญชีที่กำลังเล่นค้างอยู่บนเครื่องเดียวกันได้ — ต้องดัน G ตามให้ครบ
+       ไม่งั้น saveProgress รอบถัดไปจะเขียนค่าเก่าทับทันที (กับดักข้อ 10)
+       · gcLive ของ v4.3 ดันให้แค่ทอง/เลเวล/EXP/HP/MP/ไอเทม/ชั้น — ที่เหลือดันเองที่นี่ */
+    function baMrLive(user) {
+      try {
+        if (typeof CURRENT_USER === 'undefined' || CURRENT_USER !== user) return;
+        try { if (typeof gcLive === 'function') gcLive(user); } catch (e) { baMrErr(e, 'gcLive'); }
+        const a = loadStore()[user];
+        if (!a) return;
+        G.maxExp = a.maxExp; G.correct = a.correct || 0; G.wrong = a.wrong || 0;
+        G.best = a.best || 0; G.streak = a.streak || 0;
+        G.stats = a.stats; G.wordStats = a.wordStats || {};
+        G.titles = (a.titles || ['awakened']).slice(); G.equippedTitle = a.equippedTitle;
+        G.bossClears = a.bossClears || 0; G.towerClears = a.towerClears || 0;
+        G.totalGoldEarned = a.totalGoldEarned || 0; G.fastAnswers = a.fastAnswers || 0;
+        G.ironwallDone = !!a.ironwallDone;
+        try { renderStats(); } catch (e) {}
+        try { renderFloor(); } catch (e) {}
+      } catch (e) { baMrErr(e, 'live'); }
+    }
+
+    /* ── เมนูเลือกโหมด — ไม่เพิ่มปุ่มในคอลัมน์ ⚙️ จัดการ ────────────────────
+       **z-index 790 จำเป็น ไม่ใช่เลขสวย ๆ** — `#csGm` ของ v5.2 เป็น `.g-modal` ที่
+       z-index 200 ขณะที่ `#gmPanel` เป็นชั้นทึบเต็มจอที่ 500 โมดัลจึงไปกองอยู่
+       *ข้างหลัง* ห้องควบคุมทั้งใบ (กับดักข้อ 25 · แพตช์ v5.3.1 ยกให้ 760 ด้วยเหตุนี้)
+       ต้องอยู่เหนือ 500/700/760 แต่ **ยังต่ำกว่า `#gmModal` ที่ 820** เพราะกล่อง
+       ยืนยันของ gmConfirm ต้องเปิดทับเมนูนี้ได้ */
+    function baMrEnsureDom() {
+      if (document.getElementById('baMrModal')) return;
+      const grid = BA_MR_MODES.map(function (m) {
+        return '<button class="ba-mr-btn' + (m.id === 'full' ? ' red' : '') + '" ' +
+               'data-ba-mr="' + m.id + '" onclick="baMrPick(\'' + m.id + '\')">' +
+               '<b>' + m.icon + ' ' + m.name + '</b><i>' + m.sub + '</i></button>';
+      }).join('');
+      const wrap = document.createElement('div');
+      wrap.className = 'g-modal';
+      wrap.id = 'baMrModal';
+      wrap.innerHTML =
+        '<div class="g-modal-inner">' +
+          '<div class="g-modal-title">[ระบบ] 🔄 รีเซ็ตข้อมูลฮันเตอร์ — เลือกส่วนที่จะล้าง</div>' +
+          '<div class="ba-mr-who" id="baMrWho"></div>' +
+          '<div class="ba-mr-grid">' + grid + '</div>' +
+          '<div class="ba-mr-note">🔐 ทุกโหมดคงรหัสฮันเตอร์ · ชื่อ · รหัสผ่านลับ · กลุ่มห้องเรียน ' +
+            'และวันที่สมัครไว้ครบ 100% นักเรียนล็อกอินด้วยรหัสเดิมได้ทันที</div>' +
+          '<button class="gm-btn" onclick="baMrClose()">ปิดหน้าต่าง</button>' +
+        '</div>';
+      document.body.appendChild(wrap);
+    }
+
+    function baMrOpen(user) {
+      const u = String(user || '').trim();
+      if (!u) return;
+      baMrEnsureDom();
+      BA_MR_USER = u;
+      let a = null;
+      try { a = loadStore()[u] || null; } catch (e) {}
+      const who = document.getElementById('baMrWho');
+      if (who) {
+        /* แถวสดของ v5.7 = ภาพสะท้อนจากสัญญาณ ยังไม่มีช่องทางสั่งกลับไปเครื่องนักเรียน
+           (ข้อจำกัดข้อ 1 ของ v5.3) — บอกครูตรง ๆ ดีกว่าปล่อยให้งงว่าทำไมค่าเด้งกลับ */
+        const mirror = !!(a && typeof LR_MIRROR === 'string' && a[LR_MIRROR]);
+        who.innerHTML = '<b>@' + esc(u) + '</b>' +
+          (a ? ' · ' + esc(a.name || u) + ' · เลเวล ' + (a.level || 1) +
+               ' · ชั้นสูงสุด ' + baLcInt(a.maxFloor) + ' · รอบที่ ' + baLcInt(a.towerClears) +
+               ' · ' + (a.gold || 0) + ' 🪙'
+             : ' · <i>ไม่พบในทะเบียนของเครื่องนี้</i>') +
+          (mirror ? '<span class="ba-mr-mirror">📡 แถวสด — ค่าที่รีเซ็ตจะถูกสัญญาณรอบถัดไปเขียนทับ</span>' : '');
+      }
+      document.getElementById('baMrModal').classList.add('active');
+    }
+
+    function baMrClose() {
+      const el = document.getElementById('baMrModal');
+      if (el) el.classList.remove('active');
+      BA_MR_USER = '';
+    }
+
+    /* กดโหมดในเมนู → ปิดเมนูก่อน แล้วค่อยเปิดหน้าต่างยืนยันของ v4.0
+       (ปิดก่อนเพราะ gmConfirm อยู่ที่ z-index 820 ซึ่งทับเมนูอยู่แล้ว — ปิดไว้ให้จอสะอาด
+        และกันครูกดโหมดที่สองซ้อนระหว่างที่ยังยืนยันโหมดแรกไม่เสร็จ) */
+    function baMrPick(mode) {
+      const u = BA_MR_USER;
+      const def = BA_MR_BY[mode];
+      if (!u || !def) return;
+      baMrClose();
+      gmConfirm('[ระบบ] ' + def.icon + ' ' + def.name,
+        '[ระบบ] ' + def.name + ' ของ @' + u + '? — ' + def.sub +
+        ' · 🔐 รหัสฮันเตอร์ · ชื่อ · รหัสผ่านลับ · กลุ่มห้องเรียน · วันที่สมัคร ยังคงเดิมทั้งหมด',
+        function () {
+          const r = baMrApply(u, mode);
+          if (!r) { baTip('⚠️ ไม่พบ @' + u + ' ในทะเบียนของเครื่องนี้'); return; }
+          baTip(def.icon + ' ' + def.name + ' ของ @' + u + ' เรียบร้อย — รหัสผ่านลับยังคงเดิม');
+        });
+    }
+
+    // ── 2. Explicit Loop Counter ───────────────────────────────────────────────
+    /*  ช่อง "🗼 ชั้นสูงสุด" ของทั้งสองตารางเขียนเป็นรูปแบบเดียวกันเป๊ะ
+
+          บรรทัดบน : {ชั้นสูงสุด} / 20 (รอบที่ {รอบเคลียร์})     ← โชว์ "เสมอ" แม้รอบเป็น 0
+          บรรทัดล่าง: ยืนอยู่ชั้น {ชั้นที่ยืนอยู่}
+
+        ของเดิม (v7.2) แทรกวงเล็บให้เฉพาะตอนรอบ > 0 และแทรกครั้งเดียวไม่อัปเดตข้อความ
+        อีกเลย — ครูจึงแยกไม่ออกระหว่าง "ยังไม่เคยวนรอบ" กับ "ระบบนับรอบไม่ทำงาน"
+        ตอนนี้เขียนทั้งช่องใหม่ทุกครั้งที่วาด จึงตรงกับของจริงเสมอ
+
+        **`<b>` ที่หุ้มชั้นสูงสุดต้องเป็นตัวเลขตัวแรกของช่องเสมอ** — xpDomRows ของ v5.5
+        อ่าน `num(td[3].querySelector('b'))` เป็นทางหลัก ถ้าเอาวงเล็บรอบไปไว้ข้างหน้า
+        ไฟล์ Export ของครูจะได้เลขรอบแทนชั้นสูงสุดเงียบ ๆ โดยไม่มี error ให้เห็นเลย */
+    function baLcCell(maxFloor, loops, floor) {
+      return '<b>' + baLcInt(maxFloor) + '</b> / ' + FLOOR_MAX +
+             ' <span class="ba-loop">(รอบที่ ' + baLcInt(loops) + ')</span>' +
+             '<span class="gm-sub">ยืนอยู่ชั้น ' + baLcInt(floor) + '</span>';
+    }
+
+    /* อ่านเลขตัวแรกออกจากข้อความ — ใช้เป็นทางสำรองตอนหาแถวใน FB_LIVE ไม่เจอ
+       (ยึด "ของที่ขึ้นจอจริง" ไว้ก่อน ท่าเดียวกับ baRowLv ของแพตช์ซ่อม v7.2) */
+    function baLcNum(el) {
+      const m = String((el && el.textContent) || '').replace(/,/g, '').match(/-?\d+/);
+      return m ? +m[0] : 0;
+    }
+
+    function baLcPaintLive() {
+      const body = document.getElementById('fbBody');
+      if (!body) return;
+      const live = (typeof baLiveMap === 'function') ? baLiveMap() : {};
+      Array.prototype.forEach.call(body.rows, function (tr) {
+        const td = tr.cells;
+        if (!td || td.length < 9) return;               /* แถว "ยังไม่มีสัญญาณ" มี td ใบเดียว */
+        const cell = td[3];
+        if (!cell) return;
+        const u = (tr.dataset && tr.dataset.baUser) ||
+                  ((typeof baRowUser === 'function') ? baRowUser(tr) : '');
+        const r = (u && live[u]) || null;
+        /* ไม่มีแถวใน FB_LIVE = อย่าล้างของที่ขึ้นจออยู่ทิ้ง ให้อ่านกลับมาใช้แทน */
+        const domMax  = baLcNum(cell.querySelector('b')) || baLcNum(cell);
+        const subEl   = cell.querySelector('.gm-sub');
+        const domFl   = subEl ? baLcNum(subEl) : domMax;
+        const loopEl  = cell.querySelector('.ba-loop');
+        const domLoop = loopEl ? baLcNum(loopEl) : 0;
+        cell.innerHTML = baLcCell(r && r.mfloor !== undefined ? r.mfloor : domMax,
+                                  r && r.loops  !== undefined ? r.loops  : domLoop,
+                                  r && r.floor  !== undefined ? r.floor  : domFl);
+      });
+    }
+
+    function baLcPaintGm() {
+      const body = document.getElementById('gmBody');
+      if (!body) return;
+      let s = {};
+      try { s = loadStore(); } catch (e) { return; }
+      Array.prototype.forEach.call(body.rows, function (tr) {
+        const td = tr.cells;
+        if (!td || td.length < 3) return;
+        const u = (typeof baRowUser === 'function') ? baRowUser(tr) : (tr.dataset && tr.dataset.gcUser);
+        const a = u && s[u];
+        if (!a) return;
+        td[2].innerHTML = baLcCell(a.maxFloor, a.towerClears, a.floor);
+      });
+    }
+
+    // ── 3. สไตล์ ──────────────────────────────────────────────────────────────
+    /*  ทุกกฎอยู่ในห้องควบคุม GM ล้วน **ไม่มีกฎไหนแตะหน้าจอเล่น**
+        เลย์เอาต์ฝั่งนักเรียนจึงไม่ขยับแม้แต่พิกเซลเดียว */
+    function baMrStyle() {
+      if (document.getElementById('baMrStyle')) return;
+      const st = document.createElement('style');
+      st.id = 'baMrStyle';
+      st.textContent =
+        '#baMrModal{z-index:790}' +
+        '#baMrModal .g-modal-inner{max-width:460px}' +
+        '.ba-mr-who{font-size:11.5px;color:#dfe9ff;background:rgba(143,216,255,.07);' +
+          'border:1px solid rgba(143,216,255,.2);border-radius:9px;padding:7px 9px;margin-bottom:9px}' +
+        '.ba-mr-who b{color:#8fd8ff}' +
+        '.ba-mr-mirror{display:block;margin-top:3px;font-size:10.5px;color:#ffc845}' +
+        '.ba-mr-grid{display:flex;flex-direction:column;gap:7px;margin-bottom:9px}' +
+        '.ba-mr-btn{display:block;width:100%;text-align:left;cursor:pointer;' +
+          'padding:8px 10px;border-radius:10px;background:#0d141d;color:#dfe9ff;' +
+          'border:1px solid rgba(143,216,255,.28);font-family:inherit}' +
+        '.ba-mr-btn b{display:block;font-size:12.5px;font-weight:800;color:#8fd8ff}' +
+        '.ba-mr-btn i{display:block;margin-top:2px;font-size:10.5px;font-style:normal;color:#8a97b5}' +
+        '.ba-mr-btn.red{border-color:rgba(255,107,122,.45)}' +
+        '.ba-mr-btn.red b{color:#ff6b7a}' +
+        '.ba-mr-note{font-size:10.5px;line-height:1.5;color:#8a97b5;margin-bottom:9px}';
+      document.head.appendChild(st);
+    }
+
+    // ── 4. ห่อฟังก์ชันของชั้นล่าง ───────────────────────────────────────────────
+
+    /* ปุ่ม 🔄 ในคอลัมน์ ⚙️ จัดการ — เรียกแทนของเดิมทั้งตัว เปลี่ยนจาก "ล้างทันที"
+       เป็น "เปิดเมนูเลือกส่วนที่จะล้าง" · **ยังคงของเดิมไว้เป็นทางสำรอง**
+       ถ้าเมนูโยน error (precedent เดียวกับ csGmOpen ของ v5.3.1 · gmDelete ของ v7.2)
+       — ของเดิมยังทำงานได้ครบและเป็นการล้างทั้งหมดที่คง Auth อยู่แล้ว ครูจึงไม่มีทางค้าง */
+    if (typeof gmResetProgress === 'function') {
+      const _baMrResetOrig = gmResetProgress;
+      gmResetProgress = function (user) {
+        try { return baMrOpen(user); }
+        catch (e) { baMrErr(e, 'open'); return _baMrResetOrig.apply(this, arguments); }
+      };
+    }
+
+    /* ตัวนับรอบของตาราง LIVE — เกาะท้าย baDecorate ของ v7.2
+       (v7.2 ตีตรา tr.dataset.baUser ให้ก่อนแล้ว จึงหาแถวได้โดยไม่ต้องแกะ DOM ซ้ำ) */
+    if (typeof baDecorate === 'function') {
+      const _baLcDecorate = baDecorate;
+      baDecorate = function () {
+        const r = _baLcDecorate.apply(this, arguments);
+        try { baLcPaintLive(); } catch (e) { baMrErr(e, 'live'); }
+        return r;
+      };
+    }
+
+    /* ตัวนับรอบของตารางจัดการ — เกาะท้าย baGmRows ของ v7.2 ซึ่งถูกเรียกจาก
+       wrapper ของ gmRender อยู่แล้ว จึงไม่ต้องห่อ gmRender เพิ่มอีกชั้น */
+    if (typeof baGmRows === 'function') {
+      const _baLcGmRows = baGmRows;
+      baGmRows = function () {
+        const r = _baLcGmRows.apply(this, arguments);
+        try { baLcPaintGm(); } catch (e) { baMrErr(e, 'gm'); }
+        return r;
+      };
+    }
+
+    // ══ ทางเข้าสาธารณะสำหรับชุดเทสต์ ═══════════════════════════════════════════
+    if (typeof baBattleAudit === 'function') {
+      const _baMrAudit = baBattleAudit;
+      baBattleAudit = function () {
+        const o = _baMrAudit.apply(this, arguments) || {};
+        o.gmReset = {
+          ver: BA_MR_VER,
+          modes: BA_MR_MODES.map(function (m) { return m.id; }),
+          auth: BA_MR_AUTH.slice(), keep: BA_MR_KEEP.slice(),
+          runs: BA_MR_N, last: BA_MR_LAST, user: BA_MR_USER,
+          dom: { modal: !!document.getElementById('baMrModal'),
+                 open: !!(document.getElementById('baMrModal') &&
+                          document.getElementById('baMrModal').classList.contains('active')),
+                 btns: document.querySelectorAll('#baMrModal .ba-mr-btn').length,
+                 styled: !!document.getElementById('baMrStyle') }
+        };
+        o.loopCounter = {
+          ver: BA_MR_VER,
+          live: document.querySelectorAll('#fbBody .ba-loop').length,
+          gm:   document.querySelectorAll('#gmBody .ba-loop').length,
+          liveRows: (document.getElementById('fbBody') || { rows: [] }).rows.length,
+          gmRows:   (document.getElementById('gmBody') || { rows: [] }).rows.length
+        };
+        return o;
+      };
+    }
+
+    (function baInstall74() {
+      try { baMrStyle(); } catch (e) { baMrErr(e, 'install74'); }
+    })();
+
+
     (function baInstall() {
       try {
         /* .g-monster-area อยู่ใน HTML แบบสแตติกอยู่แล้ว จึงสร้างได้ตั้งแต่โหลดหน้า

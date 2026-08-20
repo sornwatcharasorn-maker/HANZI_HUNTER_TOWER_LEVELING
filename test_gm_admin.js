@@ -101,12 +101,13 @@ async function confirmOk(page) {
     eq('ขั้นสุดท้ายจบที่เลเวล 99', await page.evaluate(() => BA_LVRANK[BA_LVRANK.length - 1].to), 99);
     eq('ป้ายครบตามสเปก', await page.evaluate(() => BA_LVRANK.map(r => r.label)),
        ['E-RANK','D-RANK','C-RANK','B-RANK','A-RANK','S-RANK','SS-RANK','SSS-RANK','National Level','Shadow Monarch']);
-    eq('ขอบเขตขั้นละ 10 เลเวลพอดี', await page.evaluate(() => BA_LVRANK.map(r => r.to)),
-       [10,20,30,40,50,60,70,80,90,99]);
-    eq('เลเวล 1/10/11/20/21 ตกขั้นถูก',
-       await page.evaluate(() => [1,10,11,20,21].map(n => baLvRank(n).key)), ['E','E','D','D','C']);
-    eq('เลเวล 41/51/61/71/81/91 ตกขั้นถูก',
-       await page.evaluate(() => [41,51,61,71,81,91].map(n => baLvRank(n).key)), ['A','S','SS','SSS','NL','SM']);
+    eq('ขอบเขตตรงตารางชุด v7.6', await page.evaluate(() => BA_LVRANK.map(r => r.to)),
+       [15,30,45,60,72,82,90,95,98,99]);
+    eq('เลเวล 1/15/16/30/31 ตกขั้นถูก',
+       await page.evaluate(() => [1,15,16,30,31].map(n => baLvRank(n).key)), ['E','E','D','D','C']);
+    eq('เลเวล 46/61/73/83/91/96/99 ตกขั้นถูก',
+       await page.evaluate(() => [46,61,73,83,91,96,99].map(n => baLvRank(n).key)),
+       ['B','A','S','SS','SSS','NL','SM']);
     eq('หนีบค่าเพี้ยนให้อยู่ใน 1-99 เสมอ',
        await page.evaluate(() => [0,-5,120,NaN].map(n => baLvRank(n).key)), ['E','E','SM','E']);
 
@@ -180,7 +181,7 @@ async function confirmOk(page) {
       ({ u: tr.dataset.baUser, rk: tr.cells[1].querySelector('.gm-sub').textContent.trim() })));
     eq('แรงค์ในตารางสดอ่านจากเลเวล 1-99',
        sub1.sort((x, y) => x.u < y.u ? -1 : 1).map(x => x.u + ':' + x.rk),
-       ['a1:B-RANK', 'a2:E-RANK', 'a3:S-RANK']);
+       ['a1:C-RANK', 'a2:E-RANK', 'a3:B-RANK']);
 
     ok('แถบเตือนขึ้นเฉพาะ a3 (แม่นยำ 20% เลเวล 55)',
        await page.evaluate(() => Array.from(document.querySelectorAll('#fbBody tr.ba-susp'))
@@ -563,9 +564,9 @@ async function confirmOk(page) {
     await enterPanel(page);
 
     /* 12.1 ไล่ขั้นแรงค์ครบทั้งสิบขั้น — อ่านจาก DOM จริง ไม่ใช่จากตารางในโค้ด */
-    const tiers = [[5, 'E-RANK'], [15, 'D-RANK'], [25, 'C-RANK'], [35, 'B-RANK'], [45, 'A-RANK'],
-                   [55, 'S-RANK'], [65, 'SS-RANK'], [75, 'SSS-RANK'], [85, 'National Level'],
-                   [95, 'Shadow Monarch']];
+    const tiers = [[5, 'E-RANK'], [20, 'D-RANK'], [35, 'C-RANK'], [50, 'B-RANK'], [65, 'A-RANK'],
+                   [78, 'S-RANK'], [86, 'SS-RANK'], [93, 'SSS-RANK'], [97, 'National Level'],
+                   [99, 'Shadow Monarch']];
     await seed(page, tiers.map(function (t, i) { return live('lv' + t[0], { lv: t[0], mfloor: 20 - i }); }));
     const got = await page.evaluate(() => {
       const o = {};
@@ -581,11 +582,11 @@ async function confirmOk(page) {
     ok('ไม่มีแถวไหนเหลือ E-RANK ค้าง (นอกจาก Lv 5)',
        Object.keys(got).filter(function (k) { return got[k] === 'E-RANK'; }).length === 1, got);
 
-    /* 12.2 คีย์โหนด ≠ รหัสใน payload — อาการเดิมคือตกเป็น E-RANK ทั้งที่เลเวล 45
+    /* 12.2 คีย์โหนด ≠ รหัสใน payload — อาการเดิมคือตกเป็น E-RANK ทั้งที่เลเวล 65
            fbPush เขียนโหนดที่ encodeURIComponent(u) แต่ payload พก u ดิบไปด้วย */
     await page.evaluate(function (r) {
       FB_LIVE = {}; FB_LIVE['%E0%B8%81%E0%B8%B2'] = r; FB_MST = 'live'; fbPaint();
-    }, live('\u0e01\u0e32', { lv: 45 }));
+    }, live('\u0e01\u0e32', { lv: 65 }));
     await page.waitForTimeout(250);
     eq('รหัสฮันเตอร์ที่ถูก encode เป็นคีย์โหนด — ยังได้ A-RANK',
        await page.evaluate(() => {

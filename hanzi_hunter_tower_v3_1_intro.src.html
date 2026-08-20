@@ -29718,6 +29718,205 @@
     })();
 
 
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Patch v7.6 · EXP SCALING · REBALANCED RANK BRACKETS · LEVEL-UP IMPACT
+    //  (เส้นโค้ง EXP ใหม่ 1-99 · บันไดแรงค์ตามเลเวลชุดใหม่ · ผลของการอัปเลเวล)
+    // --------------------------------------------------------------------------
+    //  อยู่ในเนมสเปซ `ba` ของชั้น v6.0 เดิม **ไม่ได้ตั้งพรีฟิกซ์ใหม่**
+    //  (กติกาเดียวกับ v6.1-v7.5) ทุกอย่างขึ้นต้นด้วย baLv / BA_LV_
+    //
+    //  **ไม่แก้โค้ดของ v4.0-v7.5 เลยแม้แต่บรรทัดเดียว** — ห่อฟังก์ชันอย่างเดียว
+    //  ฟังก์ชันที่ถูกห่อมีแค่ 4 ตัว: expForLevel · maxHpFor · hunterAtk · goldMul
+    //  บวกการปรับ `to` ของ BA_LVRANK ในที่ (เป็น const อาร์เรย์ จึงแก้สมาชิกได้
+    //  โดยไม่ต้องแตะซอร์สของ v7.2 — ท่าเดียวกับที่ v6.4 ทำกับ AB_SEAL_FLOORS)
+    //
+    //  ── ทำไมแทบไม่ต้องเขียนอะไรใหม่เลย ────────────────────────────────────────
+    //  ทุกอย่างที่สเปกขอมี "ทางผ่านเดียว" อยู่แล้วทั้งหมด
+    //    · เพดาน EXP ของทุกเลเวล      → expForLevel   (migrateAccount · levelUpCheck ·
+    //                                    gmEditLevel · dwExpGained ของ v4.9.2 อ่านผ่านตัวนี้หมด)
+    //    · HP สูงสุด                  → maxHpFor      (recalcStats · migrateAccount)
+    //    · ดาเมจที่ฮีโร่ตีออก          → hunterAtk     (และ HP มอนสเตอร์ก็คิดจากตัวเดียวกัน)
+    //    · อัตราทอง                   → goldMul
+    //    · ป้ายแรงค์ในตารางครูสองใบ    → BA_LVRANK     (fbPaint/#fbBody กับ gmRender/#gmBody
+    //                                    ของ v7.2 อ่านผ่าน baLvRank ตัวเดียวกันทั้งคู่ = ซิงก์ 100%)
+    //  จึง "ห่อสูตร ไม่ไล่แก้ตามจุดเรียก" ตามกฎเดียวกับ v4.4/v4.6/v6.3
+    //
+    //  ── ข้อจำกัดเดิมที่ยังต้องเคารพ ────────────────────────────────────────────
+    //  1. **ไม่แตะหน้าจอเล่นเลยแม้แต่พิกเซลเดียว** — แพตช์นี้ไม่เพิ่ม DOM สักโหนด
+    //     ไม่เพิ่ม CSS สักกฎ ไม่เพิ่มปุ่ม การ์ดโจทย์จึงยัง 340.8px (354.8px ที่จอ 320)
+    //  2. **ไม่แตะช่องเก็บของ** — BAG_SLOTS ยังเป็น 10 ตามสเปกสั่งไว้ตรง ๆ
+    //  3. **ห้ามขยาย RANKS ของ v4.0** — นั่นคือแรงค์ตาม "ชั้นสูงสุด" ซึ่งเป็นตัว
+    //     ปลดล็อกฟีเจอร์ (FEATURE_RANK) แตะเมื่อไหร่บาลานซ์ทั้งเกมขยับ · ตารางที่
+    //     แพตช์นี้ปรับคือ BA_LVRANK ซึ่งเป็นป้ายแสดงผลของห้องควบคุม GM ล้วน ๆ
+    // ══════════════════════════════════════════════════════════════════════════
+
+    const BA_LV_VER = '7.6';
+
+    /* ── ค่าคงที่ทั้งชุด — แหล่งความจริงเดียวของแพตช์นี้ ────────────────────────
+       ทุกตัวเลขที่แพตช์นี้ใช้มาจากก้อนนี้ก้อนเดียว ไม่ได้พิมพ์เลขทับไว้ที่ไหนเลย
+       (กติกาเดียวกับราคาร้านค้าของ v4.7.9.1 · ตารางดาเมจของ v4.8) */
+    const BA_LV_MAX    = 99;      /* เพดานเลเวลที่สูตรกับโบนัสทั้งชุดหนีบไว้ */
+    const BA_LV_EXP_K  = 200;     /* ตัวคูณหน้าเลขชี้กำลังของเส้นโค้ง EXP */
+    const BA_LV_EXP_P  = 1.45;    /* เลขชี้กำลัง */
+    const BA_LV_EXP_L  = 50;      /* ส่วนเชิงเส้นต่อเลเวล */
+    const BA_LV_HP     = 15;      /* Base Max HP ที่ได้ต่อการอัปหนึ่งเลเวล (สเปก) */
+    const BA_LV_HP_OLD = 10;      /* ของ v4.0 ให้อยู่แล้วเท่านี้ — ห่อจึงบวกแค่ส่วนต่าง */
+    const BA_LV_ATK    = 0.015;   /* ATK +1.5% ต่อเลเวล (บวกเป็นเปอร์เซ็นต์ของฐาน) */
+    const BA_LV_GOLD   = 0.005;   /* อัตราทอง +0.5% ต่อเลเวล (บวกเข้าตัวคูณตรง ๆ) */
+
+    /* ── บันไดแรงค์ชุดใหม่ — เก็บแค่ "ขอบบนของแต่ละขั้น" ─────────────────────────
+       E 1-15 · D 16-30 · C 31-45 · B 46-60 · A 61-72 · S 73-82 · SS 83-90
+       · SSS 91-95 · National 96-98 · Shadow Monarch 99 (MAX)
+
+       เขียนเป็นแค่ชุดตัวเลข `to` โดยตั้งใจ ไม่ได้ปั้นตารางใหม่ทั้งใบ —
+       คีย์ · ป้าย · ชื่อไทย ของ v7.2 ถูกต้องอยู่แล้วทั้งสิบขั้น การประกาศซ้ำ
+       คือการสร้างสารบัญชุดที่สองที่ต้องซิงก์กันตลอดไป (บทเรียนข้อ 35)
+       ส่วน "ขอบล่าง" ไม่ต้องเขียน เพราะ baLvRankFrom ของ v7.2 คำนวณจาก
+       `ขั้นก่อนหน้า.to + 1` ให้เองอยู่แล้ว จึงขยับตามชุดนี้โดยอัตโนมัติ */
+    const BA_LV_TO = [15, 30, 45, 60, 72, 82, 90, 95, 98, 99];
+
+    /* พังตรงไหนก็ห้ามลามไปทำเกมพัง — เขียนลง Error Log ของ v4.3 ผ่าน baErr ของ v6.0 */
+    function baLvErr(e, w) { try { baErr(e, 'lv76:' + w); } catch (x) {} }
+
+    /* เลเวลที่เอาไปคิดโบนัส — หนีบ 1..99 เสมอ
+       แผง GM ตั้งเลเวลเองได้และบัญชีเพี้ยนก็มีจริง (กติกาเดียวกับ baLvRank ของ v7.2)
+       เลเวลเกิน 99 จึงไม่ได้โบนัสเพิ่มอีก ตรงกับที่สเปกนิยามช่วงไว้แค่ 1-99 */
+    function baLvNow(src) {
+      const s = src || ((typeof G === 'object' && G) ? G : null);
+      const n = Math.floor(+((s && s.level) || 1));
+      return Math.max(1, Math.min(BA_LV_MAX, isFinite(n) ? n : 1));
+    }
+
+    /* ── 1) เส้นโค้ง EXP ใหม่ ────────────────────────────────────────────────────
+       เดิมของ v4.0 คือ 100 + (lv-1)*40 ซึ่งโตแบบเส้นตรง เลเวลปลายเกมจึงมาถึงเร็วมาก
+       ชุดนี้เป็น `200 * lv^1.45 + lv*50` ตามสเปก — โตเร็วขึ้นเรื่อย ๆ ตามเลเวล
+       ตัวอย่างเพดานต่อเลเวล: Lv1 = 250 · Lv10 = 6,136 · Lv30 = 27,281 · Lv99 = 161,393
+
+       **เขียนทับ binding ไม่ใช่ห่อ** เพราะสเปกเปลี่ยน "สูตร" ทั้งก้อน ไม่ใช่บวกทับของเดิม
+       (precedent เดียวกับที่ v6.4 เขียนทับ isBossFloor) ทุกจุดเรียกในเกมอ้างถึงด้วย
+       ชื่อระดับบนสุดล้วน และ mangle.toplevel ของ build เป็น false ตลอดกาล ชื่อจึงรอด */
+    function baLvExpFor(level) {
+      const lv = baLvNow({ level: level });
+      return Math.floor(BA_LV_EXP_K * Math.pow(lv, BA_LV_EXP_P) + lv * BA_LV_EXP_L);
+    }
+
+    if (typeof expForLevel === 'function') {
+      expForLevel = function (level) {
+        try { return baLvExpFor(level); } catch (e) { baLvErr(e, 'exp'); return 100; }
+      };
+    }
+
+    /* ── 2) บันไดแรงค์ — ปรับ `to` ของ BA_LVRANK ในที่ ──────────────────────────
+       ต้อง idempotent เพราะถูกเรียกได้หลายรอบ (ติดตั้ง + ชุดเทสต์)
+       และต้องไม่ลงมือเลยถ้าจำนวนขั้นไม่ตรงกัน — ดีกว่าเขียนตารางให้เพี้ยนครึ่งใบ */
+    function baLvSyncTiers() {
+      try {
+        if (typeof BA_LVRANK === 'undefined' || !Array.isArray(BA_LVRANK)) return false;
+        if (BA_LVRANK.length !== BA_LV_TO.length) return false;
+        for (let i = 0; i < BA_LV_TO.length; i++) BA_LVRANK[i].to = BA_LV_TO[i];
+        return true;
+      } catch (e) { baLvErr(e, 'tiers'); return false; }
+    }
+
+    /* ชื่อที่สเปกเรียก — ตัวอ่านสาธารณะตัวเดียวของบันไดแรงค์
+       ไม่ได้คัดลอกตรรกะของ baLvRank มาเขียนซ้ำ (นั่นคือสารบัญชุดที่สอง)
+       ตกไปคืนขั้นแรกให้เองถ้าชั้น v7.2 ถูกถอดออก เพื่อให้ผู้เรียกไม่ต้องเช็ก null */
+    function getBaLvRank(lv) {
+      if (typeof baLvRank === 'function') return baLvRank(lv);
+      return { to: BA_LV_TO[0], key: 'E', label: 'E-RANK', name: '' };
+    }
+    function getBaLvRankFrom(rk) {
+      if (typeof baLvRankFrom === 'function') return baLvRankFrom(rk);
+      return 1;
+    }
+
+    /* ── 3) ผลของการอัปเลเวล ────────────────────────────────────────────────────
+       ทั้งสามข้อใส่ที่ **wrapper ของสูตร** ไม่ไล่แก้ตามจุดเรียก ตามกฎของ v4.4/v4.6/v6.3
+       จึงมีผลพร้อมกันทุกที่ที่อ่านค่าพวกนี้ — หลอดสถานะ · แผง GM · การให้ทอง ·
+       ดาเมจจริง — โดยไม่ต้องรู้จักจุดเรียกสักจุด
+
+       3.1 Base Max HP +15 ต่อเลเวล
+       v4.0 ให้ (lv-1)*10 อยู่แล้ว ตัวห่อจึงบวก "ส่วนต่าง" อีก (lv-1)*5 เท่านั้น
+       **ห้ามเขียนสูตรใหม่ทั้งก้อน** เพราะ VIT กับโบนัสแรงค์ D อยู่ในของเดิม
+       ถ้าคัดลอกออกมาแล้ววันหนึ่งของเดิมถูกแก้ สองที่จะเพี้ยนกันเงียบ ๆ */
+    if (typeof maxHpFor === 'function') {
+      const _baLvMaxHpFor = maxHpFor;
+      maxHpFor = function (level, vit, bonus) {
+        const base = _baLvMaxHpFor.apply(this, arguments);
+        try { return base + (baLvNow({ level: level }) - 1) * (BA_LV_HP - BA_LV_HP_OLD); }
+        catch (e) { baLvErr(e, 'hp'); return base; }
+      };
+    }
+
+    /* 3.2 ATK +1.5% ต่อเลเวล — ตัวคูณของฐาน (Lv50 = +73.5% · Lv99 = +147%)
+
+       **HP ของมอนสเตอร์คิดจาก hunterAtk ตัวเดียวกันนี้** (monsterHpFor ของ v4.0 ·
+       เกราะผนึกของ v4.6 · เกราะบาเรียของ v6.4) ตัวคูณจึงลงทั้งสองฝั่งพร้อมกัน
+       "จำนวนหมัดที่ต้องตี" จึงไม่ขยับเลย = ไม่ทำลายบาลานซ์ที่ชั้นล่างวางไว้
+       ที่เปลี่ยนจริงคือตัวเลขบนจอโตขึ้นตามเลเวล ซึ่งคือเจตนาของสเปก
+
+       ตัวห่อนี้อยู่ชั้นนอกสุด จึงคูณทับผลของ v6.3 (ท่าไม้ตาย ×2.5 · Heavy Fortress)
+       และ v6.4 (Armor Break ×1.5) อย่างถูกต้อง เพราะเป็นตัวคูณแบน ๆ ไม่ผูกจังหวะ */
+    function baLvAtkMul(src) { return 1 + BA_LV_ATK * (baLvNow(src) - 1); }
+
+    if (typeof hunterAtk === 'function') {
+      const _baLvHunterAtk = hunterAtk;
+      hunterAtk = function () {
+        const base = _baLvHunterAtk.apply(this, arguments);
+        try { return Math.max(1, Math.round(base * baLvAtkMul())); }
+        catch (e) { baLvErr(e, 'atk'); return base; }
+      };
+    }
+
+    /* 3.3 อัตราทอง +0.5% ต่อเลเวล — **บวกเข้าตัวคูณตรง ๆ ไม่คูณทับ**
+       โบนัสทองของเกมนี้เป็น "ก้อนที่แยกกัน" มาตลอด (LUK ของ v4.0 · คลังอักขระ
+       เพดาน +10% ของ v4.4 · แกนโชคลาภเพดาน +6% ของ v4.6) การคูณทับจะไปขยาย
+       ของสามก้อนนั้นด้วย ซึ่งไม่ใช่สิ่งที่สเปกสั่ง และทำให้เพดานที่ตั้งไว้ไม่เป็นเพดานอีก */
+    function baLvGoldAdd(src) { return BA_LV_GOLD * (baLvNow(src) - 1); }
+
+    if (typeof goldMul === 'function') {
+      const _baLvGoldMul = goldMul;
+      goldMul = function () {
+        const base = _baLvGoldMul.apply(this, arguments);
+        try { return base + baLvGoldAdd(); }
+        catch (e) { baLvErr(e, 'gold'); return base; }
+      };
+    }
+
+    // ══ ทางเข้าสาธารณะสำหรับชุดเทสต์ ═══════════════════════════════════════════
+    if (typeof baBattleAudit === 'function') {
+      const _baLvAudit = baBattleAudit;
+      baBattleAudit = function () {
+        const o = _baLvAudit.apply(this, arguments) || {};
+        const lv = baLvNow();
+        o.lvScale = {
+          ver: BA_LV_VER, max: BA_LV_MAX, lv: lv,
+          exp: { k: BA_LV_EXP_K, p: BA_LV_EXP_P, l: BA_LV_EXP_L,
+                 now: baLvExpFor(lv), next: baLvExpFor(lv + 1),
+                 live: (typeof expForLevel === 'function') ? expForLevel(lv) : 0 },
+          gain: { hp: BA_LV_HP, hpAdd: BA_LV_HP - BA_LV_HP_OLD,
+                  atk: BA_LV_ATK, atkMul: baLvAtkMul(),
+                  gold: BA_LV_GOLD, goldAdd: baLvGoldAdd() },
+          tiers: (typeof BA_LVRANK !== 'undefined' && Array.isArray(BA_LVRANK))
+            ? BA_LVRANK.map(function (r) {
+                return { key: r.key, label: r.label, from: getBaLvRankFrom(r), to: r.to };
+              })
+            : [],
+          want: BA_LV_TO.slice(),
+          synced: (typeof BA_LVRANK !== 'undefined' && Array.isArray(BA_LVRANK) &&
+                   BA_LVRANK.length === BA_LV_TO.length &&
+                   BA_LVRANK.every(function (r, i) { return r.to === BA_LV_TO[i]; })),
+          bag: (typeof BAG_SLOTS === 'number') ? BAG_SLOTS : 0
+        };
+        return o;
+      };
+    }
+
+    (function baInstall76() {
+      try { baLvSyncTiers(); } catch (e) { baLvErr(e, 'install'); }
+    })();
+
+
     (function baInstall() {
       try {
         /* .g-monster-area อยู่ใน HTML แบบสแตติกอยู่แล้ว จึงสร้างได้ตั้งแต่โหลดหน้า

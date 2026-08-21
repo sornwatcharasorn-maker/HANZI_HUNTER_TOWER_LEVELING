@@ -31224,6 +31224,304 @@
       try { baLbStyle(); } catch (e) { baLbErr(e, 'install'); }
     })();
 
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Micro-Patch · FORCE NUCLEAR RESET & DEEP FIELD PURGE ENGINE
+    //  (อยู่ในเนมสเปซ `ba` ของชั้น v6.0 เดิม ไม่ได้ตั้งพรีฟิกซ์ใหม่ · ต่อท้าย
+    //   baInstallLb() และก่อน baInstall() จึงห่อทับทุกชั้นได้)
+    //
+    //  ── ทำไมรีเซ็ตของ v7.4 ยังกลับมาเป็นของเก่า — สามต้นเหตุที่วัดมาแล้ว ─────────
+    //  1. **Merge Leak ที่สถานะกลาง** — v7.4 สร้างบัญชีใหม่ทั้งก้อนจาก blankAccount
+    //     ถูกต้องแล้วในทะเบียน แต่ `baMasterState[u]` ของ v7.7 ถูกปั้นใหม่จาก
+    //     "ทะเบียน → สัญญาณสดทับ" ทุกครั้ง สัญญาณเก่าที่ยังค้างใน FB_LIVE จึงทับ
+    //     ค่า 0 กลับมาทันทีในการวาดรอบถัดไป
+    //  2. **Cloud Partial Update** — v7.4 ไม่เคยแตะโหนด /students เลยสักครั้ง
+    //     ก้อนคำผิด/สถิติสะสมของนักเรียนจึงยังอยู่ครบบนคลาวด์ แล้ว lrHydrate ของ v5.7
+    //     ปั้นแถวคืนลงทะเบียนของครูให้เองภายในไม่กี่วินาที
+    //  3. **Student Heartbeat Race** — เครื่องนักเรียนที่เปิดค้างส่ง payload ก้อนเก่า
+    //     ขึ้นมาทับทุก 5 วินาทีตามหัวใจของ v5.4
+    //
+    //  แพตช์นี้ปิดทั้งสามทางพร้อมกัน และ **ไม่แก้โค้ดของ v4.0-v7.8 เลยแม้แต่บรรทัดเดียว**
+    //  ที่เพิ่มคือ wrapper 5 ตัว (`baMrApply` · `fbApply` · `lrApply` · `fbFetch`
+    //  · `saveStore`)
+    //  กับ audit อีกก้อน · **ไม่เพิ่ม DOM ไม่เพิ่ม CSS ไม่เพิ่มปุ่ม
+    //  ไม่แทรกคอลัมน์** (ข้อห้ามข้อแรกของ v7.2 — xpDomRows ของ v5.5 อ่าน td ตายตัว)
+    //  การ์ดโจทย์จึงคงที่ 340.8px / 354.8px เท่าเดิมเป๊ะ
+    // ══════════════════════════════════════════════════════════════════════════
+
+    const BA_FN_VER     = '7.9';
+    const BA_FN_LOCK_MS = 20000;              /* GM Write-Lock ตามสเปก */
+    const BA_FN_K_ACK   = 'yao_reset_ack';    /* ธงรับทราบฝั่งนักเรียน — ระดับเครื่อง ไม่ผูกบัญชี */
+
+    /* ฟิลด์ที่ v5.7 เติมให้ "แถวสด" — blankAccount ไม่มีสี่ตัวนี้ โหมด full จึงล้างให้เอง
+       แต่โหมดแยกส่วนไม่ล้าง และมันคือก้อนที่ทำให้ตัวเลขเก่าย้อนกลับมาบนจอครู */
+    const BA_FN_STRIP = ['lrMirror', 'lrAt', 'lrMaxHp', 'lrWords', 'resetSignal'];
+
+    let BA_FN_LOCK = {};    /* {รหัสฮันเตอร์: เวลาที่ล็อกหมดอายุ} — ของรอบการเปิดหน้า ไม่ต้องเซฟ */
+    let BA_FN_HALT = false; /* กำลังจะรีโหลดเพราะโดนสั่งล้าง — บล็อกการเขียนทะเบียนทุกทาง */
+    let BA_FN_WIPE = false; /* กำลังล้างตัวเองตามคำสั่ง — ห้ามยิงกวาดลึก/สัญญาณใหม่ซ้อน */
+    let BA_FN_PUT  = '';    /* กำลัง PUT ก้อนสะอาดจากฝั่งครู — ห้ามให้ตัวรับสัญญาณมาทับ */
+    const BA_FN_N  = { purge: 0, cloud: 0, block: 0, wipe: 0 };
+
+    function baFnErr(e, w) { try { baErr(e, 'fn79:' + w); } catch (x) {} }
+    function baFnLocked(u) { return !!u && (+BA_FN_LOCK[u] || 0) > Date.now(); }
+
+    /* ── 1) GM Write-Lock — ปฏิเสธ snapshot ดีเลย์และ heartbeat เก่า 20 วินาที ─────
+       จุดสกัดคือ "แคชสด" ตัวเดียว (FB_LIVE) เพราะทุกทางอ่านผ่านมันหมด —
+       fbRows/fbPaint ของ v5.3 · baLiveMap ของ v7.2 · lrHydrate ของ v5.7
+       · baMsSync ของ v7.7 · baUniRows ของ v7.8 · ไม่ต้องไล่ดักทีละที่
+
+       **ปักหมุดทับ ไม่ใช่ลบทิ้ง** — ลบแล้วแถวของคนนั้นจะหายจาก LIVE MONITOR
+       ไปทั้ง 20 วินาที ซึ่งครูอ่านว่า "กดรีเซ็ตแล้วเด็กหลุดจากห้อง" ไม่ใช่ "ค่าถูกล้าง"
+       การเขียนก้อนสะอาดทับจึงตรงกับสเปกกว่า (ปฏิเสธค่าเก่า แต่แถวยังอยู่ครบ) */
+    let BA_FN_CLEAN = {};   /* payload สะอาดรายคน ใช้ปักหมุดตลอดหน้าต่างล็อก */
+
+    function baFnPin(u) {
+      const p = BA_FN_CLEAN[u];
+      if (!p) return 0;
+      let n = 0;
+      try {
+        if (typeof FB_LIVE !== 'object' || !FB_LIVE) return 0;
+        Object.keys(FB_LIVE).forEach(function (k) {
+          const r = FB_LIVE[k];
+          let same = (k === u);
+          if (!same && r && typeof r === 'object' && String(r.u || '') === u) same = true;
+          if (!same) { try { same = (decodeURIComponent(k) === u); } catch (e) {} }
+          if (same && r !== p) { FB_LIVE[k] = p; n++; }
+        });
+        if (!n && FB_LIVE[u] !== p) { FB_LIVE[u] = p; n++; }
+      } catch (e) { baFnErr(e, 'pin'); }
+      return n;
+    }
+
+    function baFnLock(u) {
+      if (!u) return;
+      BA_FN_LOCK[u] = Date.now() + BA_FN_LOCK_MS;
+      try { if (typeof LR_SIG === 'string') LR_SIG = ''; } catch (e) {}
+    }
+
+    /* ── 2) Deep Field Purge — สร้าง Object ใหม่ทั้งก้อน ไม่ merge ทับของเก่า ─────
+       ทะเบียนในเครื่องยืมโหมด full ของ v7.4 มาใช้ซ้ำ (มันแทนที่ด้วย blankAccount
+       ทั้งก้อนอยู่แล้ว จึงผ่าน migrateAccount ครบทุกชั้นและได้ default ของฟิลด์ใหม่
+       ที่จะเพิ่มมาทีหลังฟรี) — **ห้ามเขียนสูตรล้างทีละฟิลด์ซ้ำที่นี่** จะกลายเป็น
+       สารบัญชุดที่สองที่ต้องซิงก์กันตลอดไป (บทเรียนข้อ 35)
+       ที่แพตช์นี้เติมคือ "ก้อนที่ blankAccount ไม่รู้จัก" กับปลายทางอีกสองที่ */
+    function baFnStrip(u) {
+      let a = null;
+      try {
+        const s = loadStore();
+        a = s[u];
+        if (!a) return null;
+        BA_FN_STRIP.forEach(function (k) { delete a[k]; });
+        saveStore(s);
+      } catch (e) { baFnErr(e, 'strip'); }
+      return a;
+    }
+
+    /* คลาวด์ — **PUT ทั้งกิ่ง ไม่ใช่ PATCH** จึงกวาดคีย์เก่าที่ payload ใหม่ไม่มีทิ้ง 100%
+       (weak · best · title · loops ของบิลด์ก่อน ๆ) · ยิงแบบไม่รอผลเพราะจอครูต้องขยับทันที
+       · แฮชรหัสผ่าน `pwh` ไม่หายไปด้วย เพราะ caSealBody ของ v5.8 อ่านของจริงจากคลาวด์
+         มาผนึกกลับให้ทุก PUT ที่มีคีย์ `u` เป็นสตริง — นักเรียนจึงล็อกอินรหัสเดิมได้ทันที */
+    async function baFnCloud(u, a, sig) {
+      try {
+        if (typeof fbOn !== 'function' || !fbOn() || typeof fbPayload !== 'function') return false;
+        const p = BA_FN_CLEAN[u] || fbPayload(u, a);
+        p.at = sig; p.resetSignal = sig;
+        BA_FN_PUT = u;
+        try {
+          await fbFetch(fbUrl('/' + encodeURIComponent(u)),
+            { method: 'PUT', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(p) });
+          BA_FN_N.cloud++;
+          return true;
+        } finally { BA_FN_PUT = ''; }
+      } catch (e) { baFnErr(e, 'cloud'); return false; }
+    }
+
+    /* สถานะกลางของ v7.7 — **แทนที่ทั้งก้อน ไม่ Object.assign ทับของเดิม**
+       ฟิลด์ที่ไม่ได้ถูกส่งไปล้างจึงไม่มีทางฝังค้างอยู่ได้เลย (Merge Leak ข้อ 1)
+       · ไม่ไปยุ่งกับ BA_MS_EDIT ของ v7.7 โดยตั้งใจ — กติกา "สัญญาณที่ใหม่กว่าคำสั่ง
+         = คำสั่งหมดอายุ" ของชั้นนั้นยังเป็นจริงทุกประการ ตัวที่กันสัญญาณเก่าคือหมุด
+         ใน FB_LIVE ซึ่งปลดตัวเองเมื่อหมดล็อก */
+    function baFnMaster(u, a, sig) {
+      try {
+        if (typeof baMsAcct !== 'function') return false;
+        const r = baMsAcct(u, a);
+        if (!r) return false;
+        r.at = sig;
+        baMasterState[u] = r;
+        return true;
+      } catch (e) { baFnErr(e, 'master'); return false; }
+    }
+
+    /* วาดใหม่ครบทั้งสองตาราง + ตารางรวมของ v7.8 + 4 กล่อง KPI */
+    function baFnRepaint() {
+      try { if (typeof baMsSync === 'function') baMsSync(); } catch (e) { baFnErr(e, 'sync'); }
+      try { if (typeof gmRender === 'function') gmRender(); } catch (e) { baFnErr(e, 'gm'); }
+      try { if (typeof fbPaint === 'function') fbPaint(); } catch (e) { baFnErr(e, 'fb'); }
+      try { if (typeof baUniPaint === 'function') baUniPaint(); } catch (e) { baFnErr(e, 'uni'); }
+      try { if (typeof baKpiSync === 'function') baKpiSync(); } catch (e) { baFnErr(e, 'kpi'); }
+    }
+
+    function baFnDeep(u) {
+      const sig = Date.now();
+      const a = baFnStrip(u);
+      if (!a) return null;
+      try {
+        if (typeof fbPayload === 'function') {
+          const p = fbPayload(u, a);
+          p.at = sig; p.resetSignal = sig;
+          BA_FN_CLEAN[u] = p;
+          baFnPin(u);
+        }
+      } catch (e) { baFnErr(e, 'clean'); }
+      baFnMaster(u, a, sig);
+      try { baFnCloud(u, a, sig); } catch (e) { baFnErr(e, 'deep:cloud'); }   /* ไม่รอผล */
+      baFnRepaint();
+      BA_FN_N.purge++;
+      return sig;
+    }
+
+    /* ── 3) ฝั่งนักเรียน — resetSignal บังคับล้างเครื่องตัวเองทันที ────────────────
+       **ล้างเฉพาะบัญชีที่ถูกสั่ง ไม่ได้ล้าง localStorage ทั้งก้อน** เพราะห้องคอม
+       ใช้เครื่องร่วมกัน การกวาดทั้งก้อนคือการลบบัญชีเพื่อนร่วมห้องไปด้วย
+       · รีโหลดหน้าแทนการเรียก exitGame เพราะ exitGame ของ v4.0 เรียก saveProgress()
+         ต่อข้างใน ซึ่งจะเอา G ก้อนเก่าในหน่วยความจำเขียนทับก้อนที่เพิ่งล้าง (กับดักข้อ 24) */
+    function baFnAck() { try { return JSON.parse(localStorage.getItem(BA_FN_K_ACK) || '{}') || {}; } catch (e) { return {}; } }
+
+    function baFnWipe(u, sig) {
+      if (BA_FN_HALT) return false;
+      try {
+        const m = baFnAck(); m[u] = sig;
+        localStorage.setItem(BA_FN_K_ACK, JSON.stringify(m));
+      } catch (e) {}
+      BA_FN_WIPE = true;
+      try { if (typeof baMrApply === 'function') baMrApply(u, 'full'); } catch (e) { baFnErr(e, 'wipe:reset'); }
+      BA_FN_WIPE = false;
+      baFnStrip(u);
+      BA_FN_HALT = true;                 /* ปิดประตูเขียนทะเบียนทุกทางก่อนรีโหลด */
+      BA_FN_N.wipe++;
+      try { setTimeout(function () { try { location.reload(); } catch (e) {} }, 400); } catch (e) {}
+      return true;
+    }
+
+    /* PUT ของ v5.3 แทนที่ทั้งกิ่ง คีย์ resetSignal จึงถูกลบทิ้งทุกครั้งที่ heartbeat วิ่ง
+       **ต้องอ่านค่าจริงก่อนเขียนทุกครั้ง แล้วใส่กลับลงก้อนที่จะ PUT — ห้ามใช้ค่าที่แคชไว้**
+       เพราะการยัดค่าเก่ากลับ = เขียนทับสัญญาณที่ครูเพิ่งส่งมา แล้วสัญญาณหายเงียบ ๆ
+       ต้นทุนคือ GET คีย์เดี่ยว (~20 ไบต์) ต่อการ push หนึ่งครั้ง ซึ่งเล็กกว่า payload
+       ~1KB ที่ส่งอยู่แล้วราว 50 เท่า · ตอน keepalive ข้ามให้ (หน้าเพจกำลังถูกทำลาย) */
+    function baFnRowPut(url, opt) {
+      try {
+        if (!opt || opt.method !== 'PUT' || typeof opt.body !== 'string') return '';
+        if (typeof url !== 'string' || url.indexOf('.json') < 0) return '';
+        const b = JSON.parse(opt.body);
+        return (b && typeof b.u === 'string' && b.u) ? b.u : '';
+      } catch (e) { return ''; }
+    }
+
+    if (typeof fbFetch === 'function') {
+      const _baFnFetch = fbFetch;
+
+      const baFnSeal = async function (u, opt) {
+        let body = null;
+        try { body = JSON.parse(opt.body); } catch (e) { return opt; }
+        let sig = 0;
+        try {
+          const v = await _baFnFetch(fbUrl('/' + encodeURIComponent(u) + '/resetSignal'));
+          sig = Math.round(+v) || 0;
+        } catch (e) { return opt; }        /* อ่านไม่ได้ = อย่าเสี่ยงลบสัญญาณทิ้ง */
+        if (!sig) return opt;
+        body.resetSignal = sig;
+        if (sig > (Math.round(+baFnAck()[u]) || 0)) baFnWipe(u, sig);
+        return Object.assign({}, opt, { body: JSON.stringify(body) });
+      };
+
+      fbFetch = function (url, opt) {
+        const u = baFnRowPut(url, opt);
+        if (!u || u === BA_FN_PUT || u !== CURRENT_USER || (opt && opt.keepalive)) {
+          return _baFnFetch.call(this, url, opt);
+        }
+        const self = this;
+        return baFnSeal(u, opt).then(function (o) { return _baFnFetch.call(self, url, o); },
+                                     function ()  { return _baFnFetch.call(self, url, opt); });
+      };
+    }
+
+    // ── 4) ห่อฟังก์ชันของชั้นล่าง ─────────────────────────────────────────────
+
+    /* 4.1 รีเซ็ตทุกโหมดของ v7.4 → ล็อกก่อน แล้วค่อยกวาดลึกหลังของเดิมทำงานจบ
+       ล็อกก่อนจำเป็น ไม่งั้น baMsBridge ของ v7.7 ที่ v7.4 เรียกให้เองจะไปหยิบ
+       สัญญาณเก่าที่ยังค้างใน FB_LIVE มาปั้นเป็นเรคคอร์ดกลางทับก้อนสะอาดทันที */
+    if (typeof baMrApply === 'function') {
+      const _baFnReset = baMrApply;
+      baMrApply = function (user) {
+        const u = String(user || '').trim();
+        if (u && !BA_FN_HALT) { try { baFnLock(u); } catch (e) { baFnErr(e, 'lock'); } }
+        const r = _baFnReset.apply(this, arguments);
+        if (r && u && !BA_FN_HALT && !BA_FN_WIPE) { try { baFnDeep(u); } catch (e) { baFnErr(e, 'deep'); } }
+        return r;
+      };
+    }
+
+    /* 4.2 สัญญาณที่มาถึงระหว่างล็อก — ทิ้งทันทีตั้งแต่แคช ไม่ให้ไหลต่อไปที่ไหนเลย */
+    if (typeof fbApply === 'function') {
+      const _baFnApply = fbApply;
+      fbApply = function () {
+        const r = _baFnApply.apply(this, arguments);
+        try {
+          const ks = Object.keys(BA_FN_LOCK);
+          if (ks.length) {
+            const now = Date.now();
+            ks.forEach(function (u) {
+              if (BA_FN_LOCK[u] > now) { if (baFnPin(u)) BA_FN_N.block++; }
+              else { delete BA_FN_LOCK[u]; delete BA_FN_CLEAN[u]; }
+            });
+          }
+        } catch (e) { baFnErr(e, 'apply'); }
+        return r;
+      };
+    }
+
+    /* 4.3 ตาข่ายชั้นสอง — ระหว่างล็อก ห้ามให้ v5.7 เขียนสัญญาณลงทะเบียนของครูเด็ดขาด
+       **จำเป็น ไม่ใช่การเผื่อไว้** — v7.4 เรียก gmRender()/fbPaint() ปิดท้ายเองอยู่แล้ว
+       ซึ่งลาก lrHydrate ของ v5.7 มาด้วย ตอนนั้นหมุดก้อนสะอาดยังไม่ถูกปัก (ต้องรอ
+       ให้ของเดิมล้างเสร็จก่อนถึงจะปั้น payload สะอาดได้) ถ้าไม่กันไว้ สัญญาณเก่าจะถูก
+       เขียนกลับลงทะเบียนในจังหวะนั้นพอดี แล้วทุกอย่างที่ทำต่อจากนั้นจะอ่านของเก่าทั้งสาย */
+    if (typeof lrApply === 'function') {
+      const _baFnLr = lrApply;
+      lrApply = function (a, r) {
+        const u = String((a && a.user) || (r && r.u) || '');
+        if (baFnLocked(u)) { BA_FN_N.block++; return 0; }
+        return _baFnLr.apply(this, arguments);
+      };
+    }
+
+    /* 4.4 ระหว่างรอรีโหลด ห้ามมีใครเขียนทะเบียนอีกเลย — `G` ในหน่วยความจำยังเป็น
+       ก้อนเก่าอยู่ ถ้า saveProgress/fbTouch วิ่งทันจะเขียนของเก่ากลับทับก้อนที่เพิ่งล้าง */
+    if (typeof saveStore === 'function') {
+      const _baFnSave = saveStore;
+      saveStore = function () {
+        if (BA_FN_HALT) { BA_FN_N.block++; return; }
+        return _baFnSave.apply(this, arguments);
+      };
+    }
+
+    // ══ ทางเข้าสาธารณะสำหรับชุดเทสต์ ═══════════════════════════════════════════
+    if (typeof baBattleAudit === 'function') {
+      const _baFnAudit = baBattleAudit;
+      baBattleAudit = function () {
+        const o = _baFnAudit.apply(this, arguments) || {};
+        const now = Date.now();
+        o.nuke = {
+          ver: BA_FN_VER, lockMs: BA_FN_LOCK_MS, halt: BA_FN_HALT, wiping: BA_FN_WIPE,
+          strip: BA_FN_STRIP.slice(), n: BA_FN_N,
+          pinned: Object.keys(BA_FN_CLEAN),
+          locked: Object.keys(BA_FN_LOCK).filter(function (u) { return BA_FN_LOCK[u] > now; }),
+          ack: baFnAck()
+        };
+        return o;
+      };
+    }
+
     (function baInstall() {
       try {
         /* .g-monster-area อยู่ใน HTML แบบสแตติกอยู่แล้ว จึงสร้างได้ตั้งแต่โหลดหน้า

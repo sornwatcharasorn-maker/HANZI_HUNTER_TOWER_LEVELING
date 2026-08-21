@@ -325,11 +325,26 @@ function cellText(page, sel) { return page.evaluate(s => { const e = document.qu
        /^0 🪙$/.test(await cellText(page, '#fbBody tr td:nth-child(6)')),
        await cellText(page, '#fbBody tr td:nth-child(6)'));
 
-    /* 5.4 สัญญาณที่ใหม่กว่าคำสั่ง = คำสั่งหมดอายุไปเอง (ยังสั่งกลับเครื่องนักเรียนไม่ได้) */
+    /* 5.4 สัญญาณที่ใหม่กว่าคำสั่ง = คำสั่งหมดอายุไปเอง (ยังสั่งกลับเครื่องนักเรียนไม่ได้)
+
+       **Micro-Patch Force Nuclear Reset เพิ่ม GM Write-Lock 20 วินาทีมาคั่นตรงนี้**
+       สัญญาณที่มาถึงระหว่างล็อกถูกปฏิเสธทั้งหมด ต่อให้ประทับเวลาใหม่กว่าก็ตาม —
+       นั่นคือทั้งหมดที่ล็อกมีไว้ทำ (Student Heartbeat Race ของสเปกนั้น)
+       กติกาของ v7.7 ยังเป็นจริงทุกประการ แค่ถูกเลื่อนออกไปจนล็อกหมดอายุ
+       เทสต์จึงพิสูจน์ทั้งสองด้าน: ระหว่างล็อกต้องกัน · พ้นล็อกแล้วต้องยอมตามเดิม */
     eq('มีคำสั่งค้างอยู่ 1 รายการ', await page.evaluate(() => baBattleAudit().dualSync.edits), 1);
-    await page.evaluate(() => fbApply('put', JSON.stringify({
+    const sig = () => page.evaluate(() => fbApply('put', JSON.stringify({
       path: '/br1', data: { u: 'br1', name: 'br1', lv: 6, gold: 9999, at: Date.now() + 60000 }
     })));
+    ok('ล็อกยังทำงานอยู่หลังรีเซ็ต',
+       await page.evaluate(() => baBattleAudit().nuke.locked.indexOf('br1') >= 0));
+    await sig();
+    await page.waitForTimeout(300);
+    eq('สัญญาณที่มาระหว่างล็อกถูกปฏิเสธ',
+       await page.evaluate(() => baMasterState.br1.gold), 0);
+
+    await page.evaluate(() => { BA_FN_LOCK = {}; BA_FN_CLEAN = {}; });
+    await sig();
     await page.waitForTimeout(300);
     eq('คำสั่งถูกปลดเมื่อสัญญาณใหม่กว่ามาถึง',
        await page.evaluate(() => baBattleAudit().dualSync.edits), 0);

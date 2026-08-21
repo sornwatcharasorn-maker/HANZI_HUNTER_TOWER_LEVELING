@@ -11,5 +11,5 @@ arena_art_preview.png
 # ภาพตรวจงานที่ `embed_monster_art.py --preview` พ่นออกมา (ของชั่วคราว ไม่ใช่ของที่แจก)
 monster_art_preview.png
 
-# ผลรันชุดเทสต์ (ของชั่วคราว)
-*_log.txt
+# บันทึกผลของ test_ip_guard.js (ของชั่วคราว ไม่ใช่ของที่แจก)
+ip_guard_log.txt

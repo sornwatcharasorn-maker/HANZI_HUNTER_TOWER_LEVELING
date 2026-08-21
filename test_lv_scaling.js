@@ -26,7 +26,7 @@ function eq(name, got, want) { ok(name, JSON.stringify(got) === JSON.stringify(w
    ถ้าอ่านค่าคงที่ในเกมมาคูณเอง เทสต์จะผ่านทุกครั้งต่อให้เกมเปลี่ยนสูตรไปแล้ว */
 function wantExp(lv) {
   const n = Math.max(1, Math.min(99, Math.floor(lv)));
-  return Math.floor(200 * Math.pow(n, 1.45) + n * 50);
+  return Math.floor(300 * Math.pow(n, 1.65) + 50 * Math.pow(n, 2.0));
 }
 const WANT_TO = [15, 30, 45, 60, 72, 82, 90, 95, 98, 99];
 const WANT_LABEL = ['E-RANK', 'D-RANK', 'C-RANK', 'B-RANK', 'A-RANK',
@@ -122,7 +122,7 @@ async function enterPanel(page) {
     eq('ส่วนต่างที่ตัวห่อบวกจริง (ของ v4.0 ให้ 10 อยู่แล้ว)', a.gain.hpAdd, 5);
     eq('ATK ต่อเลเวล', a.gain.atk, 0.015);
     eq('อัตราทองต่อเลเวล', a.gain.gold, 0.005);
-    eq('ตัวคูณของเส้นโค้ง EXP', [a.exp.k, a.exp.p, a.exp.l], [200, 1.45, 50]);
+    eq('ตัวคูณของเส้นโค้ง EXP', [a.exp.k, a.exp.p, a.exp.k2, a.exp.p2], [300, 1.65, 50, 2.0]);
     ok('ปรับบันไดแรงค์ให้ตรงชุดใหม่แล้วตั้งแต่โหลดหน้า', a.synced === true, a.tiers);
     eq('ช่องเก็บของยังเป็น 10 ช่องเดิม (สเปกสั่งห้ามแตะ)', a.bag, 10);
 
@@ -187,7 +187,7 @@ async function enterPanel(page) {
 
   // ══ บล็อก 3 · เส้นโค้ง EXP ════════════════════════════════════════════════
   {
-    head('บล็อก 3 · เส้นโค้ง EXP 200·lv^1.45 + lv·50');
+    head('บล็อก 3 · เส้นโค้ง EXP 300·lv^1.65 + 50·lv^2.0 (Ragnarok Classic)');
     const b3 = await boot(browser);
 
     const lvs = [1, 2, 3, 5, 10, 15, 20, 30, 45, 60, 72, 82, 90, 95, 98, 99];

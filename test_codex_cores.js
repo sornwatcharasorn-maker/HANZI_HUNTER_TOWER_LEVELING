@@ -409,13 +409,22 @@ function head(s) { say('\n── ' + s + ' ' + '─'.repeat(Math.max(0, 58 - s.l
     const t2 = await ev(() => document.getElementById('baC7Gem').textContent);
     ok(t2 === '💎 7', 'ตัวเลขตามทุกครั้งที่ 💎 ขยับ — "' + t2 + '"');
 
+    /* Micro-Patch เควสประจำวันเปลี่ยนปลายทางของชิปมาที่กระดานเควส
+       (สเปกสั่งไว้ตรง ๆ ว่า "แตะชิป 💎 → เปิดแผงเควส") แกนกลางระบบยังเข้าได้
+       ตามเดิมจากปุ่ม ⚙️ SYSTEM CORE ในแถวปุ่มล่าง และจากปุ่มลัดท้ายกระดานเควส
+       — เคสนี้จึงพิสูจน์ "ทางเข้าทั้งสองทางยังใช้ได้จริง" แทนของเดิมที่พิสูจน์ทางเดียว
+       (precedent: v7.4 พลิกเคสของ test_gm_admin · v7.8 พลิกเคสของ test_menu_icons) */
     const opens = await ev(() => {
       document.getElementById('baC7Gem').click();
-      const on = document.getElementById('abCore').classList.contains('active');
+      const quest = document.getElementById('baQdBoard');
+      const onQuest = !!(quest && quest.classList.contains('active'));
+      if (typeof baQdClose === 'function') baQdClose();
+      abOpenCore();
+      const onCore = document.getElementById('abCore').classList.contains('active');
       abCloseCore();
-      return on;
+      return onQuest && onCore;
     });
-    ok(opens, 'แตะชิปแล้วเปิดแผงแกนกลางระบบได้');
+    ok(opens, 'แตะชิปแล้วเปิดกระดานเควส และแกนกลางระบบยังเปิดได้ตามเดิม');
   }
 
   // ══ บล็อก 11 · ข้อมูลต้องรอดข้ามการล็อกอิน ═══════════════════════════

@@ -7361,6 +7361,23 @@ account.dq = { day: 'YYYY-MM-DD',
 · `migrateAccount` · `saveProgress` ซึ่งเป็นทางผ่านหลักของชั้นพวกนั้น
 **และเปลี่ยนความกว้างฉากหลังสนามรบ** จึงต้องรัน `verify_arena.js` ด้วยเสมอ
 
+วัดจริงหลังแพตช์ (รันครบทั้ง 35 รอบ · ชุดใหม่ `test_daily_quests` 89/0)
+· `verify_arena` 144/0 · `verify_monsters` 80/0 · `test_battle_arena` 51/0
+· `test_battle_v63` 99/0 · `test_abyss_army` 66/0 · `test_boss_resilience` 72/0
+· `test_triple_gauge` 91/0 · `test_combo_reflex` 94/0 · `test_telegraph_grace` 75/0
+· `test_shop_economy` 139/0 · `test_lv_scaling` 81/0 · `test_high_tier_boss` 83/0
+· `test_rules_gate` 96/0 · `test_ip_guard` 109/0 · `test_menu_icons` 130/0
+· `test_cloud_sync` 104/0 · `test_cloud_auth` 48/0 · `test_fb_realtime` 104/0
+· `test_auto_sync` 67/0 · `test_live_roster` 62/0 · `test_gm_export` 62/0
+· `test_gm_admin` 142/0 · `test_gm_reset` 109/0 · `test_dual_sync` 89/0
+· `test_unified_gm` 70/0 · `test_classroom_lb` 69/0 · `test_nuclear_reset` 73/0
+· `test_refresh_btn` 60/0 · **`test_codex_cores` 93/0** (หลังพลิกเคสชิป 💎)
+· **`test_battle_v65` 93/0 เฉพาะตอนรันเดี่ยวจริง ๆ** — รันต่อท้ายชุดอื่นในสคริปต์เดียวกัน
+ยังได้ 87/6 เหมือนที่เอกสารเตือนไว้ (เคสแรกคือ `baFighting()` เป็นเท็จ ที่เหลือล้มตามกันเป็นทอด ๆ)
+**"เดี่ยว" หมายถึงไม่มีอะไรอื่นรันอยู่เลย ไม่ใช่แค่ไม่ขนาน**
+· ที่เหลือเป็นค่าปกติเดิมทั้งหมด — `test_dual_warp_gate` 8 · `test_triple_quest` 16
+· `test_notify_control` 9 · `test_audio_engine` 1
+
 
 ## กับดักที่เคยทำพังมาแล้ว
 

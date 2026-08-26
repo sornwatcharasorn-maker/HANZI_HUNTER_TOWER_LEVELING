@@ -187,7 +187,12 @@ async function liveQ(page) {
     ok('ชั้นบอสในเหวลึกได้ Kamish และเป็นไฟต์บอส', abyss.foe === 'mythic' && abyss.boss === true, abyss);
     near('เนื้อบอสของทัพเงา = ครึ่งหนึ่งของบอสหอคอยชั้นเดียวกัน',
          abyss.body / (tower.body || 1), SPEC.ratio, 0.02);
-    near('เกราะบอสหอคอย = 70%', tower.bar, 0.70, 0.01);
+    /* **Patch v8.2 · Wave 5 Super-Boss Tier เปลี่ยนเกราะเริ่มต้นของบอสหอคอย
+       จาก 70% คงที่ เป็น 50-65% ไล่ระดับตามบานประตูบอส** — อ่านเป้าจาก audit
+       ของชั้นนั้นตรง ๆ ไม่พิมพ์ตัวเลขทับไว้ (เกราะของทัพเงายังเป็น 35% เท่าเดิม
+       เพราะคิดจากเนื้อบอสที่ถูกหั่นแล้ว ไม่ได้อิงตัวเลขของบอสหอคอย) */
+    const wantBar = await b.page.evaluate(() => baBattleAudit().superBoss.bar);
+    near('เกราะบอสหอคอยตามบันได 50-65% ของ v8.2', tower.bar, wantBar, 0.01);
     near('เกราะทัพเงา = 35%', abyss.bar, SPEC.bar, 0.01);
     eq('รีเจนของทัพเงา = ครึ่งหนึ่งของสูตรเดิม', abyss.regen, abyss.want);
     ok('รีเจนของบอสหอคอยไม่ถูกแตะ',

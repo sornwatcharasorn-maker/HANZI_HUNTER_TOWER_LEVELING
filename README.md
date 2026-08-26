@@ -9,7 +9,7 @@
 npm install                    # ครั้งเดียวต่อเครื่อง (terser + clean-css)
 node build_minify.js           # ต้นฉบับ → ไฟล์แจก
 node build_minify.js --check   # ดูตัวเลขเฉย ๆ ไม่เขียนทับ
-bash run_all_tests.sh /tmp/ผลเทสต์  # รันชุดเทสต์ทั้ง 31 ชุดกับไฟล์แจก
+bash run_all_tests.sh /tmp/ผลเทสต์  # รันชุดเทสต์ทั้ง 36 ชุดกับไฟล์แจก
 ```
 
 ไฟล์แจกยังเป็น HTML ใบเดียวที่ไม่อ้างอะไรจากข้างนอกเลย เปิดจาก `file://` ออฟไลน์ได้เหมือนเดิม

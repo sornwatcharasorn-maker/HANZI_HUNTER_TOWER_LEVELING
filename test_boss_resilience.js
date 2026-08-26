@@ -172,14 +172,19 @@ async function tick(page, ms) {
       return { raw: raw, seal: seal, base: BA_BAR ? BA_BAR.base : 0,
                barMax: BA_BAR ? BA_BAR.max : 0, tier: BA_BAR ? BA_BAR.tier : '',
                max: G.monsterMaxHp, hp: G.monsterHp, sealLeft: abSealLeft(),
-               a: baBattleAudit().resil };
+               a: baBattleAudit().resil, wv: baBattleAudit().superBoss };
     }, f);
-    /* เนื้อบอสถูกคูณ 2.5 แล้วผนึกของ v4.6 วางทับ — เกราะ 70% คิดจากยอดรวมนั้น */
+    /* เนื้อบอสถูกคูณ 2.5 แล้วผนึกของ v4.6 วางทับ */
     const wantBase = Math.round(s.raw * 2.5) + s.seal;
     ok(near(s.base, wantBase, 3),
        'ชั้น ' + f + ' เนื้อบอส x2.5 [base=' + s.base + ' ต้องการ ' + wantBase + ']');
-    ok(near(s.barMax, Math.round(s.base * 0.70), 2),
-       'ชั้น ' + f + ' เกราะ 70% ของเนื้อบอส [' + s.barMax + '/' + Math.round(s.base * 0.70) + ']');
+    /* **เกราะเริ่มต้นเปลี่ยนจาก 70% คงที่ เป็น 50-65% ไล่ระดับตามบานประตูบอส
+       ตั้งแต่ Patch v8.2 · Wave 5 Super-Boss Tier** — อ่านเป้าจาก audit ของชั้นนั้น
+       ตรง ๆ ไม่พิมพ์ตัวเลขทับไว้ ถ้าค่าคงที่ขยับ เคสนี้จะขยับตามเอง */
+    const wantBar = Math.round(s.base * s.wv.bar);
+    ok(near(s.barMax, wantBar, 2),
+       'ชั้น ' + f + ' เกราะ ' + Math.round(s.wv.bar * 100) + '% ของเนื้อบอส [' +
+       s.barMax + '/' + wantBar + ']');
     ok(s.hp === s.max && s.max === s.base + s.barMax,
        'ชั้น ' + f + ' หลอดเต็มใบ = เนื้อ + เกราะ [' + s.max + ']');
     ok(near(s.sealLeft, s.seal, 2),
@@ -320,7 +325,12 @@ async function tick(page, ms) {
   ok(p2b.max === p1.max, 'กางได้ครั้งเดียวตลอดไฟต์ ไม่กางซ้ำ [' + p2b.max + ']');
 
   // ═══ 7) Soul Siphon Penalty ════════════════════════════════════════
-  blk('7 · ตอบผิด → บอสฟื้น +5%');
+  /* **Patch v8.2 · Wave 5 Absolute Punishment เขียนทับกติกานี้ในห้องบอส**
+     ตอบผิดในห้องบอสประจำชั้นทำให้บอสฟื้นเต็มหลอด (+100%) ไม่ใช่ +5% อีกต่อไป
+     และแบนเนอร์เป็น ABSOLUTE PUNISHMENT แทน SOUL SIPHON
+     · ตัว Soul Siphon ของ v6.7 ยังทำงานตามเดิมทุกประการในไฟต์ทัพเงา
+       (ซึ่งไม่ใช่ Wave 5) — ชุดของ v8.1 เป็นคนพิสูจน์ส่วนนั้น */
+  blk('7 · ตอบผิดในห้องบอส → บทลงโทษสมบูรณ์แบบ (v8.2 ทับ Soul Siphon)');
   await goFloor(page, 20);
   const s0 = await page.evaluate(() => {
     G.monsterHp = Math.round(G.monsterMaxHp * 0.70);
@@ -331,11 +341,16 @@ async function tick(page, ms) {
     const wrong = m.choices.filter(c => c !== m.answer)[0];
     G.locked = false;
     resolveAnswer(wrong, null, false);
-    return { gain: G.monsterHp - before, want: baBattleAudit().resil.siphon, hp: G.hp };
+    return { gain: G.monsterHp - before, want: baBattleAudit().resil.siphon,
+             hp: G.hp, full: G.monsterHp === G.monsterMaxHp,
+             streak: G.streak, lock: baBattleAudit().superBoss.skillLocked };
   });
-  ok(near(s0.gain, s0.want, 2), 'บอสฟื้น 5% ของ Max HP ทันทีที่ตอบผิด [+' + s0.gain + '/' + s0.want + ']');
-  ok(/SOUL SIPHON/.test(await page.evaluate(() => (document.getElementById('baSkill') || {}).textContent || '')),
-     'แบนเนอร์ประกาศ SOUL SIPHON ขึ้นจริง');
+  ok(s0.full, 'บอสฟื้นกลับมาเต็มหลอดทันทีที่ตอบผิดในห้องบอส [+' + s0.gain + ']');
+  ok(s0.gain > s0.want, 'ฟื้นมากกว่า Soul Siphon เดิม (+' + s0.gain + ' > +' + s0.want + ')');
+  ok(s0.streak === 0, 'คอมโบคูณดาเมจถูกรีเซ็ตเป็น 0');
+  ok(s0.lock === true, 'สกิลถูกผนึกหนึ่งข้อ');
+  ok(/ABSOLUTE PUNISHMENT/.test(await page.evaluate(() => (document.getElementById('baSkill') || {}).textContent || '')),
+     'แบนเนอร์ประกาศ ABSOLUTE PUNISHMENT ขึ้นจริง');
   await page.waitForTimeout(1800);
   await clearOverlays(page);
 
@@ -344,11 +359,19 @@ async function tick(page, ms) {
   await goFloor(page, 2);
   const n1 = await page.evaluate(() => {
     const atk = hunterAtk();
+    const w = baBattleAudit().wave;
     return { on: baBattleAudit().resil.on, max: G.monsterMaxHp,
-             raw: hitsForFloor(2, false) * atk, pulsing: baBattleAudit().resil.pulsing };
+             raw: hitsForFloor(2, false) * atk, pulsing: baBattleAudit().resil.pulsing,
+             hpK: w.hp, armPct: w.armPct, arm: w.arm.max };
   });
   ok(n1.on === false, 'ชั้นมอนสเตอร์ธรรมดาไม่โดนระบบต้านทาน');
-  ok(n1.max === n1.raw, 'ชั้นธรรมดา เลือดเท่าสูตรเดิมของ v4.0 เป๊ะ [' + n1.max + '/' + n1.raw + ']');
+  /* **Patch v8.2 · Nightmare Rebalance บวกตัวคูณ HP ตามแบนด์ และวางเกราะ
+     ชั้นนอกทับอีกชั้น** (เกราะเป็น HP ชั้นนอกแบบเดียวกับผนึกของ v4.6 เป๊ะ)
+     เคสนี้จึงเทียบกับสูตรเดิม x ตัวคูณ + เกราะ โดยอ่านทั้งสองค่าจาก audit */
+  const wantN = Math.round(n1.raw * n1.hpK) + n1.arm;
+  ok(near(n1.max, wantN, 2),
+     'ชั้นธรรมดา เลือด = สูตรเดิม x' + n1.hpK + ' + เกราะ ' +
+     Math.round(n1.armPct * 100) + '% [' + n1.max + '/' + wantN + ']');
   ok(n1.pulsing === false, 'ชั้นธรรมดาไม่มีนาฬิการีเจนเดินอยู่');
 
   await goFloor(page, 19);   /* อีลีท — ยังใช้กติกาของ v6.4 ตามเดิม */

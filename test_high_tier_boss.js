@@ -212,8 +212,14 @@ async function liveQ(page) {
   await answer(page, true, true);
   await answer(page, true, true);
   const st = await answer(page, true, true);
-  ok(st.a.stagger.total === 1, 'ครบ 3 ข้อ → บอสชะงัก 1 ครั้ง [' + st.a.stagger.total + ']');
-  ok(st.a.stagger.on === true, 'สถานะชะงักติดอยู่จริง');
+  /* **Patch v8.2 · Wave 5 Super-Boss Tier ให้บอสประจำชั้นภูมิคุ้มกันสตัน 100%**
+     ตัวนับยังเดินครบสามข้อตามเดิม แต่ baStFire ถูกปิดที่ต้นทาง บอสจึงไม่ชะงัก
+     และขึ้นแบนเนอร์ STUN IMMUNE แทน · Stagger ยังทำงานเต็มรูปแบบในไฟต์ทัพเงา
+     (ซึ่งไม่ใช่ Wave 5) ซึ่งชุดของ v8.1 เป็นคนพิสูจน์ */
+  ok(st.a.stagger.total === 0, 'บอสประจำชั้นภูมิคุ้มกันสตัน — ไม่ชะงักสักครั้ง [' + st.a.stagger.total + ']');
+  ok(st.a.stagger.on === false, 'สถานะชะงักไม่ติด (ภูมิคุ้มกัน 100%)');
+  ok(/STUN IMMUNE/.test(await page.evaluate(() => (document.getElementById('baSkill') || {}).textContent || '')),
+     'แบนเนอร์ STUN IMMUNE ขึ้นบอกผู้เล่นว่าคอมโบนับติดแต่บอสสลัดทิ้ง');
   ok(st.a.stagger.n === 0, 'ตัวนับถูกล้างหลังกระตุ้น [' + st.a.stagger.n + ']');
 
   blk('2.2 · Stagger — คริติคอลก็เข้าเงื่อนไข');
@@ -223,8 +229,22 @@ async function liveQ(page) {
   ok(c1.a.stagger.n === 1, 'ตอบถูกแบบคริต (แต่ช้า) ก็นับ [' + c1.a.stagger.n + ']');
   await page.evaluate(() => { critChance = () => 0; });
 
-  blk('2.3 · Stagger — ผลระหว่างชะงัก');
+  blk('2.3 · Stagger — ผลระหว่างชะงัก (วัดในไฟต์ทัพเงา)');
+  /* **Patch v8.2 ให้บอสประจำชั้นภูมิคุ้มกันสตัน 100%** — ผลของ Stagger จึงต้อง
+     ไปวัดในไฟต์ที่ยังโดนสตันได้ คือไฟต์ทัพเงา (baShNow() ไม่เป็น null) ซึ่ง
+     Micro-Patch เหวลึกขั้นสุดทำให้ถูกนับเป็นไฟต์บอสของ v7.0 อยู่แล้ว
+     บังคับให้ผู้บุกรุกโผล่ที่มอนสเตอร์ตัวแรกของชั้น แล้วกลไกที่เหลือของ v6.6
+     จะพาสไปรต์/สกิล/สถานะมาให้ครบเอง */
   await goFloor(page, 8);
+  await page.evaluate(() => {
+    BA_INC_F = 8; BA_INC_AT = 0; BA_INC_ID = BA_SH_MINI[0];
+    G.floorProgress = 0;
+    nextMonster();
+  });
+  await page.waitForTimeout(280);
+  await clearOverlays(page);
+  const shadowOn = await page.evaluate(() => !!baShNow() && baHtBoss() === true);
+  ok(shadowOn, 'ตั้งฉากได้: ยืนอยู่หน้าทัพเงา และยังนับเป็นไฟต์บอสของ v7.0');
   const liveOk = await liveQ(page);
   ok(liveOk.f === true, 'ตั้งฉากทดสอบได้: มีข้อสด ๆ และ baFighting() เป็นจริง ' + JSON.stringify(liveOk));
   const froze = await page.evaluate(() => {

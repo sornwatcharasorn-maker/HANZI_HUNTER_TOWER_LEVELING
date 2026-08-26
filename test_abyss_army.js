@@ -184,14 +184,25 @@ function ok(c, n, x) {
   });
   ok(prac.on === false && prac.sh === false, 'โหมดฝึกจุดอ่อนไม่มีทัพเงาเลย', prac);
 
-  /* อัตราการบุกรุกจริง — ทอย 4000 ชั้น แล้วต้องเข้าใกล้ 15% */
+  /* อัตราการบุกรุกจริง — ทอย 4000 ชั้น
+     **Patch v8.2 · Wave 4 บังคับให้รอยแยกโผล่แน่นอนที่ชั้นก่อนประตูบอส**
+     (3/7/11/15/19) เพื่อให้หนึ่งแบนด์มีรอยแยกหนึ่งครั้งเสมอตามลูปเวฟ
+     ชั้นที่เหลือยังทอย 15% ตามกติกาเดิมของ v6.6 ทุกประการ — เคสนี้จึงแยกวัด
+     สองฝั่งแทนการวัดค่าเฉลี่ยรวม ซึ่งอ่านไม่ออกว่าฝั่งไหนเพี้ยน */
   const rate = await page.evaluate(() => {
-    let hit = 0;
-    for (let i = 0; i < 4000; i++) { baIncRoll(1 + (i % 20)); if (BA_INC_AT >= 0) hit++; }
+    let pre = 0, preN = 0, ord = 0, ordN = 0;
+    for (let i = 0; i < 4000; i++) {
+      const f = 1 + (i % 20);
+      baIncRoll(f);
+      const isPre = (f < FLOOR_MAX && baIsBossFloor(f + 1));
+      if (isPre) { preN++; if (BA_INC_AT >= 0) pre++; }
+      else       { ordN++; if (BA_INC_AT >= 0) ord++; }
+    }
     BA_INC_AT = -1; BA_INC_M = null;
-    return hit / 4000 * 100;
+    return { pre: pre / preN * 100, ord: ord / ordN * 100 };
   });
-  ok(Math.abs(rate - 15) < 2.5, 'อัตราบุกรุกจริงเข้าใกล้ 15% (วัด 4,000 ชั้น)', +rate.toFixed(2));
+  ok(rate.pre === 100, 'ชั้นก่อนประตูบอสเปิดรอยแยกแน่นอน 100% (Wave 4)', +rate.pre.toFixed(2));
+  ok(Math.abs(rate.ord - 15) < 2.5, 'ชั้นอื่นยังทอย 15% ตามกติกาเดิมของ v6.6', +rate.ord.toFixed(2));
 
   /* กับดักข้อ 32 — ห้ามกินคิวของ Math.random ที่ชุดเทสต์ของ v4.7 ยึดไว้ */
   const rnd = await page.evaluate(() => {

@@ -180,7 +180,13 @@ async function answerOne(page, correct) {
   // ═══ 3) Kamish 21-25 ของโหมดเหวลึกก็ต้องมีหลอดคำสาป ════════════════
   blk('3 · Kamish (โหมดเหวลึก) มีหลอดคำสาป');
   for (const f of [4, 12, 20]) {
-    await page.evaluate(() => { if (G.ab) G.ab.abyss = true; });
+    /* **Patch v8.3 · ทัพเงาผูกกับลำดับ account.ax.idx ไม่ผูกกับชั้นอีกแล้ว**
+       ตั้งลำดับเป็นช่วง Kamish (21-25) เอง แล้ววนยืนคนละชั้นเพื่อพิสูจน์ว่า
+       หลอดคำสาปมาจากระดับของทัพเงา ไม่ได้มาจากเลขชั้น */
+    await page.evaluate(i => {
+      if (G.ab) G.ab.abyss = true;
+      if (typeof baAxMine === 'function' && baAxMine()) baAxMine().idx = i;
+    }, 21 + [4, 12, 20].indexOf(f));
     await goFloor(page, f);
     const a = await page.evaluate(() => {
       const o = baBattleAudit();

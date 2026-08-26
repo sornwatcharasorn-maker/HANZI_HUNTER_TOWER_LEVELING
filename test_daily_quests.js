@@ -382,9 +382,13 @@ async function slay(page, perfect) {
       const e = baShNow();
       if (!e) return { wired: false };
       const t = [10, 20, 24, 25].filter(x => e.n <= x)[0];
+      /* Patch v8.3 เติม 💎 การันตีของเหวลึกเฉพาะกิจทับตารางเดิมอีกก้อน
+         (+BA_OD_GEM · ไร้ที่ติได้ +BA_OD_GEM_PF อีก — ปิดธงไร้ที่ติของ v8.1 ให้นิ่งก่อนวัด) */
       const want = { 10: 4, 20: 6, 24: 8, 25: 15 }[t] +
-                   (typeof BA_AX_GEM !== 'undefined' ? BA_AX_GEM : 0);
+                   (typeof BA_AX_GEM !== 'undefined' ? BA_AX_GEM : 0) +
+                   (typeof BA_OD_GEM !== 'undefined' ? BA_OD_GEM : 0);
       G.locked = false; BA_QD_PF = false; BA_QD_PF_M = G.currentMonster;
+      if (typeof BA_AX_MPF !== 'undefined') { BA_AX_MPF = false; BA_AX_MPF_M = G.currentMonster; }
       const s0 = abShards(G);
       onMonsterDefeated();
       return { wired: true, n: e.n, got: abShards(G) - s0, want: want, mini: G.dq.c.mini };

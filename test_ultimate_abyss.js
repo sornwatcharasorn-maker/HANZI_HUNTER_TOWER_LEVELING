@@ -176,6 +176,9 @@ async function liveQ(page) {
       bar: BA_BAR ? +(BA_BAR.max / BA_BAR.base).toFixed(3) : 0,
       regen: baRsAmt(BA_RS_REGEN), mhp: BA_RS ? BA_RS.mhp : 0
     }));
+    /* **Patch v8.3 · ทัพเงาที่โผล่ผูกกับ account.ax.idx ไม่ใช่เลขชั้นอีกแล้ว**
+       เดิมชั้นบอสในเหวลึกบังคับเป็น Kamish (21-25) ตามชั้น · ตอนนี้ต้องตั้งลำดับเอง */
+    await b.page.evaluate(() => { const x = baAxMine(); if (x) x.idx = 21; });
     await goFloor(b.page, 4, true);
     const abyss = await b.page.evaluate(() => ({
       foe: (baShNow() || {}).tier, boss: baRsBossFight(G),
@@ -184,7 +187,8 @@ async function liveQ(page) {
       regen: baRsAmt(BA_RS_REGEN), mhp: BA_RS ? BA_RS.mhp : 0,
       want: Math.max(1, Math.round((BA_RS ? BA_RS.mhp : 0) * BA_RS_REGEN * BA_AX_R))
     }));
-    ok('ชั้นบอสในเหวลึกได้ Kamish และเป็นไฟต์บอส', abyss.foe === 'mythic' && abyss.boss === true, abyss);
+    ok('ตั้งลำดับเป็น 21 แล้วได้ Kamish และเป็นไฟต์บอส (v8.3 · ไม่ผูกกับชั้น)',
+       abyss.foe === 'mythic' && abyss.boss === true, abyss);
     near('เนื้อบอสของทัพเงา = ครึ่งหนึ่งของบอสหอคอยชั้นเดียวกัน',
          abyss.body / (tower.body || 1), SPEC.ratio, 0.02);
     /* **Patch v8.2 · Wave 5 Super-Boss Tier เปลี่ยนเกราะเริ่มต้นของบอสหอคอย
@@ -295,19 +299,24 @@ async function liveQ(page) {
     });
     eq('กุญแจหมดแล้วเปิดไม่ได้อีก', k2, { on: false, left: 0 });
 
+    /* **Patch v8.3 · จุดเซฟแบบผูกชั้นถูกถอดทิ้ง** — ความก้าวหน้าของเหวลึกย้ายไปอยู่ที่
+       "ลำดับทัพเงา" (account.ax.idx) แทน "ชั้นที่ตกรอบ" ตกรอบแล้วลำดับคงเดิมไม่ลดทอน
+       และ ax.floor ถูกตรึงเป็น 0 ตลอดกาล (สเปก: ห้ามอ่าน/เขียน currentFloor) */
     const cp = await b.page.evaluate(() => {
       const x = baAxMine();
-      x.keys = 0;                       /* คืนกุญแจให้ทดสอบจุดเซฟต่อ */
+      x.keys = 0;                       /* คืนกุญแจให้ทดสอบต่อ */
+      x.idx = 12;
       G.floor = 12; G.floorProgress = 0;
       BA_INC_F = 12; BA_INC_AT = -1; BA_INC_M = null;
       abToggleAbyss();
       const before = G.floor;
       G.items.insurance = 0; G.hp = 1;
       onHunterDown();
-      return { before: before, saved: baAxMine().floor, on: abyssOn(G), floor: G.floor };
+      return { before: before, saved: baAxMine().floor, on: abyssOn(G),
+               floor: G.floor, idx: baAxMine().idx };
     });
-    ok('ตกรอบในเหวลึก = จดจุดเซฟไว้ที่ชั้นเดิม แล้วปิดรันให้',
-       cp.saved === cp.before && cp.on === false, cp);
+    ok('ตกรอบในเหวลึก = คงลำดับเดิมไว้ ไม่จดเลขชั้น แล้วปิดรันให้',
+       cp.saved === 0 && cp.idx === 12 && cp.on === false, cp);
 
     await b.page.evaluate(() => { saveProgress(); exitGame(); });
     await b.page.waitForTimeout(900);
@@ -316,18 +325,21 @@ async function liveQ(page) {
     await login(b.page, 'ax_e', 'login');
     const back = await b.page.evaluate(() => {
       const a = baBattleAudit().abyssX;
-      return { floor: a.save.floor, keys: a.keys.used, ready: a.save.ready };
+      return { floor: a.save.floor, keys: a.keys.used, ready: a.save.ready,
+               idx: baBattleAudit().dedicated.idx };
     });
-    eq('จุดเซฟกับกุญแจรอดข้ามการล็อกอิน', { f: back.floor, r: back.ready }, { f: 12, r: true });
+    eq('ลำดับทัพเงากับกุญแจรอดข้ามการล็อกอิน · จุดเซฟชั้นเป็น 0 เสมอ',
+       { f: back.floor, i: back.idx }, { f: 0, i: 12 });
 
     const resume = await b.page.evaluate(() => {
       G.floor = 1; G.floorProgress = 0; G.locked = true;   /* ล็อกเทิร์นไว้ = ห้ามกระโดดข้อทันที */
       BA_INC_F = 1; BA_INC_AT = -1; BA_INC_M = null;
       baAxMine().keys = 0;
       abToggleAbyss();
-      return { floor: G.floor, on: abyssOn(G) };
+      return { floor: G.floor, on: abyssOn(G), idx: baBattleAudit().dedicated.idx };
     });
-    eq('ลงรอบใหม่ = กลับไปยืนที่จุดเซฟทันที', resume, { floor: 12, on: true });
+    eq('ลงรอบใหม่ = ยืนชั้นเดิม (ไม่ถูกลากย้าย) และเจอลำดับเดิม',
+       resume, { floor: 1, on: true, idx: 12 });
     ok('ไม่มี pageerror', b.errs.length === 0, b.errs);
     await b.ctx.close();
   }

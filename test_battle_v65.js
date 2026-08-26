@@ -199,6 +199,9 @@ async function goFloor(page, f) {
   await goFloor(page, 20);
   const secret = await page.evaluate(() => {
     G.ab = G.ab || {}; G.ab.abyss = true;
+    /* **Patch v8.3 · ทัพเงาผูกกับลำดับ account.ax.idx ไม่ผูกกับชั้นแล้ว**
+       ป้าย 👁️ บอสลับเป็นของ Kamish (21-25) จึงต้องตั้งลำดับเองก่อนวาดป้าย */
+    if (typeof baAxMine === 'function' && baAxMine()) baAxMine().idx = 23;
     baNamePaint();
     const n = document.getElementById('baFoeName');
     const r = { t: n.textContent, c: n.className };

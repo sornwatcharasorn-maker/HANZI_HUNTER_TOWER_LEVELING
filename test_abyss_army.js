@@ -254,6 +254,11 @@ function ok(c, n, x) {
   say('\n[4] โหมดเหวลึก + Boss Rush ของ Kamish');
   const kam = await page.evaluate(() => {
     G.practiceMode = false; G.ab.abyss = true;
+    /* **Patch v8.3 พลิกเคสนี้โดยตั้งใจ** — Boss Rush ของ v6.6 เคยผูก Kamish ไว้กับ
+       "ชั้นบอส" · ตอนนี้ทัพเงาที่โผล่ผูกกับลำดับ account.ax.idx ล้วน ไม่อ่านเลขชั้นเลย
+       จึงต้องตั้งลำดับเป็น 21 (Kamish ตัวแรก) เอง
+       (precedent: v7.4 พลิกเคสของ test_gm_admin · v7.8 ของ test_menu_icons) */
+    if (typeof baAxMine === 'function' && baAxMine()) baAxMine().idx = 21;
     G.floor = 20; G.floorProgress = 0; G.locked = false; CD_BAND = cdBandOf(20);
     G.monsterMaxHp = 4000; G.monsterHp = 4000;
     nextMonster();
@@ -282,19 +287,23 @@ function ok(c, n, x) {
   ok(/👁️/.test(kam.txt), 'ป้ายชื่อ 👁️ [ชื่ออังกฤษ]', kam.txt);
   ok(/ba-name-secret/.test(kam.cls), 'ใช้คลาส .ba-name-secret', kam.cls);
 
+  /* Boss Rush ย้ายจาก "ห้าชั้นบอส" มาเป็น "ห้าลำดับสุดท้ายของบันได 1-25" (v8.3)
+     ยืนชั้นเดียวตลอดเพื่อพิสูจน์ว่าเลขชั้นไม่เกี่ยวข้องอีกแล้ว */
   const rush = await page.evaluate(() => {
     const out = {};
-    for (const f of BA_BOSS_FLOORS) {
-      G.floor = f; G.floorProgress = 0; G.locked = false; CD_BAND = cdBandOf(f);
+    G.floor = 9; CD_BAND = cdBandOf(9);
+    for (let i = 21; i <= 25; i++) {
+      if (baAxMine()) baAxMine().idx = i;
+      G.floorProgress = 0; G.locked = false;
       G.monsterMaxHp = 4000; G.monsterHp = 4000;
       nextMonster();
-      out[f] = (baShNow() || {}).id || '';
+      out[i] = (baShNow() || {}).id || '';
     }
     return out;
   });
   const rushIds = Object.values(rush);
   ok(new Set(rushIds).size === 5 && rushIds.every(x => /^s2[1-5]$/.test(x)),
-     'ประตูบอสทั้งห้าชั้นได้ Kamish คนละท่า (Boss Rush)', rush);
+     'ห้าลำดับสุดท้ายได้ Kamish คนละท่า (Boss Rush · ไม่ผูกกับชั้น)', rush);
 
   const push = await page.evaluate(() => ({ tier: baTierNow(), boss: BA_PUSH.boss }));
   ok(push.tier === 'boss' && push.boss === 10, 'ตอบถูกดันเกจถอยได้แค่ 10% (นับเป็นบอส)', push);
@@ -308,6 +317,8 @@ function ok(c, n, x) {
   ok(ctr.streak === 0, 'Abyssal Counter ล้างหลอดคอมโบ', ctr.streak);
 
   const mini = await page.evaluate(() => {
+    /* v8.3 · ลำดับเป็นตัวตัดสินระดับ ไม่ใช่เลขชั้น — ตั้งกลับเป็นช่วงมินิบอสก่อน */
+    if (typeof baAxMine === 'function' && baAxMine()) baAxMine().idx = 9;
     G.floor = 9; G.floorProgress = 0; G.locked = false; CD_BAND = cdBandOf(9);
     G.monsterMaxHp = 99999; G.monsterHp = 99999;
     nextMonster();

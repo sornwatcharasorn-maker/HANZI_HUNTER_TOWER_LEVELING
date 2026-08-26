@@ -234,22 +234,26 @@ const audit = page => page.evaluate(() => baBattleAudit());
        rw.every(r => r.dg > 0 && Math.abs(r.dg / (r.dg / 1.5) - 1.5) < 0.001), rw);
     ok('ทองโบนัสบวกเข้ายอดสะสมตลอดชีพด้วย', rw.every(r => r.dtg === r.dg), rw);
 
-    /* ตัวลวงใกล้เคียงสูง — โซน 4-5 เท่านั้น */
+    /* Patch v8.4 · คืนพินอินกับตัวลวงมาตรฐานให้ชั้นมอนสเตอร์ทั่วไป (F1-F19)
+       — เคสชุดนี้ถูกพลิกจากของ v8.2 โดยตั้งใจ (precedent: v7.4 · v7.8 · v8.1 · v8.2) */
     await goFloor(b.page, 18);
     const near5 = await b.page.evaluate(() => {
-      const w = baBattleAudit().wave;
-      return { near: w.near, np: w.noPinyin, n: w.n.near,
+      const w = baBattleAudit().wave, sf = baBattleAudit().softening;
+      return { near: w.near, np: w.noPinyin, n: w.n.near, sf: sf,
                hidden: !!(baScreen() && baScreen().classList.contains('ba-wv-np')),
                vis: getComputedStyle(document.getElementById('gPinyin')).visibility,
                h: document.getElementById('gPinyin').getBoundingClientRect().height };
     });
-    ok('โซน 4-5 เปิดตัวลวงใกล้เคียงสูง', near5.near === true);
-    ok('โซน 4-5 ซ่อนพินอิน 100%', near5.np === true && near5.hidden === true);
-    eq('ซ่อนด้วย visibility ไม่ใช่ display', near5.vis, 'hidden');
+    ok('โซน 4-5 เลิกใช้ตัวลวงใกล้เคียงสูงแล้ว', near5.near === false && near5.sf.near === false, near5);
+    ok('โซน 4-5 เห็นพินอินเต็ม ๆ', near5.np === false && near5.hidden === false, near5);
+    eq('พินอินมองเห็นได้จริง', near5.vis, 'visible');
     ok('กล่องพินอินยังคงความสูงไว้ (เลย์เอาต์ไม่ขยับ) [' + near5.h + ']', near5.h > 0);
-    ok('ตัวลวงถูกสร้างใหม่จริงอย่างน้อยหนึ่งข้อ', near5.n > 0, near5);
+    ok('ไม่มีการสร้างตัวลวงใกล้เคียงสูงสักข้อ', near5.n === 0, near5);
+    ok('audit รายงานว่าพินอินถูกคืนแล้ว', near5.sf.pinyin === true, near5.sf);
 
-    /* สลับทิศทาง ไทย➔จีน — บังคับให้ออกแน่นอนด้วยการทับ baRand ของชั้นนี้เอง */
+    /* Patch v8.4 · สลับทิศทาง ไทย➔จีน ถูกปิดทั้งชุด เพราะโหมดนั้นบังคับซ่อนพินอินเสมอ
+       (ไม่งั้นพินอินของคำตอบจะเฉลยให้ทันที) ซึ่งขัดกับข้อกำหนด "พินอินเห็นเต็มทุกชั้นทั่วไป"
+       — บังคับทอยให้ต่ำสุดแล้วก็ยังต้องไม่สลับ */
     await goFloor(b.page, 6);
     const flip = await b.page.evaluate(() => {
       const _r = baRand;
@@ -260,19 +264,18 @@ const audit = page => page.evaluate(() => baBattleAudit());
       const m = G.currentMonster;
       const shown = document.getElementById('gWord').textContent;
       const span = !!document.querySelector('#gWord .ba-wv-th');
-      const chineseInChoices = m.choices.every(c => /[一-鿿]/.test(c));
       const noDup = new Set(m.choices).size === m.choices.length;
       baRand = _r;
-      return { flipped: w.flipped, shown: shown, word: m.word, span: span,
-               ch: chineseInChoices, noDup: noDup, ans: m.answer,
+      return { flipped: w.flipped, flipP: w.flipP, shown: shown, word: m.word, span: span,
+               noDup: noDup, ans: m.answer, sf: baBattleAudit().softening.flip,
                hidden: !!(baScreen() && baScreen().classList.contains('ba-wv-np')) };
     });
-    ok('บังคับแล้วโจทย์ถูกสลับเป็น ไทย➔จีน จริง', flip.flipped === true, flip);
-    ok('ตัวเลือกกลายเป็นอักษรจีนทุกใบ', flip.ch === true, flip.ans);
+    ok('โอกาสสลับทิศทางถูกปิดทุกโซน', flip.flipP === 0 && flip.sf === false, flip);
+    ok('บังคับทอยต่ำสุดแล้วก็ยังไม่สลับ', flip.flipped === false, flip);
     ok('ตัวเลือกไม่ซ้ำกันเลย (กับดักข้อ 7)', flip.noDup === true);
     eq('สิ่งที่อยู่บนจอยังเท่ากับ m.word เป๊ะ (กติกาของ v6.8)', flip.shown, flip.word);
-    ok('ข้อความไทยถูกห่อด้วย span ของแพตช์นี้', flip.span === true);
-    ok('โหมดสลับทิศทางซ่อนพินอินให้ด้วย (ไม่งั้นเฉลยคำตอบ)', flip.hidden === true);
+    ok('ไม่มี span ภาษาไทยของ v8.2 หลงเหลืออยู่', flip.span === false);
+    ok('พินอินไม่ถูกซ่อนในชั้นมอนสเตอร์ทั่วไป', flip.hidden === false, flip);
 
     ok('ไม่มี pageerror', b.errs.length === 0, b.errs);
     await b.ctx.close();
@@ -391,7 +394,7 @@ const audit = page => page.evaluate(() => baBattleAudit());
        bars.map(r => +r.want.toFixed(4)), [0.5, 0.5375, 0.575, 0.6125, 0.65]);
     ok('เกราะที่ตั้งจริงตรงกับบันได', bars.every(r => Math.abs(r.got - r.want) < 0.012), bars);
 
-    /* เวลาคิดคำตอบถูกตัด 2.5 วิ และตรึงพื้นไว้ที่ 3.5 วิ */
+    /* Patch v8.4 · ตัดเวลาได้ไม่เกิน 1.0 วิ และตรึงพื้นไว้ที่ 5.0 วิ */
     await goFloor(b.page, 12);
     const ms = await b.page.evaluate(() => {
       const boss = questionMs();
@@ -402,6 +405,9 @@ const audit = page => page.evaluate(() => baBattleAudit());
     ok('ห้องบอสเวลาน้อยกว่าชั้นธรรมดาอย่างน้อยเท่าที่ตัด',
        ms.normal - ms.boss >= ms.cut - 1 || ms.boss === ms.min, ms);
     ok('เวลาต่อข้อในห้องบอสไม่ต่ำกว่าพื้นที่ตรึงไว้', ms.boss >= ms.min, ms);
+    eq('เพดานการตัดเวลาถูกผ่อนเหลือ 1.0 วิ', ms.cut, 1000);
+    eq('พื้นเวลาต่ำสุดถูกยกเป็น 5.0 วิ', ms.min, 5000);
+    ok('หน้าต่างคิดคำตอบจริงยังกว้างกว่าพื้นเสมอ [' + ms.boss + ']', ms.boss >= 5000, ms);
 
     /* ภูมิคุ้มกันสตัน 100% */
     const stun = await b.page.evaluate(() => {
@@ -415,6 +421,16 @@ const audit = page => page.evaluate(() => baBattleAudit());
     ok('ตั้งเวลาสตันไว้แล้วบอสยังไม่ชะงัก (Stagger ของ v7.0)', stun.st === false, stun);
     ok('audit รายงานว่าอยู่ในสถานะภูมิคุ้มกัน', stun.immune === true);
 
+    /* Patch v8.4 · แบนเนอร์ประกาศ Wave 5 ต้องบอกเวลาที่ตัดจริง (1.0 วิ) */
+    await goFloor(b.page, 16);
+    const ann = await b.page.evaluate(() => ({
+      t: (document.getElementById('baSkill') || {}).textContent || '',
+      cut: baBattleAudit().superBoss.cut, min: baBattleAudit().superBoss.min
+    }));
+    ok('แบนเนอร์บอกเวลาที่ตัดตรงกับค่าที่ทำงานจริง',
+       /WAVE 5\/5/.test(ann.t) && /-1\.0 วิ/.test(ann.t) && /5\.0 วิ/.test(ann.t), ann);
+    ok('ไม่มีเลขชุดเก่า (2.5 วิ) หลงเหลืออยู่บนแบนเนอร์', !/2\.5 วิ/.test(ann.t), ann);
+
     /* บทลงโทษสมบูรณ์แบบ */
     await goFloor(b.page, 12);
     const pen = await b.page.evaluate(() => {
@@ -427,13 +443,26 @@ const audit = page => page.evaluate(() => baBattleAudit());
       const wrong = m.choices.filter(c => c !== m.answer)[0];
       G.locked = false;
       resolveAnswer(wrong, null, false);
-      return { full: G.monsterHp === G.monsterMaxHp, mhp0: mhp0,
+      const sf = baBattleAudit().softening;
+      const bar = (typeof BA_BAR !== 'undefined' && BA_BAR) ? BA_BAR : null;
+      return { full: G.monsterHp === G.monsterMaxHp, mhp0: mhp0, mhp1: G.monsterHp,
+               heal: sf.heal, barPct: sf.bar, last: sf.last, healN: sf.n.heal,
+               broken: bar ? bar.broken : null,
                streak: G.streak, crit: (typeof ba_crit !== 'undefined') ? ba_crit : -1,
                lock: baBattleAudit().superBoss.skillLocked,
                lostHp: hp0 - G.hp, pen: baBattleAudit().superBoss.penHp,
                n: baBattleAudit().wave.n.pen };
     });
-    ok('บอสฟื้นเลือดเต็มหลอดทันทีที่ตอบผิด', pen.full === true, pen);
+    ok('บอสไม่ฟื้นเต็มหลอดอีกแล้ว (v8.4)', pen.full === false, pen);
+    ok('บอสยังฟื้นขึ้นจริงจากยอดก่อนหน้า', pen.mhp1 > pen.mhp0, pen);
+    eq('ผ่อนเป็นฟื้น 30% ของหลอด', pen.heal, 0.30);
+    eq('กู้เกราะคืน 50% ของความจุ', pen.barPct, 0.50);
+    ok('ยอดที่ฟื้นตรงกับสูตร max(HP ก่อนหน้า + 30% ของหลอด, พื้นเกราะ 50%)',
+       !!pen.last && pen.last.to ===
+         Math.min(pen.last.max, Math.max(pen.last.from + Math.round(pen.last.max * pen.heal),
+                                         pen.last.bar)), pen);
+    ok('เกราะที่กู้คืนมาแล้วถูกปลดธง broken ให้ด้วย', pen.broken === false, pen);
+    ok('ตัวนับการฟื้นแบบผ่อนแล้วเดินหน้า', pen.healN >= 1, pen);
     eq('คอมโบคูณดาเมจถูกรีเซ็ตเป็น 0', pen.streak, 0);
     eq('เกจคริตของ v6.3 ถูกรีเซ็ตเป็น 0', pen.crit, 0);
     ok('สกิลถูกผนึกหนึ่งข้อ', pen.lock === true);
@@ -505,6 +534,19 @@ const audit = page => page.evaluate(() => baBattleAudit());
     eq('ไม่ผ่าน → มีปุ่มส่งกลับไปทบทวน', low.back, 1);
     ok('ประตูเป็นหน้าต่างระบบ นาฬิกาต่อข้อจึงถูกหยุดให้เอง (v4.8.1)', low.paused === true, low);
 
+    /* Patch v8.4 · กล่องกติกาบนประตูต้องบอกโควตาชุดใหม่ (3 / 3) ไม่ใช่ของ v8.2 (2 / 2)
+       — ข้อความกับตัวเลขที่ทำงานจริงต้องเป็นก้อนเดียวกันเสมอ (กติกาของ v4.7.9.1) */
+    const rule = await b.page.evaluate(() => {
+      const el = document.querySelector('#baWvGateBody .ba-wv-gr');
+      const a  = baBattleAudit().apex;
+      return { t: el ? el.textContent : '', doomMax: a.doomMax, potMax: a.potMax };
+    });
+    ok('กล่องกติกาบอกโควตาความผิดพลาดชุดใหม่ [' + rule.doomMax + ']',
+       new RegExp('ไม่เกิน ' + rule.doomMax + ' ครั้ง').test(rule.t), rule);
+    ok('กล่องกติกาบอกโควตาน้ำยาชุดใหม่ [' + rule.potMax + ']',
+       new RegExp('ฟื้นฟูได้ไม่เกิน ' + rule.potMax + ' ครั้ง').test(rule.t), rule);
+    ok('ไม่มีเลขโควตาชุดเก่าหลงเหลืออยู่บนจอ', !/ไม่เกิน 2 ครั้ง/.test(rule.t), rule);
+
     const back = await b.page.evaluate(() => { baWvGateBack(); return { f: G.floor, open: baBattleAudit().apex.open }; });
     await b.page.waitForTimeout(320);
     await clearOverlays(b.page);
@@ -539,11 +581,11 @@ const audit = page => page.evaluate(() => baBattleAudit());
     }));
     ok('ชั้น 20 ซ่อนพินอิน 100%', np.on === true && np.hidden === true && np.vis === 'hidden', np);
 
-    /* ตัวนับความผิดพลาด — ผิดครบแล้วจบเกมทันที */
+    /* Patch v8.4 · ตัวนับความผิดพลาดผ่อนเป็น 3 ครั้ง — ครั้งที่ 4 คือจบเกม */
     const doom = await b.page.evaluate(async () => {
       const steps = [];
       G.hp = G.maxHp; G.shield = 0; G.items = {};
-      for (let i = 0; i < 3; i++) {
+      for (let i = 0; i < 4; i++) {
         G.monsterHp = G.monsterMaxHp;
         G.locked = false;
         const m = G.currentMonster;
@@ -553,12 +595,17 @@ const audit = page => page.evaluate(() => baBattleAudit());
         steps.push({ n: baBattleAudit().apex.doom, hp: G.hp });
         await new Promise(r => setTimeout(r, 60));
       }
-      return { steps: steps, max: baBattleAudit().apex.doomMax, n: baBattleAudit().wave.n.doom };
+      return { steps: steps, max: baBattleAudit().apex.doomMax,
+               n: baBattleAudit().wave.n.doom, grace: baBattleAudit().softening.n.grace };
     });
-    eq('ตัวนับเดินครบสามครั้ง', doom.steps.map(s => s.n), [1, 2, 3]);
+    eq('โควตาความผิดพลาดถูกผ่อนเป็น 3 ครั้ง', doom.max, 3);
+    eq('ตัวนับเดินครบสี่ครั้ง', doom.steps.map(s => s.n), [1, 2, 3, 4]);
+    ok('ผิดสามครั้งแรกยังรอด (ผ่อนโทษให้)',
+       doom.steps.slice(0, 3).every(s => s.hp > 0), doom);
     ok('ผิดครั้งที่ ' + (doom.max + 1) + ' ตัดเข้าสถานะจบเกมทันที (HP เหลือ 0)',
-       doom.steps[2].hp <= 0, doom);
+       doom.steps[3].hp <= 0, doom);
     ok('ตัวนับ GameOver ของแพตช์เดินหน้า', doom.n >= 1, doom);
+    ok('ตัวนับโอกาสที่ผ่อนให้เดินหน้าอย่างน้อยหนึ่งครั้ง', doom.grace >= 1, doom);
 
     ok('ไม่มี pageerror', b.errs.length === 0, b.errs);
     await b.ctx.close();
@@ -576,7 +623,7 @@ const audit = page => page.evaluate(() => baBattleAudit());
     const pot = await b.page.evaluate(() => {
       G.items = { potion: 9 };
       const used = [];
-      for (let i = 0; i < 4; i++) {
+      for (let i = 0; i < 5; i++) {
         G.hp = Math.max(1, Math.round(G.maxHp * 0.3));
         const n0 = G.items.potion;
         useItem('potion');
@@ -584,7 +631,8 @@ const audit = page => page.evaluate(() => baBattleAudit());
       }
       return { used: used, cap: baBattleAudit().apex.potMax, n: baBattleAudit().apex.pot };
     });
-    eq('ดื่มได้แค่สองครั้งแรก ครั้งที่สามเป็นต้นไปถูกบล็อก', pot.used, [1, 1, 0, 0]);
+    eq('โควตาน้ำยาถูกผ่อนเป็น 3 ครั้ง', pot.cap, 3);
+    eq('ดื่มได้สามครั้งแรก ครั้งที่สี่เป็นต้นไปถูกบล็อก', pot.used, [1, 1, 1, 0, 0]);
     eq('ตัวนับการดื่มหยุดที่เพดาน', pot.n, pot.cap);
 
     /* ภาษีเวลา — วัดสองเรื่องแยกกัน
@@ -609,11 +657,15 @@ const audit = page => page.evaluate(() => baBattleAudit());
         steps.push(baBattleAudit().apex.taxed);
       }
       return { base: base, one: one, bot: bot, steps: steps,
-               min: a0.taxMin, tax: a0.tax, n: baBattleAudit().wave.n.tax };
+               min: a0.taxMin, bmin: baBattleAudit().superBoss.min,
+               tax: a0.tax, n: baBattleAudit().wave.n.tax };
     });
     ok('ภาษีหนึ่งครั้งตัดเวลาลงเท่ากับค่าคงที่พอดี [' + tax.base + '→' + tax.one + ']',
        tax.base - tax.one === tax.tax, tax);
-    ok('ภาษีกดเวลาลงต่ำกว่าพื้นไม่ได้ [' + tax.bot + ']', tax.bot === tax.min, tax);
+    /* Patch v8.4 · พื้นของห้องบอส (5.0 วิ) ถูกใส่เป็นลำดับสุดท้าย จึงครอบภาษีเวลา
+       ของชั้น 20 ไปด้วย — ภาษีกดเวลาลงต่ำกว่านั้นไม่ได้ไม่ว่าจะโดนไปกี่ครั้ง */
+    ok('ภาษีกดเวลาลงต่ำกว่าพื้นห้องบอสไม่ได้ [' + tax.bot + ']', tax.bot === tax.bmin, tax);
+    ok('พื้นใหม่สูงกว่าพื้นภาษีเดิมของ v8.2', tax.bmin > tax.min, tax);
     ok('ตอบช้าจริงแล้วภาษีสะสมเพิ่มขึ้นทุกครั้ง',
        tax.steps.every((v, i) => i === 0 || v === tax.steps[i - 1] + tax.tax), tax);
     ok('ตัวนับภาษีเวลาเดินหน้า', tax.n >= 4, tax);

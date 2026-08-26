@@ -288,14 +288,20 @@ async function slay(page, perfect) {
     });
     eq('กำลังถูกบุกรุกอยู่จริง และเป็นทัพเงาระดับมินิบอส', inc, { on: true, tier: 'mini' });
 
-    eq('ปราบผู้บุกรุกแบบไร้ที่ติ = 4 + 1', (await slay(b.page, true)).got, 5);
+    /* **Micro-Patch ULTIMATE ABYSS พลิกสามเคสนี้โดยตั้งใจ** — สเปกของชั้นนั้นสั่ง
+       "High 💎 crystal drops" จึงบวก BA_AX_GEM ทับตารางของ Micro-Patch เควสประจำวัน
+       ทุกครั้งที่ล้มทัพเงา · ยังอ่านจากค่าคงที่จริง ไม่ได้พิมพ์เลขทับ
+       (precedent: v7.4 พลิกเคสของ test_gm_admin · v7.8 พลิกเคสของ test_menu_icons) */
+    const axGem = await b.page.evaluate(() => (typeof BA_AX_GEM !== 'undefined' ? BA_AX_GEM : 0));
+
+    eq('ปราบผู้บุกรุกแบบไร้ที่ติ = 4 + 1 + ' + axGem, (await slay(b.page, true)).got, 5 + axGem);
     eq('เควส 💀 มินิบอสขยับ 1', await b.page.evaluate(() => G.dq.c.mini), 1);
 
     await goFloor(b.page, 3, false);
     await b.page.evaluate(() => {
       BA_INC_ID = BA_SH_MINI[1]; BA_INC_M = G.currentMonster; BA_INC_AT = 0; BA_INC_F = G.floor;
     });
-    eq('ปราบผู้บุกรุกแบบพลาดไปแล้ว = 4 เฉย ๆ', (await slay(b.page, false)).got, 4);
+    eq('ปราบผู้บุกรุกแบบพลาดไปแล้ว = 4 + ' + axGem, (await slay(b.page, false)).got, 4 + axGem);
 
     /* ธงไร้ที่ติเป็นของ "ไฟต์ที่กำลังสู้อยู่" — ตอบผิดแล้วต้องตก */
     ok('ตอบผิดหนึ่งข้อแล้วธงไร้ที่ติตกทันที',
@@ -376,7 +382,8 @@ async function slay(page, perfect) {
       const e = baShNow();
       if (!e) return { wired: false };
       const t = [10, 20, 24, 25].filter(x => e.n <= x)[0];
-      const want = { 10: 4, 20: 6, 24: 8, 25: 15 }[t];
+      const want = { 10: 4, 20: 6, 24: 8, 25: 15 }[t] +
+                   (typeof BA_AX_GEM !== 'undefined' ? BA_AX_GEM : 0);
       G.locked = false; BA_QD_PF = false; BA_QD_PF_M = G.currentMonster;
       const s0 = abShards(G);
       onMonsterDefeated();

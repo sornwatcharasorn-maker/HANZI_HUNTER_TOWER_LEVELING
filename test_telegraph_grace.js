@@ -308,7 +308,14 @@ async function A(page) { return await page.evaluate(() => baBattleAudit()); }
     return { tier: sh ? sh.tier : '', d: d };
   });
   ok(blkMini.tier === 'mini', 'จับทัพเงามินิบอสให้ยืนอยู่ตรงหน้าได้ [' + blkMini.tier + ']');
-  ok(blkMini.d === 1500, 'มินิบอส → จอดำ 1.5 วิ เป๊ะ [' + blkMini.d + ']');
+  /* **Micro-Patch ULTIMATE ABYSS พลิกเคสนี้โดยตั้งใจ** — ทัพเงาทุกตัว (มินิบอสและ
+     Kamish) ได้ Softened Gauge ตามสเปก จอดำจึงเหลือ BA_AX_BLK = 1.0 วิ เท่ากันหมด
+     ส่วนบอสหอคอยปกติยังเป็น BA_DB_BLK_BOSS = 2.0 วิ ตามเดิม (เคสถัดไปยืนยันไว้)
+     (precedent: v7.4 พลิกเคสของ test_gm_admin · v7.8 พลิกเคสของ test_menu_icons) */
+  const blkWant = await page.evaluate(() =>
+    (typeof BA_AX_BLK !== 'undefined' ? BA_AX_BLK : BA_DB_BLK_MINI));
+  ok(blkMini.d === blkWant, 'มินิบอส → จอดำ ' + (blkWant / 1000).toFixed(1) +
+     ' วิ เป๊ะ [' + blkMini.d + ']');
 
   await page.evaluate(() => { BA_INC_M = null; BA_INC_ID = ''; });
 

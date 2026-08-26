@@ -250,7 +250,8 @@ function ok(c, n, x) {
     const nm = document.getElementById('baFoeName');
     return { id: au.id, tier: au.tier, atb: au.atb, bat: au.bat, pct: au.pct,
              bar: BA_BAR ? Math.round(BA_BAR.max / BA_BAR.base * 100) : 0,
-             want: Math.round((typeof BA_RS_BAR !== 'undefined' ? BA_RS_BAR : BA_KAM_BAR) * 100),
+             want: Math.round((typeof BA_AX_BAR !== 'undefined' ? BA_AX_BAR
+                              : (typeof BA_RS_BAR !== 'undefined' ? BA_RS_BAR : BA_KAM_BAR)) * 100),
              txt: nm.textContent, cls: nm.className };
   });
   ok(kam.tier === 'mythic', 'ชั้นบอสในเหวลึกได้ Kamish', kam);
@@ -259,7 +260,12 @@ function ok(c, n, x) {
   ok(kam.pct === 30, 'โจมตีปกติ -30% HP', kam.pct);
   /* ชั้น v6.7 ทับเกราะของบอส *ทุกตัว* ให้เป็น 70% ของเนื้อบอส (BA_RS_BAR)
      รวม Kamish ด้วย — สเปกของชั้นนั้นสั่งค่าเดียวทุกบอส BA_KAM_BAR ของ v6.6
-     จึงถูกกลบตั้งแต่ต้นไฟต์ ไม่ใช่บั๊ค · เทียบกับค่าคงที่จริงเสมอ อย่าพิมพ์เลขทับ */
+     จึงถูกกลบตั้งแต่ต้นไฟต์ ไม่ใช่บั๊ค · เทียบกับค่าคงที่จริงเสมอ อย่าพิมพ์เลขทับ
+
+     **Micro-Patch ULTIMATE ABYSS พลิกเคสนี้โดยตั้งใจ** — ทัพเงาทั้ง 25 ตัวถูกหั่นลง
+     ครึ่งหนึ่งของบอสหอคอยตามสเปก (Master Ratio 0.5x) เกราะจึงเป็น BA_AX_BAR = 35%
+     ไม่ใช่ 70% อีกต่อไป · ยังอ่านจากค่าคงที่จริงเหมือนเดิม ไม่ได้พิมพ์เลขทับ
+     (precedent: v7.4 พลิกเคสของ test_gm_admin · v7.8 พลิกเคสของ test_menu_icons) */
   ok(kam.bar === kam.want,
      'Heavy Abyssal Barrier = ' + kam.want + '% ของ Max HP (v6.7 ทับ BA_KAM_BAR)', kam.bar);
   ok(/👁️/.test(kam.txt), 'ป้ายชื่อ 👁️ [ชื่ออังกฤษ]', kam.txt);

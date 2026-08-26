@@ -9,7 +9,7 @@
         (data URI เสียจะเงียบสนิท ไม่มี error ให้เห็น — บทเรียนเดียวกับ Item Asset Patch)
      2. อีโมจิเดิมถูก "แทนที่" ไม่ใช่ "ซ้อน"
      3. ⚙️/🕳️ ที่ v4.6 เขียน innerHTML ทับทุกครั้งที่วาดสถานะ ต้องได้ภาพคืนทันที
-     4. โครง .g-actions ไม่ถูกแตะ — SYSTEM SCAN ยังเป็นลูกตัวสุดท้ายที่กินเต็มแถว
+     4. โครง .g-actions — ตั้งแต่ v8.5 เป็นสองคอลัมน์ (ซ้าย SCAN · ขวา PROFILE)
      5. เรียกซ้ำไม่แทรกซ้อน (กติกาข้อ 2 ของ CLAUDE.md)
      6. ไม่ล้นแนวนอนทุกความกว้าง และโซนคำถาม-คำตอบไม่ขยับ
      7. ไม่มี pageerror และ Error Log ไม่มีรายการของชั้นนี้                                */
@@ -93,7 +93,11 @@ async function enterGame(page) {
     // ── 1 · ไอคอนครบและใช้ได้จริง ────────────────────────────────────
     const info = await page.evaluate(() => {
       const act = document.querySelector('.g-actions');
-      const btns = Array.prototype.map.call(act.children, (b) => {
+      /* ตั้งแต่ v8.5 แถวนี้มี 10 ใบ — ใบที่ 10 คือ 👤 PROFILE ซึ่งเป็นปุ่มอีโมจิ
+         ไม่มีไอคอนภาพของ MI_ART · การยืนยันเรื่องภาพจึงต้องวัดเฉพาะ 9 ใบที่มี
+         .mi-ico เท่านั้น ไม่ใช่กวาดลูกทั้งแถว */
+      const iconBtns = Array.prototype.filter.call(act.children, b => !!b.querySelector('.mi-ico'));
+      const btns = iconBtns.map((b) => {
         const ico = b.querySelector('.mi-ico');
         const img = ico && ico.querySelector('img');
         const r = b.getBoundingClientRect();
@@ -120,13 +124,23 @@ async function enterGame(page) {
         gsOverflowX: gs ? gs.scrollWidth - gs.clientWidth : 0,
         lastIsScan: (act.lastElementChild.getAttribute('onclick') || '').indexOf('showHint') !== -1,
         lastFullRow: getComputedStyle(act.lastElementChild).gridColumnStart === '1',
+        /* v8.5 · Bottom Menu 2-Col — SCAN ย้ายมาเป็นคอลัมน์ซ้าย PROFILE เป็นคอลัมน์ขวา */
+        scanIsPrev: (((act.children[act.children.length - 2] || {}).getAttribute
+                      && act.children[act.children.length - 2].getAttribute('onclick')) || '')
+                    .indexOf('showHint') !== -1,
+        lastIsProfile: act.lastElementChild.id === 'baPlProfile',
+        twoCol: getComputedStyle(act.lastElementChild).gridColumn === 'auto' &&
+                getComputedStyle(act.children[act.children.length - 2]).gridColumn === 'auto',
         actChildren: act.children.length,
         wordTop: Math.round(document.getElementById('gWord').getBoundingClientRect().top),
         choicesH: Math.round(document.getElementById('gChoices').getBoundingClientRect().height)
       };
     });
 
-    ok('ปุ่มใน .g-actions ครบ 9 ใบ', info.actChildren === 9, info.actChildren);
+    /* ↓ เคสที่ถูกพลิกโดยตั้งใจตอน v8.5 (precedent: v7.4 · v7.8 · v7.9 · v8.1-v8.3)
+       สเปกของ v8.5 ข้อ 5 สั่งให้แถวล่างเป็นสองคอลัมน์: ซ้าย SYSTEM SCAN · ขวา PROFILE
+       ปุ่มจึงเป็น 10 ใบ = 5 แถวคู่พอดี **จำนวนแถวเท่าเดิมกับตอน 9 ใบ** */
+    ok('ปุ่มใน .g-actions ครบ 10 ใบ (9 ไอคอน + PROFILE ของ v8.5)', info.actChildren === 10, info.actChildren);
     ok('ไอคอนครบ 9 ใบ', info.icoCount === 9, info.icoCount);
     ok('สไตล์ #miStyle มีใบเดียว', info.styleCount === 1, info.styleCount);
     ok('ภาพ decode ได้ครบทุกใบ', info.btns.every(b => b.decoded));
@@ -144,8 +158,12 @@ async function enterGame(page) {
        info.btns.every(b => b.text.length > 3), info.btns.map(b => b.text));
 
     // ── 3 · โครงกริดไม่ถูกแตะ (กับดักข้อ 11) ────────────────────────
-    ok('SYSTEM SCAN ยังเป็นลูกตัวสุดท้ายของ .g-actions', info.lastIsScan);
-    ok('ปุ่มสุดท้ายยังกินเต็มแถว', info.lastFullRow);
+    /* ↓ พลิกโดยตั้งใจตอน v8.5 — SCAN เลื่อนมาเป็นคอลัมน์ซ้าย ปุ่มสุดท้ายคือ PROFILE
+       และไม่มีปุ่มไหนกินเต็มแถวอีกแล้ว (ทั้งคู่ grid-column:auto) */
+    ok('SYSTEM SCAN เป็นคอลัมน์ซ้ายของแถวสุดท้าย', info.scanIsPrev, info.scanIsPrev);
+    ok('PROFILE ของ v8.5 เป็นลูกตัวสุดท้าย', info.lastIsProfile, info.lastIsProfile);
+    ok('แถวสุดท้ายเป็นสองคอลัมน์ ไม่มีใบไหนกินเต็มแถว', info.twoCol && !info.lastFullRow,
+       { twoCol: info.twoCol, lastFullRow: info.lastFullRow });
 
     // ── 4 · ไม่ล้นแนวนอน + โซนคำถาม-คำตอบไม่ขยับ ────────────────────
     ok('body ไม่ล้นแนวนอน', info.bodyOverflowX <= 0, info.bodyOverflowX);
@@ -199,7 +217,7 @@ async function enterGame(page) {
       };
     });
     ok('เรียก miPaint 30 รอบไม่แทรกซ้ำ',
-       rep.ico === 9 && rep.img === 9 && rep.st === 1 && rep.act === 9, rep);
+       rep.ico === 9 && rep.img === 9 && rep.st === 1 && rep.act === 10, rep);
 
     // ── 8 · ปุ่มยังกดได้จริง (ภาพไม่ขวางการกด) ──────────────────────
     /* ต้องเลื่อนปุ่มเข้ามาในจอก่อนเสมอ — elementFromPoint คืน null ทั้งตอน "มีอะไรมาบัง"
@@ -284,8 +302,12 @@ async function enterGame(page) {
     });
     ok('MI_ART ว่าง → ไม่มีไอคอนถูกแทรกเลย', bare.ico === 0, bare.ico);
     ok('MI_ART ว่าง → ไม่มี <img> ในแถวปุ่ม (ไม่มีรูปแตก)', bare.img === 0, bare.img);
+    /* ตั้งแต่ v8.5 แถวนี้มี 10 ใบ — ใบที่ 10 คือ PROFILE ซึ่งไม่ได้อยู่ในสารบัญ
+       MI_ART จึงไม่มีอีโมจิให้เทียบ ตรวจเฉพาะ 9 ใบแรกแล้วยืนยันใบที่ 10 แยก */
     ok('MI_ART ว่าง → อีโมจิเดิมอยู่ครบทั้ง 9 ใบ',
-       bare.texts.every((t, i) => t.indexOf(EMOJI[i]) === 0), bare.texts);
+       EMOJI.every((e, i) => (bare.texts[i] || '').indexOf(e) === 0), bare.texts);
+    ok('MI_ART ว่าง → ปุ่ม PROFILE ของ v8.5 ยังอยู่ครบ',
+       /PROFILE/.test(bare.texts[EMOJI.length] || ''), bare.texts[EMOJI.length]);
     ok('MI_ART ว่าง → ยังไม่ล้นแนวนอน', bare.overflowX <= 0, bare.overflowX);
     ok('MI_ART ว่าง → ไม่มี pageerror', errs.length === 0, errs);
     await ctx.close();

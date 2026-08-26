@@ -232,21 +232,26 @@ async function enterPanel(page) {
     const b4 = await boot(browser);
     await enterGame(b4.page, 'lv_gain');
 
-    /* 4.1 HP — เทียบกับสูตรที่เทสต์ถือเอง 100 + (lv-1)*15 + vit*2 + โบนัสแรงค์ */
+    /* 4.1 HP — **ฐานถูกชั้น v8.5 เขียนทับเป็น 750 + VIT*15 แล้ว** (สเปก 4-Class
+       Polarized Engine) ของ v7.6 ที่ต้องพิสูจน์คือ "+5 ต่อเลเวล และหยุดที่ 99"
+       ซึ่งยังบวกทับฐานใหม่ครบทุกหน่วย — เคสนี้จึงถูกพลิกมาวัดสิ่งนั้นแทนการวัด
+       ยอดรวมของ v4.0 ที่ไม่มีอยู่แล้ว (precedent: v7.4 · v7.8 · v7.9 · v8.1-v8.3) */
     const hp = await b4.page.evaluate(() => {
       const out = [];
       [1, 2, 10, 30, 60, 99].forEach(function (n) {
-        out.push({ lv: n, got: maxHpFor(n, 10, 0), want: 100 + (n - 1) * 15 + 20 });
+        out.push({ lv: n, got: maxHpFor(n, 10, 0), want: 750 + 10 * 15 + Math.min(98, n - 1) * 5 });
       });
       return out;
     });
     hp.forEach(function (r) { eq('maxHpFor เลเวล ' + r.lv, r.got, r.want); });
-    /* โบนัสของแพตช์นี้หยุดที่ 99 ส่วนฐาน (lv-1)*10 ของ v4.0 ไม่ถูกแตะ จึงโตต่อได้ตามเดิม */
+    /* โบนัสของแพตช์นี้หยุดที่ 99 — เทียบกับฐานของ v8.5 ที่ไม่ขึ้นกับเลเวลเลย */
     eq('เลเวลเกิน 99 — โบนัสของแพตช์นี้หยุดเพิ่มแล้ว',
-       await b4.page.evaluate(() => [110, 120, 300].map(n => maxHpFor(n, 10, 0) - (100 + (n - 1) * 10 + 20))),
+       await b4.page.evaluate(() => [110, 120, 300].map(n => maxHpFor(n, 10, 0) - maxHpFor(1, 10, 0))),
        [98 * 5, 98 * 5, 98 * 5]);
+    /* VIT ยังบวกเข้ามาครบ (ความชันเปลี่ยนจาก 2 เป็น 15 ตามสเปก) และโบนัสแรงค์ D
+       ของ v4.0 ซึ่งตั้งฉากกับค่าพลัง ยังบวกทับเต็มจำนวนเหมือนเดิม */
     ok('VIT กับโบนัสแรงค์ของ v4.0 ยังบวกเข้ามาครบ (ไม่ได้เขียนสูตรใหม่ทับ)',
-       await b4.page.evaluate(() => maxHpFor(10, 40, 30) - maxHpFor(10, 10, 0) === 30 * 2 + 30));
+       await b4.page.evaluate(() => maxHpFor(10, 40, 30) - maxHpFor(10, 10, 0) === 30 * 15 + 30));
 
     /* 4.2 HP จริงในเกม — recalcStats ของ v4.0 ต้องได้ค่าตามสูตรใหม่ */
     const live4 = await b4.page.evaluate(() => {
@@ -255,13 +260,16 @@ async function enterPanel(page) {
     });
     eq('G.maxHp หลัง recalcStats ตรงกับ maxHpFor', live4.max, live4.want);
 
-    /* 4.3 ATK — ตัวคูณต้องเป็น 1 + 1.5% × (เลเวล-1) ของยอดฐานที่ชั้นล่างคืนมา */
+    /* 4.3 ATK — **ฐานถูกชั้น v8.5 เขียนทับเป็น 1000*(1+STR*0.005) แล้ว**
+       ตัวคูณ +1.5% ต่อเลเวลของ v7.6 ยังคูณทับฐานใหม่ครบทุกหลัก (ไม่มีความคลาด
+       เคลื่อนจากการปัดเศษเลย เพราะ v8.5 วัดตัวคูณจากฐานหลักหมื่น ไม่ใช่ฐาน 18-300
+       ของ v4.0 ที่ควอนไทซ์ตัวคูณทิ้ง) */
     const atk = await b4.page.evaluate(() => {
       const out = [];
       [1, 2, 25, 50, 99].forEach(function (n) {
         G.level = n; recalcStats();
-        const base = Math.round((15 + G.level * 3) * (1 + G.stats.str / 200));
-        out.push({ lv: n, got: hunterAtk(), want: Math.max(1, Math.round(base * (1 + 0.015 * (n - 1)))) });
+        const base = 1000 * (1 + G.stats.str * 0.005);
+        out.push({ lv: n, got: hunterAtk(), want: Math.max(1, Math.round(base * baLvAtkMul())) });
       });
       return out;
     });
@@ -272,14 +280,19 @@ async function enterPanel(page) {
        await b4.page.evaluate(() => { G.level = 99; recalcStats(); return Math.round(baLvAtkMul() * 1000); }) === 2470);
 
     /* 4.4 ทอง — บวกเข้าตัวคูณตรง ๆ ส่วนต่างจึงเท่ากับ 0.5% × (เลเวล-1) เป๊ะ */
+    /* **ห้าม recalcStats() ระหว่างวัด** — ตั้งแต่ v8.5 ค่าพลังโตตามเลเวลเอง
+       (LUK ของทุกสายเพิ่มขึ้นทุกเลเวล) ส่วนต่างที่วัดได้จะกลายเป็น
+       "ของ v7.6 + ของ LUK ที่โตขึ้น" ปนกัน · ตรึงค่าพลังไว้แล้วขยับแต่เลเวล
+       จึงเหลือเฉพาะส่วนที่ v7.6 บวกเข้ามาล้วน ๆ ซึ่งคือสิ่งที่เคสนี้ต้องพิสูจน์ */
     const gold = await b4.page.evaluate(() => {
       G.level = 1; recalcStats();
       const one = goldMul();
       const out = [];
       [1, 2, 21, 51, 99].forEach(function (n) {
-        G.level = n; recalcStats();
+        G.level = n;
         out.push({ lv: n, d: Math.round((goldMul() - one) * 100000) / 100000, want: Math.round(0.005 * (n - 1) * 100000) / 100000 });
       });
+      G.level = 1; recalcStats();
       return out;
     });
     gold.forEach(function (r) { eq('ส่วนต่างอัตราทองที่เลเวล ' + r.lv, r.d, r.want); });

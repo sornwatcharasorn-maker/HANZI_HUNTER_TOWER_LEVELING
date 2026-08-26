@@ -204,7 +204,11 @@ async function tick(page, ms) {
 
   /* ดันดาเมจให้ทะลุเพดานด้วยการอัปเลเวล **หลัง** ตั้งเลือดบอสแล้ว
      (เลือดบอสคิดจาก hunterAtk ตอน nextMonster ค่าจึงถูกตรึงไว้ก่อนแล้ว) */
-  await page.evaluate(() => { G.level = 400; G.stats.str = 200; recalcStats(); });
+  /* **ต้องยัด STR หลัง recalcStats() เสมอ** — ตั้งแต่ v8.5 computeStats คิดค่าพลัง
+     ใหม่ทั้งชุดจากสายอาชีพ+เลเวล ค่าที่ยัดไว้ก่อนจะถูกทับทิ้ง และการดันเลเวลอย่างเดียว
+     ก็ทะลุเพดานไม่ได้แล้ว เพราะ ATK ของ v8.5 ไม่ได้โตตามเลเวล (ตัวคูณของ v7.6
+     ตันที่ ×2.47 ตอนเลเวล 99) ตัวที่ดันดาเมจได้จริงคือ STR ตามสูตร 1000*(1+STR*0.005) */
+  await page.evaluate(() => { G.level = 400; recalcStats(); G.stats.str = 900; });
   let r = await hit(page, false);
   a = await audit(page);
   ok(near(r.dealt, a.resil.gateHi, 2),

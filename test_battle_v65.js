@@ -218,13 +218,15 @@ async function goFloor(page, f) {
 
   // ═══ 3) SYSTEM SCAN — ราคาก้าวหน้า ════════════════════════════════
   blk('3 · SYSTEM SCAN');
-  const priceWant = [[1, 500], [2, 500], [3, 500], [4, 5000], [5, 1200], [7, 1200],
-                     [9, 1200], [11, 1200], [12, 5000], [13, 2500], [15, 2500],
-                     [17, 2500], [19, 2500], [20, 5000]];
-  for (const [f, p] of priceWant) {
+  /* **ราคาก้าวหน้าตามชั้น + ทวีคูณในชั้นเดิม ถูกชั้น v8.5 แทนที่ด้วยราคาคงที่
+     🪙 5,000 ตามสเปกโดยเจตนา** (precedent การพลิกเคส: v7.4 · v7.8 · v7.9 · v8.1-v8.4)
+     สิ่งที่เคสชุดนี้ยังต้องพิสูจน์คือ **ราคาบนปุ่มกับยอดที่หักจริงเป็นค่าเดียวกันเสมอ**
+     และ **ตรรกะเฉลยของเดิมไม่ถูกแตะ** ซึ่งเป็นข้อกำหนดของสเปกตรง ๆ (keep legacy logic) */
+  const FLAT = 5000;
+  for (const f of [1, 2, 3, 4, 5, 7, 9, 11, 12, 13, 15, 17, 19, 20]) {
     await goFloor(page, f);
     const got = await page.evaluate(() => baScanPrice());
-    ok(got === p, 'ชั้น ' + f + ' ราคาตั้งต้น ' + p + ' (ได้ ' + got + ')');
+    ok(got === FLAT, 'ชั้น ' + f + ' ราคาคงที่ ' + FLAT + ' (ได้ ' + got + ')');
   }
 
   await goFloor(page, 1);
@@ -237,19 +239,28 @@ async function goFloor(page, f) {
     }
     return out;
   });
-  ok(JSON.stringify(mul) === JSON.stringify([500, 1000, 2000, 4000]),
-     'กดซ้ำในชั้นเดิมราคาทวีคูณ 500→1000→2000→4000 (ได้ ' + mul.join('→') + ')');
+  ok(mul.every(v => v === FLAT),
+     'กดซ้ำในชั้นเดิมราคาไม่ทวีคูณอีกแล้ว (ได้ ' + mul.join('→') + ')');
 
   await goFloor(page, 2);
   const reset = await page.evaluate(() => baScanPrice());
-  ok(reset === 500, 'ข้ามชั้นแล้วราคากลับไปตั้งต้น (ได้ ' + reset + ')');
+  ok(reset === FLAT, 'ข้ามชั้นแล้วราคายังคงที่ (ได้ ' + reset + ')');
+
+  /* ยอดที่หักจริงต้องเท่ากับราคาบนปุ่มเป๊ะ — จุดที่พังง่ายที่สุดของการตรึงราคา */
+  const spend = await page.evaluate(() => {
+    G.gold = 999999; renderStats();
+    const before = G.gold;
+    showHint(); closeHint();
+    return before - G.gold;
+  });
+  ok(spend === FLAT, 'หักทองจริงเท่าราคาบนปุ่ม (หักไป ' + spend + ')');
 
   const label = await page.evaluate(() => {
     G.gold = 999999; renderStats();
     const b = baScanBtn();
     return { txt: b.textContent, img: b.querySelectorAll('img').length, dis: b.disabled };
   });
-  ok(/SYSTEM SCAN/.test(label.txt) && /500/.test(label.txt),
+  ok(/SYSTEM SCAN/.test(label.txt) && /5,000/.test(label.txt),
      'ปุ่มโชว์ราคาจริง (ได้ "' + label.txt.trim() + '")');
   ok(label.img >= 1, 'ไอคอนภาพของ v5.9 ยังอยู่บนปุ่ม (ได้ ' + label.img + ')');
   ok(!label.dis, 'ทองพอ = ปุ่มกดได้');

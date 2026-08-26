@@ -193,7 +193,15 @@ async function confirmOk(page) {
     eq('คลังคำศัพท์ถูกล้าง', after.words, 0);
     eq('กระเป๋าถูกล้าง', after.items, 0);
     eq('บันทึกรายชั้นของเรดาร์ถูกล้าง', after.tr, 0);
-    eq('ค่าพลัง (atk/def ของสเปก) กลับเป็นฐาน', [after.str, after.vit], [10, 10]);
+    /* ตั้งแต่ v8.5 ค่าพลังฐานเป็นของ "สายอาชีพ" ไม่ใช่ 10 เท่ากันทุกช่องอีกแล้ว
+       (นักลอบสังหารซึ่งเป็นสายเริ่มต้น = STR 12 · VIT 8) — สิ่งที่เคสนี้ต้องพิสูจน์คือ
+       "กลับไปเป็นค่าของเลเวล 1 ตามสายอาชีพ" จึงเทียบกับตารางในเกมแทนการพิมพ์เลขทับ
+       (precedent การพลิกเคส: v7.4 · v7.8 · v7.9 · v8.1-v8.4) */
+    const wantBase = await page.evaluate(() => {
+      const c = baBattleAudit().polarized.base;
+      return [c.str, c.vit];
+    });
+    eq('ค่าพลัง (atk/def ของสเปก) กลับเป็นฐานของสายอาชีพ', [after.str, after.vit], wantBase);
 
     eq('ประวัติกิจกรรมของครูไม่หาย (เพิ่มบรรทัดรีเซ็ตอีก 1)', after.gcLog, before.gcLog + 1);
     eq('รายการเซสชันไม่หาย', after.sessions, before.sessions);

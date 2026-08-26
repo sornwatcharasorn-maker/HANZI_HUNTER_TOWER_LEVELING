@@ -3,6 +3,8 @@ __pycache__/
 *.pyc
 *.log
 live_roster_log.txt
+# log ของชุดเทสต์ที่เขียนเป็น .txt (ของชั่วคราว ไม่ใช่ของที่แจก)
+*_log.txt
 package-lock.json
 
 # ภาพตรวจงานที่ `embed_arena_art.py --preview` พ่นออกมา (ของชั่วคราว ไม่ใช่ของที่แจก)
@@ -10,6 +12,3 @@ arena_art_preview.png
 
 # ภาพตรวจงานที่ `embed_monster_art.py --preview` พ่นออกมา (ของชั่วคราว ไม่ใช่ของที่แจก)
 monster_art_preview.png
-
-# log ของชุดเทสต์ (ของชั่วคราว ไม่ใช่ของที่แจก)
-*_log.txt

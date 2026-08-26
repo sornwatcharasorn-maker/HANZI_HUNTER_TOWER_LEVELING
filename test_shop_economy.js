@@ -302,6 +302,11 @@ async function clearOverlays(page) {
     const r = await page.evaluate(() => {
       CD_CARD = null;
       G.items = { potion: 0, scroll: 0, freeze: 0, focus: 0, glass: 0, insurance: 0, mystery: 0 };
+      /* **ต้องเติมเลือดให้เต็มก่อนรับคริสตัลเสมอ** — ตั้งแต่ v8.5 หลอดเลือดยาวขึ้น
+         หลายเท่า (750+VIT*15) แต่ G.hp ที่ค้างมาจากตอนเข้าเกมยังเป็นเลขเดิม
+         สัดส่วนจึงต่ำกว่า 30% ตั้งแต่วินาทีแรก แล้ว Auto-Elixir ทริกเกอร์ทันที
+         ที่ renderStats() รอบแรก = ถังพร่องไปก่อนที่เคสจะได้วัด */
+      G.hp = G.maxHp;
       addItem('focus', 1);
       renderStats();
       const o = { tank0: baBattleAudit().shop.elixir.tank, ticks: [] };

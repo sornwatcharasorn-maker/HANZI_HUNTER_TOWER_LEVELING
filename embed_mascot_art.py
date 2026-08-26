@@ -2,6 +2,7 @@
 """บีบภาพมาสคอต CHAR_IMG_SRC ให้เล็กลง (ชั้น v4.0 · หน้า intro / เกทล็อกอิน)
 
     python3 embed_mascot_art.py --q 76        # บีบใหม่ที่คุณภาพ 76
+    python3 embed_mascot_art.py --q 46 --w 560 # ย่อความกว้างด้วย (คืนที่ได้เยอะกว่าลดคุณภาพมาก)
     python3 embed_mascot_art.py --q 76 --dry  # ลองดูตัวเลขเฉย ๆ ไม่เขียนทับ
 
 ⚠ ต่างจากสคริปต์ฝังภาพอีก 4 ตัวตรงที่ **ไม่มีไฟล์ต้นฉบับอยู่ใน repo**
@@ -56,6 +57,7 @@ def main(argv):
     q = opt_int(argv, '--q', None)
     if not q:
         sys.exit(__doc__)
+    w = opt_int(argv, '--w', None)      # ย่อความกว้างด้วย — ท่าเดียวกับ embed_tower_art.py
     dry = '--dry' in argv
 
     src = io.open(GAME, encoding='utf-8').read()
@@ -66,13 +68,22 @@ def main(argv):
 
     cur = m.group(2)
     im = Image.open(io.BytesIO(base64.b64decode(cur))).convert('RGB')
+    src_size = im.size
+    # ── ย่อความกว้าง (ถ้าสั่ง) ────────────────────────────────────────────────
+    # มาสคอตถูกวางด้วย object-fit:cover ในกรอบขนาดตายตัวทั้งสามจุดที่ใช้
+    # (วงแหวนหน้า intro · ตราบนมือถือ · แบนเนอร์ฝั่งซ้ายบนเดสก์ท็อป)
+    # **สัดส่วนภาพไม่เปลี่ยน** เพราะย่อทั้งสองแกนตามกัน เลย์เอาต์จึงไม่ขยับ
+    # และคืนที่ได้เยอะกว่าการลดคุณภาพมาก (บทเรียนเดียวกับ --w ของ embed_tower_art.py)
+    if w and w < im.size[0]:
+        im = im.resize((w, round(im.size[1] * w / float(im.size[0]))), Image.LANCZOS)
     buf = io.BytesIO()
-    im.save(buf, 'WEBP', quality=q, method=6)       # ขนาดเดิมเป๊ะ ลดแค่คุณภาพ
+    im.save(buf, 'WEBP', quality=q, method=6)
     raw = buf.getvalue()
     b64 = base64.b64encode(raw).decode()
 
-    print('มาสคอต %dx%d · base64 %.1f KB → %.1f KB (q%d)'
-          % (im.size[0], im.size[1], len(cur) / 1024, len(b64) / 1024, q))
+    print('มาสคอต %dx%d → %dx%d · base64 %.1f KB → %.1f KB (q%d)'
+          % (src_size[0], src_size[1], im.size[0], im.size[1],
+             len(cur) / 1024, len(b64) / 1024, q))
     if len(b64) >= len(cur):
         sys.exit('หยุด: บีบแล้วไม่เล็กลง — ของเดิมถูกบีบมาต่ำกว่านี้แล้ว')
 
@@ -89,7 +100,7 @@ def main(argv):
 
     io.open(GAME, 'w', encoding='utf-8').write(out)
     embed_common.rebuild(ROOT)          # ต้นฉบับเปลี่ยนแล้ว → ย่อไฟล์แจกใหม่
-    print('เขียนทับเรียบร้อย — ขนาดภาพเท่าเดิม เลย์เอาต์ไม่ขยับ')
+    print('เขียนทับเรียบร้อย — สัดส่วนภาพเท่าเดิม (object-fit:cover) เลย์เอาต์ไม่ขยับ')
     print('⚠ นี่คือการบีบทับของที่ถูกบีบมาแล้ว ห้ามรันซ้ำโดยไม่ checkout ไฟล์กลับก่อน')
 
 

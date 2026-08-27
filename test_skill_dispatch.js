@@ -282,11 +282,18 @@ async function enterGame(page, id) {
       return { empty: empty, after: after === px, art: anim,
                imgs: document.querySelectorAll('#baArena img[src=""]').length };
     });
-    ok('ยังไม่ฝังภาพ → คืนค่าว่างทุก role (ไม่ใช่ undefined)',
-       Object.keys(r.empty).every(k => r.empty[k] === ''), r.empty);
+    /* Step 3 · Sprite Embedding — assassin (C1) กับ monarch (C2) ฝังภาพครบแล้ว
+       ที่เหลืออีก 6 role ยังว่างอยู่ตามเดิม · เคสนี้เคยยืนยัน "ว่างทุก role"
+       ซึ่งเป็นสถานะก่อนฝัง — พลิกด้านโดยตั้งใจ
+       (precedent: v7.4 · v7.8 · v7.9 · v8.1-v8.4 พลิกกันมาแล้วทุกชั้น) */
+    ok('role ที่ฝังภาพแล้ว → คืน data URI จริง (assassin · monarch)',
+       ['assassin', 'monarch'].every(k => /^data:image\//.test(r.empty[k] || '')), r.empty);
+    ok('role ที่ยังไม่มีภาพ → คืนค่าว่าง (ไม่ใช่ undefined)',
+       ['blade', 'slayer', 'guardian', 'guard', 'priest', 'soulmaster']
+         .every(k => r.empty[k] === ''), r.empty);
     ok('ไม่มี <img> ว่างค้างในสนาม (ไม่มีรูปแตก)', r.imgs === 0, r.imgs);
     ok('เสียบ data URI แล้ว baGetHeroSprite อ่านออกทันที', r.after === true);
-    ok('สายที่ยังไม่มีภาพ → art เป็น false', r.art === false, r.art);
+    ok('สายที่ฝังภาพแล้ว → art เป็น true', r.art === true, r.art);
     ok('ไม่มี pageerror', b.errs.length === 0, b.errs);
     await b.ctx.close();
   }

@@ -166,7 +166,10 @@ const cls = page => page.evaluate(() => {
         eq(t + '.' + k + ' → พุ่งเต็มระยะ', reg[k] && reg[k].rush, WANT[t][k].rush);
         eq(t + '.' + k + ' → สารบัญชื่อไฟล์', reg[k] && reg[k].file, WANT_FILE[t][k]);
         eq(t + '.' + k + ' → จำนวนเฟรมในแถบ', reg[k] && reg[k].n, WANT[t][k].n);
-        ok(t + '.' + k + ' → ยังไม่ฝัง data URI (ช่อง u ว่าง)', reg[k] && reg[k].art === false);
+        /* Step 3 · Sprite Embedding — สไปรต์ถูกฝังครบทั้ง 11 ช่องแล้ว
+           เคสนี้เคยยืนยัน "ยังไม่ฝัง (u ว่าง)" ซึ่งเป็นสถานะก่อนฝัง — พลิกด้าน
+           โดยตั้งใจ (precedent: v7.4 · v7.8 · v7.9 · v8.1-v8.4 พลิกกันมาแล้วทุกชั้น) */
+        ok(t + '.' + k + ' → ฝัง data URI แล้ว (ช่อง u ไม่ว่าง)', reg[k] && reg[k].art === true);
       }
     }
     /* v8.5 ยังอ่านทะเบียนของตัวเองได้ครบ — ห้ามทับคีย์ male/female */

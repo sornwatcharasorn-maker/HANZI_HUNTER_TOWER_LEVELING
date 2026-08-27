@@ -51,17 +51,35 @@ def norm(s):
 
 
 def resolve(name):
-    """หาไฟล์ต้นฉบับจากชื่อในสารบัญ — ยุบเว้นวรรคทั้งสองฝั่งก่อนเทียบเสมอ"""
+    """หาไฟล์ต้นฉบับจากชื่อในสารบัญ — ยุบเว้นวรรคทั้งสองฝั่งก่อนเทียบเสมอ
+
+    ลองสองชั้นตามลำดับ
+
+      1 · ชื่อตรงกันเป๊ะหลังตัดนามสกุลออกทั้งสองฝั่ง (ทางปกติ)
+      2 · **ชื่อบนดิสก์ "ขึ้นต้นด้วย" ชื่อเต็มในสารบัญ (รวมนามสกุล)** — เจ้าของ repo
+          อัปโหลดผ่านเว็บ GitHub แล้วชื่อไฟล์มีหางต่อท้ายมาได้จริง เช่น
+          `shadow_monarch_c2_idle.png .ba-monarch-idle.jpg` ซึ่งเป็นชื่อในสารบัญ
+          (`shadow_monarch_c2_idle.png`) บวกชื่อคลาส CSS ต่อท้ายแล้วบันทึกเป็น .jpg
+          **ห้ามแก้ด้วยการเปลี่ยนชื่อไฟล์บนดิสก์แทน** เพราะรอบหน้าที่เจ้าของ repo
+          อัปโหลดทับ ชื่อจะกลับมาเป็นแบบเดิมแล้วสคริปต์จะหาไม่เจออีก
+          (กติกาเดียวกับการยุบเว้นวรรคข้างบน — ตัวสารบัญยังอยู่ในเกมที่เดียวเหมือนเดิม)
+    """
+    full = norm(name)
     stem = norm(os.path.splitext(name)[0])
+    loose = None
     for d in DIRS:
         base = os.path.join(ROOT, d) if d else ROOT
         if not os.path.isdir(base):
             continue
         for f in sorted(os.listdir(base)):
             n, e = os.path.splitext(f)
-            if e.lower() in EXT and norm(n) == stem:
+            if e.lower() not in EXT:
+                continue
+            if norm(n) == stem:
                 return os.path.join(base, f)
-    return None
+            if loose is None and norm(n).startswith(full):
+                loose = os.path.join(base, f)
+    return loose
 
 
 def webp(path, fw, frames, q):

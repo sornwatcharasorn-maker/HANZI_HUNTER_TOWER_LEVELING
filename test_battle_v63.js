@@ -593,10 +593,13 @@ async function arena(page, floor, opts) {
     await arena(page, 2, { keepCrit: true });
     const fastCrit = await page.evaluate(async () => {
       G.stats.agi = 0;
-      const base = hunterAtk();
       G.monsterHp = 99999; G.monsterMaxHp = 99999; G.locked = false;
       ba_crit = 0;
       G.questionStart = Date.now() - 500;      /* ตอบไวภายใน 3 วิ */
+      /* v8.8 · ช่อง 1 ของสายอาชีพก็เป็นตัวคูณของ hunterAtk ระหว่าง BA_LIVE และใช้
+         เงื่อนไข "ตอบไว" ตัวเดียวกัน — วัดฐานในสภาพเดียวกับหมัดที่จะลงจริง
+         ไม่งั้นจะวัดคนละสภาพแล้วอ่านผลของคริตไม่ออก */
+      BA_LIVE = true; const base = hunterAtk(); BA_LIVE = false;
       const m0 = G.monsterHp;
       answer(G.currentMonster.answer, null);
       await new Promise(r => setTimeout(r, 300));

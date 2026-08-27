@@ -168,6 +168,10 @@ function head(s) { say('\n── ' + s + ' ' + '─'.repeat(Math.max(0, 58 - s.l
     const idle = await ev(() => hunterAtk());
     ok(idle === base, 'นอกจังหวะตัดสินข้อ ดาเมจยังเท่าเดิม (' + base + ') → HP อสูรไม่พองตาม');
 
+    /* v8.8 · ช่อง 1 ของสายอาชีพเป็นตัวคูณของ hunterAtk ระหว่าง BA_LIVE เหมือนกัน
+       และมีเงื่อนไข "ตอบไวภายในหน้าต่างของสาย" — ปิดหน้าต่างก่อนวัด เพื่อให้เหลือ
+       ผลของแกนพิฆาตล้วน ๆ ตามที่บล็อกนี้ตั้งใจวัด */
+    await ev(() => { G.questionStart = 0; });
     const live = await ev(() => { BA_LIVE = true; const v = hunterAtk(); BA_LIVE = false; return v; });
     ok(live === Math.max(1, Math.round(base * 1.4)),
       'ระหว่างตัดสินข้อได้ +40% เต็มเพดาน — คาด ' + Math.round(base * 1.4) + ' ได้ ' + live);

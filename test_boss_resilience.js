@@ -86,11 +86,14 @@ async function goFloor(page, f) {
 }
 
 /* ตอบถูกหนึ่งครั้งแล้วคืนยอดดาเมจจริง — fast=true บังคับคริตของ v6.3 (ตอบใน 3 วิ) */
-async function hit(page, fast) {
-  const r = await page.evaluate((f) => {
+async function hit(page, fast, opt) {
+  const r = await page.evaluate(([f, o]) => {
     const g = G;
     if (typeof ba_crit !== 'undefined') ba_crit = 0;   /* กันท่าไม้ตายมาปนกลางทาง */
     g.hp = g.maxHp; g.shield = 0;   /* หลอดโจมตีปกติของ v6.5 ฆ่าฮีโร่ระหว่างวัดได้ */
+    /* ล้างสตรีค = ปิดดาเมจพิเศษของความแม่นยำ (AB_PREC ของ v4.6) ซึ่งบวกเข้าเกราะผนึก
+       ทีละ 60-120% แล้วทำให้สองหมัดที่ควรเท่ากันวัดออกมาไม่เท่ากัน */
+    if (o && o.noStreak) g.streak = 0;
     g.questionStart = f ? Date.now() : (Date.now() - 9000);
     g.locked = false;
     const before = g.monsterHp;
@@ -98,7 +101,7 @@ async function hit(page, fast) {
     resolveAnswer(m.answer, null, false);
     return { dealt: before - g.monsterHp, hp: g.monsterHp, max: g.monsterMaxHp,
              fb: (document.getElementById('gFeedback') || {}).textContent || '' };
-  }, !!fast);
+  }, [!!fast, opt || null]);
   await page.waitForTimeout(1400);
   await clearOverlays(page);
   return r;
@@ -245,8 +248,17 @@ async function tick(page, ms) {
   await goFloor(page, 20);
   /* ตั้งดาเมจให้ต่ำกว่าเพดานมาก ๆ เพื่อวัดผลของการลดทอนล้วน ๆ */
   await page.evaluate(() => { G.level = 1; G.stats.str = 0; recalcStats(); });
-  const normal = await hit(page, false);
-  const critUp = await hit(page, true);
+  /* v8.8 ผูกโบนัสของช่อง 1 (สายนักลอบสังหาร ดาเมจซ้ำ 120%) ไว้กับ "ตอบไวไม่เกิน 3.5 วิ"
+     ซึ่งเป็นเงื่อนไขเดียวกับที่ v6.3 ใช้บังคับคริต — แยกคริตด้วยความไวเหมือนเดิมไม่ได้อีก
+     เพราะสองหมัดจะต่างกันที่โบนัสช่อง 1 ด้วย ไม่ใช่ที่การลดทอนคริตล้วน
+     ต้องบังคับ critChance ตรง ๆ แล้วให้ทั้งสองหมัด "ไวเท่ากัน" (ท่าเดียวกับชุดของ v6.3) */
+  await page.evaluate(() => { window.__CC = critChance; critChance = () => 0; });
+  const normal = await hit(page, true, { noStreak: true });
+  await page.evaluate(() => { critChance = () => 100; });
+  const critUp = await hit(page, true, { noStreak: true });
+  await page.evaluate(() => { critChance = window.__CC; });
+  ok(/CRITICAL/.test(critUp.fb) && !/CRITICAL/.test(normal.fb),
+     'บังคับคริตติด/ไม่ติดได้จริงตามที่สั่ง');
   ok(near(critUp.dealt, normal.dealt, Math.max(2, Math.round(normal.dealt * 0.12))),
      'เกราะยังอยู่: คริตลงเท่าหมัดธรรมดา [' + critUp.dealt + ' vs ' + normal.dealt + ']');
 
@@ -259,7 +271,7 @@ async function tick(page, ms) {
   await page.waitForTimeout(120);
   const barLeft = await page.evaluate(() => baBarLeft());
   ok(barLeft === 0, 'เกราะถูกทลายแล้วจริง [' + barLeft + ']');
-  const critNoBar = await hit(page, true);
+  const critNoBar = await hit(page, true, { noStreak: true });
   ok(critNoBar.dealt > normal.dealt * 1.5,
      'เกราะแตกแล้ว: คริตกลับมาเต็มแรง [' + critNoBar.dealt + ' vs ' + normal.dealt + ']');
 

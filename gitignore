@@ -2,8 +2,6 @@ node_modules/
 __pycache__/
 *.pyc
 *.log
-live_roster_log.txt
-# log ของชุดเทสต์ที่เขียนเป็น .txt (ของชั่วคราว ไม่ใช่ของที่แจก)
 *_log.txt
 package-lock.json
 

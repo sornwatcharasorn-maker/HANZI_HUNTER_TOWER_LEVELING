@@ -306,26 +306,33 @@ const cls = page => page.evaluate(() => {
     const b = await boot(browser);
     await enterGame(b.page, 'anm4');
 
-    /* ช่อง 1 ยังเป็น Lv 1 (เส้นฐาน ไม่ให้โบนัส) → ตอบถูกต้องได้ท่าโจมตีปกติ */
+    /* ── เคสชุดนี้ถูกพลิกโดยตั้งใจตอนชั้น v8.8 ────────────────────────────
+       เดิมวัดด้วย "ระดับช่อง" (Lv1 = เส้นฐานไม่ให้โบนัส · Lv2 ขึ้นไปถึงมีผล)
+       ตั้งแต่ v8.8 เมทริกซ์ของสเปกให้ช่อง 1 ของนักลอบสังหารมีอะตอม win = 3.5 วิ
+       ตัวตัดสินจึงกลายเป็น "ตอบไวทันกรอบไหม" ไม่ใช่ "อัประดับหรือยัง"
+       (สเปกให้ดาเมจ 120% ตั้งแต่ Lv1 อยู่แล้ว) */
+
+    /* ตอบช้ากว่ากรอบ 3.5 วิ → ช่อง 1 ไม่ทำงาน ได้ท่าโจมตีปกติ */
     const n1 = await b.page.evaluate(() => {
       baAnimRevert();
-      G.questionStart = Date.now() - 6000;         /* ช้ากว่า 3 วิ = ไม่คริต */
+      G.questionStart = Date.now() - 6000;         /* ช้ากว่ากรอบ = ไม่เข้าเงื่อนไข */
       baStrike(12, false, false);
       const a = baBattleAudit().skillAnim;
       return { key: a.key, s1: baPlS1(G) };
     });
-    eq('ช่อง 1 ยัง Lv 1 → พาสซีฟยังไม่มีผล', n1.s1, 0);
+    eq('ตอบช้ากว่ากรอบ win → ช่อง 1 ไม่ให้ดาเมจซ้ำ', n1.s1, 0);
     eq('ตอบถูกธรรมดา → ท่าโจมตีปกติ (dash)', n1.key, 'dash');
 
-    /* อัปช่อง 1 เป็น Lv 2 → ตอบถูกต้องกลายเป็น Shadow Strike */
+    /* ตอบไวทันกรอบ → ช่อง 1 ทำงาน กลายเป็น Shadow Strike */
     const s1 = await b.page.evaluate(() => {
       G.skills.assassin[0] = 2;
+      G.questionStart = Date.now();                /* ไวทันกรอบ 3.5 วิ */
       baAnimRevert();
       baStrike(12, false, false);
       const a = baBattleAudit().skillAnim;
       return { key: a.key, s1: baPlS1(G), cls: Array.from(document.getElementById('baHero').classList) };
     });
-    ok('ช่อง 1 Lv 2 → พาสซีฟมีผลจริง', s1.s1 > 0, s1);
+    ok('ตอบไวทันกรอบ win → ช่อง 1 ให้ดาเมจซ้ำจริง', s1.s1 > 0, s1);
     eq('ตอบถูกขณะช่อง 1 ทำงาน → ท่า Shadow Strike', s1.key, 's1');
     ok('ได้คลาส ba-assassin-slot1', s1.cls.indexOf('ba-assassin-slot1') >= 0, s1.cls);
 

@@ -23,10 +23,12 @@ function ok(name, cond, extra) {
 function eq(name, got, want) { ok(name, JSON.stringify(got) === JSON.stringify(want), { got: got, want: want }); }
 
 /* สูตรของสเปกเขียนซ้ำไว้ฝั่งเทสต์โดยตั้งใจ — เป็น "สารบัญชุดที่สอง" ที่จำเป็น
-   ถ้าอ่านค่าคงที่ในเกมมาคูณเอง เทสต์จะผ่านทุกครั้งต่อให้เกมเปลี่ยนสูตรไปแล้ว */
+   ถ้าอ่านค่าคงที่ในเกมมาคูณเอง เทสต์จะผ่านทุกครั้งต่อให้เกมเปลี่ยนสูตรไปแล้ว
+   **เส้นโค้งชุดนี้เป็นของ v8.6 (Softened Curve) ซึ่งเขียนทับของ v7.6 ทั้งก้อน**
+   เปลี่ยนเส้นโค้งเมื่อไหร่ต้องแก้ที่นี่ด้วยเสมอ (กติกาเดิมของชุดนี้) */
 function wantExp(lv) {
   const n = Math.max(1, Math.min(99, Math.floor(lv)));
-  return Math.floor(300 * Math.pow(n, 1.65) + 50 * Math.pow(n, 2.0));
+  return Math.floor(85 * Math.pow(n, 1.25) + n * 35);
 }
 const WANT_TO = [15, 30, 45, 60, 72, 82, 90, 95, 98, 99];
 const WANT_LABEL = ['E-RANK', 'D-RANK', 'C-RANK', 'B-RANK', 'A-RANK',
@@ -122,7 +124,10 @@ async function enterPanel(page) {
     eq('ส่วนต่างที่ตัวห่อบวกจริง (ของ v4.0 ให้ 10 อยู่แล้ว)', a.gain.hpAdd, 5);
     eq('ATK ต่อเลเวล', a.gain.atk, 0.015);
     eq('อัตราทองต่อเลเวล', a.gain.gold, 0.005);
-    eq('ตัวคูณของเส้นโค้ง EXP', [a.exp.k, a.exp.p, a.exp.k2, a.exp.p2], [300, 1.65, 50, 2.0]);
+    /* v8.6 ทับค่าที่ v7.6 รายงานไว้ให้ตรงกับเส้นโค้งที่ทำงานจริง — สองพจน์ของ
+       สูตรใหม่ลงกรอบ k·lv^p + k2·lv^p2 พอดี เพราะ lv × 35 คือ 35·lv^1.0 ตรงตัว */
+    eq('ตัวคูณของเส้นโค้ง EXP (ชุด v8.6 ที่ทำงานจริง)',
+       [a.exp.k, a.exp.p, a.exp.k2, a.exp.p2], [85, 1.25, 35, 1]);
     ok('ปรับบันไดแรงค์ให้ตรงชุดใหม่แล้วตั้งแต่โหลดหน้า', a.synced === true, a.tiers);
     eq('ช่องเก็บของยังเป็น 10 ช่องเดิม (สเปกสั่งห้ามแตะ)', a.bag, 10);
 
@@ -187,7 +192,7 @@ async function enterPanel(page) {
 
   // ══ บล็อก 3 · เส้นโค้ง EXP ════════════════════════════════════════════════
   {
-    head('บล็อก 3 · เส้นโค้ง EXP 300·lv^1.65 + 50·lv^2.0 (Ragnarok Classic)');
+    head('บล็อก 3 · เส้นโค้ง EXP 85·lv^1.25 + lv·35 (Softened Curve ของ v8.6)');
     const b3 = await boot(browser);
 
     const lvs = [1, 2, 3, 5, 10, 15, 20, 30, 45, 60, 72, 82, 90, 95, 98, 99];

@@ -37811,6 +37811,592 @@
       } catch (e) { baPlErr(e, 'install'); }
     })();
 
+    // ══════════════════════════════════════════════════════════════════════════
+    //  ชั้นบนสุด — v8.6 · SOFTENED EXP CURVE · ABSOLUTE RETROACTIVE BATCH
+    //              LEVEL-UP SYNC · TOWER & BOSS CLEAR EXP INJECTIONS
+    //  อยู่ในเนมสเปซ ba ของชั้น v6.0 เดิม ไม่ได้ตั้งพรีฟิกซ์ใหม่ (กติกาเดียวกับ
+    //  v6.1–v8.5) · วางท้ายสุดของไฟล์ ต่อจาก baPlInstall() ของ v8.5 และก่อน
+    //  baInstall() จึงห่อทับทุกชั้นได้ · ไม่แก้โค้ดของ v4.0-v8.5 เลยแม้แต่บรรทัดเดียว
+    //
+    //  ── ทำไมแทบไม่ต้องเขียนกลไกใหม่เลย ────────────────────────────────────────
+    //  ทุกอย่างที่สเปกขอมี "ทางผ่านเดียว" อยู่แล้วทั้งหมด แพตช์นี้จึงห่อของเดิมล้วน
+    //    เพดาน EXP ของทุกเลเวล            → expForLevel      (v4.0 · เขียนทับโดย v7.6)
+    //    การไล่ขึ้นเลเวลจนกว่า EXP จะหมด   → levelUpCheck     (v4.0)
+    //    ค่าพลังที่โตเองตามเลเวล/สายอาชีพ  → computeStats     (v4.0 · เขียนทับโดย v8.5)
+    //    แต้มอิสระ +2 ต่อเลเวล             → baPlFree         (v8.5 · คิดสดจากเลเวล)
+    //    ร่างตื่นพลัง C1 → C2               → baPlTier         (v8.5 · คิดสดจากเลเวล)
+    //    รางวัลตอนเคลียร์ชั้น               → clearFloor       (v4.0)
+    //
+    //  ** สองข้อของสเปกไม่ต้องเขียนโค้ดเลยสักบรรทัด และนั่นคือเรื่องดี **
+    //  "Auto-grant role growths (+2 primary, +1 secondary)" กับ "freePoints += 2"
+    //  เป็นของที่ v8.5 คิดสดจากเลเวลอยู่แล้ว (computeStats = base + grow×(lv−1) + alloc
+    //  · baPlFree = (lv−1)×BA_PL_FREE_PER_LV − ที่แจกไปแล้ว) การเก็บเป็นฟิลด์ซ้ำ
+    //  คือการสร้าง "บัญชีชุดที่สอง" ที่ต้องซิงก์กันตลอดไป (บทเรียนข้อ 35)
+    //  แพตช์นี้จึงแค่ดันเลเวลแล้วสั่ง recalcStats() ให้ ที่เหลือตามมาเองครบ
+    //  · เช่นเดียวกัน `tier` ของ v8.5 เป็นค่าที่คิดสด ข้าม Lv 50 เมื่อไหร่ก็เป็น C2
+    //    ทันทีทั้งชื่อ · ภาพ · สกิลทั้งสี่ช่อง แพตช์นี้จึงมีหน้าที่แค่ "ประกาศ" ไม่ใช่ "สลับ"
+    //
+    //  ── ข้อจำกัดเดิมที่ยังต้องเคารพ ────────────────────────────────────────────
+    //  1. ไม่แตะหน้าจอเล่นเลยแม้แต่พิกเซลเดียว — ไม่เพิ่ม DOM สักโหนด ไม่เพิ่ม CSS
+    //     สักกฎ ไม่เพิ่ม/ลดปุ่มสักใบ การ์ดโจทย์จึงยัง 340.8px (354.8px ที่จอ 320)
+    //  2. ไม่แทรกคอลัมน์ในตารางไหน (ข้อห้ามข้อแรกของ v7.2)
+    //  3. ไม่เพิ่มภาพหรือเสียงสักไบต์ · ไม่แตะ Math.random สักครั้ง (กับดักข้อ 32)
+    // ══════════════════════════════════════════════════════════════════════════
+
+    const BA_XP_VER = '8.6';
+
+    /* ── ค่าคงที่ทั้งชุด — แหล่งความจริงเดียวของแพตช์นี้ ────────────────────────
+       ทุกตัวเลขมาจากก้อนนี้ก้อนเดียว และข้อความบนจอประกอบจากค่าพวกนี้เอง
+       จึงไม่มีทางที่เลขบนจอกับเลขที่ทำงานจริงจะเพี้ยนกัน (กติกาเดียวกับ v4.7.9.1) */
+    const BA_XP_MAX = 99;      /* เพดานเลเวลตามสเปก (Lv 1–99) */
+    const BA_XP_K   = 85;      /* ตัวคูณของพจน์กำลัง */
+    const BA_XP_P   = 1.25;    /* เลขชี้กำลัง — ต่ำกว่า 1.65 ของ v7.6 มาก จึงผ่อนลงทั้งเส้น */
+    const BA_XP_LIN = 35;      /* พจน์เชิงเส้น (lv × 35) — ถ่วงช่วงต้นให้ไม่ขึ้นเร็วเกินไป */
+
+    const BA_XP_FLOOR = 350;   /* เคลียร์ชั้นมอนสเตอร์ทั่วไป */
+    const BA_XP_ZONE  = 1500;  /* บอสประจำโซน (F4 · F8 · F12 · F16) */
+    const BA_XP_APEX  = 4000;  /* ยอดหอคอย F20 */
+    const BA_XP_FLAW  = 1.5;   /* ไร้ที่ติทั้งชั้น → EXP ของรอบนั้น ×1.5 */
+
+    /* อ่านค่าของ v8.5 มาใช้ ไม่ประกาศซ้ำ — ถ้าชั้นนั้นถูกถอดออกค่อยตกไปใช้ค่าสำรอง */
+    const BA_XP_FREE = (typeof BA_PL_FREE_PER_LV === 'number') ? BA_PL_FREE_PER_LV : 2;
+    const BA_XP_TIER = (typeof BA_PL_TIER_LV === 'number') ? BA_PL_TIER_LV : 50;
+
+    /* สถานะของรอบการเล่นทั้งหมด ไม่ต้องเซฟสักตัว */
+    let BA_XP_READY  = false;  /* สวิตช์แบบเดียวกับ AB_READY/CD_READY (กับดักข้อ 16) */
+    let BA_XP_MISS   = 0;      /* ตอบพลาดไปกี่ข้อในชั้นที่ยืนอยู่ */
+    let BA_XP_MISS_F = 0;      /* ตัวนับข้างบนเป็นของชั้นไหน */
+    let BA_XP_LAST   = null;   /* ผลการปรับระดับครั้งล่าสุด (ให้ชุดเทสต์อ่าน) */
+    /* ผลการเติม EXP ตอนเคลียร์ชั้นครั้งล่าสุด — **ต้องแยกตัวแปรจาก BA_XP_LAST**
+       เพราะ wrapper ของ clearFloor ในชั้นล่างหลายตัว (qSave ของ v4.2 · tqSave ของ v4.9.3
+       · baQdSave ของ Micro-Patch เควส) เรียก loadStore() ต่อข้างใน ซึ่งวิ่งผ่าน
+       migrateAccount → baInitProgression → เขียน BA_XP_LAST ทับทันทีในสายเดียวกัน */
+    let BA_XP_CLEAR  = null;
+    const BA_XP_ANN  = {};     /* คิวประกาศรายคน — รอ startGame มาหยิบไปโชว์ */
+    const BA_XP_N    = { sync: 0, retro: 0, award: 0, flaw: 0, awaken: 0, cap: 0, ann: 0 };
+
+    /* พังตรงไหนก็ห้ามลามไปทำเกมพัง — เขียนลง Error Log ของ v4.3 ผ่าน baErr ของ v6.0 */
+    function baXpErr(e, w) { try { baErr(e, 'xp86:' + w); } catch (x) {} }
+
+    /* เลเวลที่เอาไปคิด — หนีบ 1..99 เสมอ แผง GM ตั้งเลเวลเองได้และบัญชีเพี้ยนก็มีจริง
+       (กติกาเดียวกับ baLvNow ของ v7.6 · baLvRank ของ v7.2) */
+    function baXpLv(n) {
+      const v = Math.floor(+n);
+      return Math.max(1, Math.min(BA_XP_MAX, isFinite(v) ? v : 1));
+    }
+
+    // ══ 1) เส้นโค้ง EXP ชุดใหม่ — Softened Curve ═══════════════════════════════
+    /* requiredExp = floor(85 · lv^1.25 + lv · 35)  ตามสเปกตรงตัว
+
+       เทียบกับ Ragnarok Classic ของ v7.6 (300·lv^1.65 + 50·lv^2.0) ซึ่งเป็น
+       "เส้นโค้งฮาร์ดคอร์" ที่เอกสารของชั้นนั้นเตือนไว้เองว่า Lv50 กิน EXP สะสม
+       ราว 5.5 ล้าน = เป้าที่ไม่มีนักเรียนคนไหนไปถึง — ชุดนี้ **ผ่อนลง 19.2 เท่า**
+       เหลือ 288,363 EXP สะสมถึง Lv50 ซึ่งพอดีกับ 15–20 รอบหอคอยเต็มตามที่สเปกขอ
+
+       | เลเวล | เพดานต่อขั้น | EXP สะสมที่ต้องใช้ถึงขั้นนี้ |
+       |   1  |     120     |         0      |
+       |  10  |   1,861     |     7,545      |
+       |  30  |   7,017     |    91,817      |
+       |  50  |  13,051     |   288,363      |  ← จุดตื่นพลัง C2
+       |  99  |  30,008     | 1,324,418      |
+
+       หนึ่งรอบหอคอยเต็มได้ EXP จากการเคลียร์ชั้นอย่างเดียว 15,250 (ไร้ที่ติทั้งรอบ
+       = 22,875) → 288,363 ÷ 15,250 ≈ **18.9 รอบ** และเมื่อรวม EXP จากการตอบถูก
+       (~2,000 ต่อรอบ) จะเหลือราว 16.7 รอบ — อยู่กลางช่วง 15–20 ที่สเปกกำหนดพอดี
+
+       **เขียนทับ binding ไม่ใช่ห่อ** เพราะสเปกเปลี่ยน "สูตร" ทั้งก้อน (precedent
+       เดียวกับที่ v6.4 เขียนทับ isBossFloor · v7.6 เขียนทับ expForLevel มาก่อน)
+       ทุกจุดเรียกในเกมอ้างถึงด้วยชื่อระดับบนสุดล้วน และ mangle.toplevel ของ build
+       เป็น false ตลอดกาล ชื่อจึงรอดผ่านการย่อไฟล์ไปครบ
+       · baLvExpFor ของ v7.6 ยังอยู่ครบและกลายเป็น "เส้นโค้งเดิม" ที่ข้อ 2 ใช้แปลงย้อนหลัง */
+    function baGetRequiredExp(level) {
+      const lv = baXpLv(level);
+      return Math.floor(BA_XP_K * Math.pow(lv, BA_XP_P) + lv * BA_XP_LIN);
+    }
+
+    /* ตาราง EXP สะสม — cum[lv] = EXP รวมที่ต้องใช้เพื่อ "ไปถึง" เลเวลนั้น
+       สร้างครั้งเดียวตอนแยกไฟล์ (99 ช่อง) การไล่บวกสดทุกครั้งใน while ของข้อ 2
+       จะกลายเป็น O(n²) ต่อการล็อกอินหนึ่งครั้งโดยไม่จำเป็น */
+    const BA_XP_CUM = [0, 0];
+    for (let _xl = 2; _xl <= BA_XP_MAX; _xl++) BA_XP_CUM[_xl] = BA_XP_CUM[_xl - 1] + baGetRequiredExp(_xl - 1);
+
+    function baGetCumulativeExp(level) {
+      const lv = baXpLv(level);
+      return BA_XP_CUM[lv] || 0;
+    }
+
+    if (typeof expForLevel === 'function') {
+      expForLevel = function (level) {
+        try { return baGetRequiredExp(level); }
+        catch (e) { baXpErr(e, 'req'); return BA_XP_K + BA_XP_LIN; }
+      };
+    }
+
+    // ══ 2) Absolute Retroactive Batch Level-Up Sync ════════════════════════════
+    /* เส้นโค้งเดิมของ v7.6 — ใช้ตอบคำถามเดียวคือ "บัญชีนี้เคยหา EXP มาแล้วเท่าไร"
+       เพราะเลเวลที่เขามีอยู่ถูกไต่มาด้วยเส้นโค้งนั้น พอเส้นโค้งผ่อนลง 19 เท่า
+       EXP ก้อนเดิมจึงต้องถูกตีค่าใหม่ให้เป็นเลเวลใหม่ ไม่ใช่ปล่อยให้ค้างที่เดิม
+       (นี่คือความหมายของคำว่า "Absolute Retroactive" ในสเปก) */
+    function baXpLegacyReq(level) {
+      const lv = baXpLv(level);
+      try { if (typeof baLvExpFor === 'function') return baLvExpFor(lv); } catch (e) {}
+      return Math.floor(300 * Math.pow(lv, 1.65) + 50 * lv * lv);
+    }
+    function baXpLegacyCum(level) {
+      const lv = baXpLv(level);
+      let t = 0;
+      for (let i = 1; i < lv; i++) t += baXpLegacyReq(i);
+      return t;
+    }
+
+    /* ร่างของสายอาชีพตามเลเวล — คิดสดเหมือน baPlTier ของ v8.5 ไม่เก็บธงซ้อน */
+    function baXpTierOf(level) { return baXpLv(level) >= BA_XP_TIER ? 'c2' : 'c1'; }
+
+    /* แต้มอิสระที่ยังแจกได้ — ยืมของ v8.5 มาใช้ ไม่คิดเอง (สารบัญเดียว) */
+    function baXpFree(src) {
+      try { if (typeof baPlFree === 'function') return baPlFree(src); } catch (e) {}
+      const lv = baXpLv((src && src.level) || 1);
+      return Math.max(0, (lv - 1) * BA_XP_FREE);
+    }
+
+    /* ── หัวใจของข้อ 2 ──────────────────────────────────────────────────────────
+       รับได้ทั้ง "บัญชีใน store" และ "G ที่กำลังเล่นอยู่" · คืน null ถ้าไม่ได้ทำอะไร
+
+       allowRetro = false  → ข้ามการแปลงย้อนหลัง ใช้กับ G เท่านั้น
+       **จำเป็น ไม่ใช่ของประดับ** — G เป็นอ็อบเจกต์ใหม่ที่ startGame ปั้นขึ้นทุกครั้ง
+       จึงไม่มีตรารุ่น `xpv` ติดมาด้วย ถ้าปล่อยให้เข้าเส้นทางแปลงย้อนหลัง เลเวลที่
+       ถูกแปลงไปแล้วตอน migrate จะถูกแปลงซ้ำอีกรอบ = พุ่งไป 99 ทันทีที่ล็อกอินรอบสอง
+
+       ตรารุ่น `a.xpv` คือตัวกันแปลงซ้ำของฝั่ง store (กฎเดียวกับ gcv/cxv/trv/abv —
+       กับดักข้อ 8) และการแปลงเป็น deterministic ล้วน: เลเวลกับ exp ชุดเดิมให้ผลเดิม
+       เสมอ ต่อให้ยังไม่ถูกเซฟลง localStorage ก็ได้ผลเท่าเดิมในการอ่านครั้งถัดไป */
+    function baInitProgression(acc, allowRetro) {
+      const a = acc || baG();
+      if (!a || typeof a !== 'object') return null;
+      /* แถวสดของ v5.7 เป็น "จอแสดงผล" ไม่ใช่บัญชีจริง — ถูกสัญญาณเขียนทับทุกไม่กี่วินาที
+         การแปลงมันคือการปั้นตัวเลขที่ครูแยกไม่ออกจากของจริง */
+      if (a.lrMirror) return null;
+
+      const lv0 = baXpLv(a.level);
+      const ex0 = Math.max(0, Math.floor(+a.exp) || 0);
+      const tier0 = baXpTierOf(lv0);
+      const retro = (allowRetro !== false) && (a.xpv !== BA_XP_VER);
+
+      /* totalExp = EXP สะสมตลอดชีพเท่าที่กู้กลับมาได้จากสถานะปัจจุบัน */
+      let total = (retro ? baXpLegacyCum(lv0) : baGetCumulativeExp(lv0)) + ex0;
+      if (!isFinite(total) || total < 0) total = 0;
+
+      /* ไล่ขึ้นทีละขั้นตามสเปก — ไม่มีทางลดขั้น เพราะ total ≥ cum(lv0) เสมอ */
+      let lv = 1;
+      while (lv < BA_XP_MAX && total >= baGetCumulativeExp(lv + 1)) lv++;
+      if (lv < lv0) lv = lv0;
+
+      let rest = Math.max(0, total - baGetCumulativeExp(lv));
+      const need = baGetRequiredExp(lv);
+      /* ที่เพดาน 99 หลอดค้างเกือบเต็มถาวร ห้ามปล่อยให้ล้น ไม่งั้น levelUpCheck
+         ของ v4.0 จะดันเลเวลทะลุ 99 ไปเรื่อย ๆ (มันไม่มีเพดานในตัว) */
+      if (lv >= BA_XP_MAX && rest >= need) { rest = need - 1; BA_XP_N.cap++; }
+
+      const gained = lv - lv0;
+      a.xpv = BA_XP_VER;
+      a.level = lv;
+      a.exp = rest;
+      a.maxExp = need;
+
+      const res = { lv0: lv0, lv: lv, gained: gained, retro: retro, total: total,
+                    rest: rest, tier0: tier0, tier: baXpTierOf(lv),
+                    free: baXpFree(a), at: Date.now() };
+      BA_XP_LAST = res;
+      return res;
+    }
+
+    /* ประกาศตอนตื่นพลังขั้นสอง — ชื่อ/ภาพ/สกิลของร่าง C2 เป็นของ v8.5 ที่คิดสด
+       จากเลเวลอยู่แล้ว ตรงนี้จึงมีหน้าที่เดียวคือบอกผู้เล่นว่ามันเกิดขึ้นแล้ว */
+    function baXpAwaken(src) {
+      try {
+        const g = src || baG();
+        if (!g) return;
+        BA_XP_N.awaken++;
+        let icon = '👑', en = 'Awakened', th = 'ร่างตื่นพลัง';
+        if (typeof baPlClass === 'function') {
+          const c = baPlClass(g);
+          if (c) { icon = c.icon || icon; en = (c.c2 && c.c2.en) || en; th = (c.c2 && c.c2.th) || th; }
+        }
+        baXpNotify('AWAKEN', { icon: icon, en: en, th: th, lv: baXpLv(g.level) });
+        baXpSyncBadges();
+      } catch (e) { baXpErr(e, 'awaken'); }
+    }
+
+    /* ── ซิงก์ป้ายแรงค์ ────────────────────────────────────────────────────────
+       ป้ายแรงค์ตามเลเวลของ v7.2/v7.6 ถูกวาดจากสองที่คือ #fbBody (fbPaint) กับ
+       #gmBody (gmRender) ซึ่งอ่านผ่าน baLvRank ตัวเดียวกัน สั่งวาดใหม่ทั้งคู่
+       **เฉพาะตอนห้องควบคุมกางอยู่** เครื่องนักเรียนจึงไม่มีต้นทุนสักหน่วย
+       (กติกาเดียวกับ baMsOn ของ v7.7 · baUniOn ของ v7.8) */
+    function baXpSyncBadges() {
+      try { if (typeof renderStats === 'function') renderStats(); } catch (e) {}
+      try {
+        const p = document.getElementById('gmPanel');
+        if (p && p.classList && p.classList.contains('active')) {
+          if (typeof gmRender === 'function') gmRender();
+          if (typeof fbPaint === 'function') fbPaint();
+        }
+      } catch (e) { baXpErr(e, 'badges'); }
+    }
+
+    // ══ สารบัญแจ้งเตือนของชั้นนี้ — LEVEL 01/02-02/02 ═════════════════════════
+    /* แยกจาก SYS_NOTIF (ตรึง 25) · Q_NOTIF (6) · CX_NOTIF (4) · AB_NOTIF (9)
+       · CD_NOTIF (9) · NC_NOTIF (3) · TQ_NOTIF (5) · CS_NOTIF (5) · CA_NOTIF (4)
+       ยืมแค่กลไกโชว์ snShowToast มาใช้ และเป็น **toast ล้วนทั้งชุด ไม่มี gate**
+       ทั้งสองใบยิงตอน startGame ซึ่งยังไม่มีนาฬิกาต่อข้อเดิน แต่ยังเลือก toast
+       ตามที่สเปกสั่ง และตามกับดักข้อ 18 ที่ห้าม gate ทุกจุดที่ไม่ได้หยุดเกมไว้จริง */
+    const BA_XP_NOTIF = {
+      SYNC: {
+        tag: 'LEVEL 01/02', tone: 'good',
+        title: d => `🎉 ปรับระดับย้อนหลังสำเร็จ — Lv ${d.from} → Lv ${d.to}`,
+        body:  d => `เส้นโค้ง EXP ถูกผ่อนลงทั้งเส้น ระบบจึงตีค่า EXP สะสมทั้งหมดของคุณ ` +
+                    `(<b>${d.total.toLocaleString()}</b> EXP) ใหม่ทั้งก้อน\n` +
+                    `เลเวลขึ้นรวดเดียว <b>+${d.gained}</b> ขั้น · ค่าพลังของสายอาชีพโตตามให้อัตโนมัติ\n` +
+                    `แต้มอิสระที่แจกได้ตอนนี้: <b>${d.free}</b> แต้ม — กดปุ่ม 👤 PROFILE เพื่อแจก`
+      },
+      AWAKEN: {
+        tag: 'LEVEL 02/02', tone: 'good',
+        title: d => `${d.icon} ตื่นพลังขั้นสอง — ${d.th}`,
+        body:  d => `ถึง Lv <b>${d.lv}</b> แล้ว (เกณฑ์ตื่นพลังคือ Lv ${BA_XP_TIER}) ` +
+                    `สายอาชีพของคุณเลื่อนเป็น <b>${d.th} · ${d.en}</b>\n` +
+                    `ชื่อ · ภาพ · สกิลทั้ง 4 ช่อง เลื่อนเป็นร่างตื่นพลังให้ครบแล้ว`
+      }
+    };
+    function baXpNotify(key, data) {
+      try {
+        const def = BA_XP_NOTIF[key];
+        if (!def || typeof snShowToast !== 'function') return;
+        const d = data || {};
+        snShowToast(def, def.title(d), def.body(d));
+        /* นับไว้เอง เพราะ v4.9.1 ตั้ง NC_MAX = 1 (Single Active Replace) การ์ดใบใหม่
+           ล้างใบเก่าทันที ชุดเทสต์จึงเช็กจาก #snLayer อย่างเดียวไม่ได้ */
+        BA_XP_N.ann++;
+      } catch (e) { baXpErr(e, 'notify'); }
+    }
+
+    // ══ 3) Tower & Boss Clear EXP Injections ═══════════════════════════════════
+    /* EXP ที่ได้จริงต้องบวกเพดานของทุกขั้นที่ข้ามไปคืนเข้ามา เพราะ levelUpCheck
+       ของ v4.0 หัก maxExp ออกทุกครั้งที่ขึ้นเลเวล (ส่วนต่าง G.exp ดิบ ๆ ติดลบได้)
+       — ท่าเดียวกับ dwExpGained ของ v4.9.2 · baWvExpGain ของ v8.2 */
+    function baXpGain(lv0, exp0) {
+      const g = baG();
+      if (!g) return 0;
+      let d = (g.exp || 0) - exp0;
+      try { for (let l = lv0; l < (g.level || 1); l++) d += baGetRequiredExp(l); } catch (e) {}
+      return Math.max(0, d);
+    }
+
+    /* ชั้นไหนให้เท่าไร — ไม่มีเลขชั้นฮาร์ดโค้ดสักตัว อ่านผ่าน FLOOR_MAX ของ v4.0
+       กับ baIsBossFloor ของ v6.4 (ซึ่งคือ 4/8/12/16/20 ตามแผนผังหอคอยปัจจุบัน)
+       ถ้าคาบบอสเปลี่ยนเมื่อไหร่ ตารางนี้ขยับตามเองทั้งชุด */
+    function baXpKind(f) {
+      const fm = (typeof FLOOR_MAX === 'number') ? FLOOR_MAX : 20;
+      if (f >= fm) return { k: 'apex', exp: BA_XP_APEX, n: '👑 พิชิตยอดหอคอย' };
+      let boss = false;
+      try { boss = (typeof baIsBossFloor === 'function') ? !!baIsBossFloor(f) : false; } catch (e) {}
+      if (boss) return { k: 'zone', exp: BA_XP_ZONE, n: '🔱 บอสประจำโซน' };
+      return { k: 'floor', exp: BA_XP_FLOOR, n: '🏯 เคลียร์ชั้น' };
+    }
+
+    /* "ไร้ที่ติ" = ไม่พลาดสักข้อตั้งแต่ก้าวเข้าชั้นนั้น (ตอบผิด + หมดเวลา นับเหมือนกัน)
+       ตัวนับผูกกับเลขชั้น ไม่ใช่กับรอบการเล่น ชั้นถัดไปจึงเริ่มนับใหม่ให้เอง */
+    function baXpFlawless(f) { return BA_XP_MISS_F === f && BA_XP_MISS === 0; }
+
+    /* จุดจ่าย EXP จุดเดียวของทั้งชั้น — ห้ามบวก g.exp ตรง ๆ ที่อื่น
+       เคารพ Flag ห้ามฟื้นของ 💀 พันธสัญญาโลหิตทมิฬ (v4.7) เพราะ levelUpCheck
+       ของ v4.0 เซ็ต hp = maxHp ทุกครั้งที่ขึ้นเลเวล (ท่าเดียวกับ tqPay ของ v4.9.3) */
+    function baXpPay(n) {
+      const g = baG();
+      const add = Math.max(0, Math.round(n || 0));
+      if (!g || !add) return 0;
+      const hp0 = g.hp;
+      g.exp += add;
+      try { levelUpCheck(); } catch (e) {}
+      try {
+        const st = (typeof cdSt === 'function') ? cdSt() : null;
+        if (st && st.noHeal) g.hp = Math.min(g.hp, hp0);
+      } catch (e) {}
+      BA_XP_N.award += add;
+      return add;
+    }
+
+    /* ยิงหลัง clearFloor ของทุกชั้นทำงานจบ — วัด "ส่วนต่างจริง" ที่ชั้นล่างจ่ายไปแล้ว
+       จึงครอบตัวคูณของการ์ด v4.7 · คลังอักขระ v4.4 · เลเวลของ v7.6 · ออร่าของ v8.0
+       พร้อมกันหมดโดยไม่ต้องรู้จักชั้นพวกนั้นเลยสักชั้น */
+    function baXpClearBonus(f0, lv0, exp0) {
+      const g = baG();
+      if (!g || g.practiceMode || !BA_XP_READY) return null;
+      const kind  = baXpKind(f0);
+      const early = baXpGain(lv0, exp0);            /* ที่ชั้นล่างจ่ายไปแล้ว */
+      const flaw  = baXpFlawless(f0);
+      /* สเปกสั่ง "Multiply total run EXP by 1.5x" — total run EXP คือยอดรวมของรอบนั้น
+         (ของชั้นล่าง + ก้อนที่แพตช์นี้เติม) จึงคูณทั้งก้อน ไม่ใช่คูณเฉพาะก้อนใหม่ */
+      const total = early + kind.exp;
+      const bonus = flaw ? Math.round(total * (BA_XP_FLAW - 1)) : 0;
+      const paid  = baXpPay(kind.exp + bonus);
+      if (flaw) BA_XP_N.flaw++;
+
+      try {
+        const fb = document.getElementById('gFeedback');
+        if (fb) {
+          fb.textContent += ' | ⭐ ' + kind.n + ' +' + kind.exp + ' EXP';
+          if (bonus > 0) fb.textContent += ' | ✨ ไร้ที่ติ ×' + BA_XP_FLAW + ' (+' + bonus + ' EXP)';
+        }
+      } catch (e) {}
+
+      /* ── กล่องสรุปรางวัลของ v4.9.2 ต้องบอกยอด "ที่ผู้เล่นได้จริง" ─────────────
+         DW_WON ถูกถ่ายภาพนิ่งไว้ใน wrapper ของ v4.9.2 ซึ่งอยู่ชั้นในกว่าเรา จึงยัง
+         ไม่เห็นก้อนที่แพตช์นี้เพิ่งเติม · ถ้าไม่อัปเดตให้ กล่องจะโชว์ "+250 EXP"
+         ทั้งที่ผู้เล่นได้ 1,750 = เลขบนจอโกหก ซึ่งเป็นสิ่งที่ repo นี้ห้ามมาตลอด
+         · ปลอดภัยเพราะแผงวาปถูกเปิดผ่าน scheduleTurn(…, 1500) ทีหลังเสมอ
+         renderWarp จึงอ่านค่าที่อัปเดตแล้วไปวาด (กติกาเดียวกับที่ v4.9.3 ยอมรับไว้
+         ว่าส่วนต่าง G.gold คร่อม clearFloor ไม่ใช่ "ทองที่บอสจ่าย" อีกต่อไป) */
+      try {
+        if (typeof DW_WON === 'object' && DW_WON && DW_WON.floor === f0) {
+          DW_WON.exp   = Math.max(0, (DW_WON.exp | 0) + paid);
+          DW_WON.lv    = Math.max(0, (g.level || 1) - lv0);
+          DW_WON.level = g.level || 1;
+        }
+      } catch (e) {}
+
+      baXpSyncBadges();
+      BA_XP_CLEAR = { f: f0, kind: kind.k, base: kind.exp, early: early,
+                      flawless: flaw, bonus: bonus, paid: paid };
+      return BA_XP_CLEAR;
+    }
+
+    // ══ 4) จุดดัก ══════════════════════════════════════════════════════════════
+    /* clearFloor ของ v4.0 ดัน G.floor ขึ้นไปแล้วตอนจบ ทั้งเลขชั้นที่เพิ่งเคลียร์
+       และ EXP/เลเวลก่อนหน้าจึงต้องถ่ายภาพนิ่งไว้ก่อนเสมอ (บทเรียนเดิมของ v4.9.3) */
+    if (typeof clearFloor === 'function') {
+      const _xpClear = clearFloor;
+      clearFloor = function () {
+        const g = baG();
+        const f0  = g ? (g.floor | 0) : 0;
+        const lv0 = g ? baXpLv(g.level) : 1;
+        const ex0 = g ? (g.exp || 0) : 0;
+        const r = _xpClear.apply(this, arguments);
+        try { baXpClearBonus(f0, lv0, ex0); } catch (e) { baXpErr(e, 'clear'); }
+        return r;
+      };
+    }
+
+    /* ตัวนับ "ไร้ที่ติ" — ตอบถูกดูจาก g.correct ที่ขยับจริง ไม่ได้ดูจากค่าที่ส่งเข้ามา
+       เพราะทางหมดเวลา (resolveAnswer(null, null, true)) ไม่ได้ผ่านปุ่มเลย
+       · โค้ดนี้วิ่งจบก่อน clearFloor เสมอ เพราะ v4.0 พา onMonsterDefeated ไปเข้าคิว
+       ด้วย scheduleTurn ไม่ได้เรียกต่อในทิกเดียวกัน */
+    if (typeof resolveAnswer === 'function') {
+      const _xpResolve = resolveAnswer;
+      resolveAnswer = function () {
+        const g = baG();
+        const f  = g ? (g.floor | 0) : 0;
+        const c0 = g ? (g.correct || 0) : 0;
+        const r = _xpResolve.apply(this, arguments);
+        try {
+          if (g && !g.practiceMode) {
+            if (BA_XP_MISS_F !== f) { BA_XP_MISS_F = f; BA_XP_MISS = 0; }
+            if ((g.correct || 0) <= c0) BA_XP_MISS++;
+          }
+        } catch (e) { baXpErr(e, 'miss'); }
+        return r;
+      };
+    }
+
+    /* เพดานเลเวล 99 + ประกาศตอนตื่นพลัง — levelUpCheck เป็นทางผ่านเดียวของ
+       "การขึ้นเลเวล" ทั้งเกม (ตอบถูก · เคลียร์ชั้น · รางวัลเควส · เครื่องมือ GM) */
+    if (typeof levelUpCheck === 'function') {
+      const _xpLvUp = levelUpCheck;
+      levelUpCheck = function () {
+        const g = baG();
+        const t0 = g ? baXpTierOf(g.level) : 'c1';
+        const r = _xpLvUp.apply(this, arguments);
+        try {
+          if (g) {
+            if ((g.level | 0) > BA_XP_MAX) {
+              g.level = BA_XP_MAX;
+              g.maxExp = baGetRequiredExp(BA_XP_MAX);
+              g.exp = Math.max(0, Math.min(g.exp, g.maxExp - 1));
+              BA_XP_N.cap++;
+              try { recalcStats(); } catch (e) {}
+            }
+            if (BA_XP_READY && t0 === 'c1' && baXpTierOf(g.level) === 'c2') baXpAwaken(g);
+          }
+        } catch (e) { baXpErr(e, 'lvup'); }
+        return r;
+      };
+    }
+
+    // ══ 5) วงจรข้อมูล ══════════════════════════════════════════════════════════
+    /* แปลงย้อนหลังที่ migrateAccount จุดเดียว → ครอบทั้ง startGame · gmRender
+       · syncFromStore · ตารางห้องควบคุม ในคำสั่งเดียว (loadStore เรียกให้ทุกแถว)
+       แล้วสั่งของเดิมทำงานซ้ำอีกรอบเมื่อเลเวลขยับจริง เพื่อให้ stats · maxHp
+       · maxExp · ฉายา ถูกคำนวณใหม่ตามเลเวลใหม่ครบทุกช่อง — เรียก "ตัวที่จับไว้"
+       ไม่ใช่ binding ปัจจุบัน จึงไม่มีทางวนกลับเข้ามาที่ wrapper ตัวนี้เอง */
+    /* ── ตรารุ่นต้องเดินทางไปกับสัญญาณของ v5.3 ด้วย ────────────────────────────
+       **นี่คือรูรั่วที่หายากที่สุดของทั้งชั้น** — caAdopt ของ v5.8 ปั้นบัญชีขึ้นใหม่จาก
+       payload ของคลาวด์ตอนนักเรียนล็อกอินบน "เครื่องที่ยังไม่เคยมีบัญชีนี้" ก้อนนั้นมี
+       `lv` ที่ถูกแปลงมาแล้วจากเครื่องแรก แต่ไม่มีตรารุ่นติดมาด้วย ถ้าปล่อยไว้เครื่องที่สอง
+       จะแปลงย้อนหลังซ้ำอีกรอบ = เลเวลพุ่งไปเกือบ 99 ทันทีโดยไม่มี error ให้เห็นเลย
+       ทางแก้คือส่งตรารุ่นขึ้นไปกับ payload (คีย์เดียว ~12 ไบต์) แล้วให้ lrApply ของ v5.7
+       พามันลงบัญชีที่ปั้นขึ้นใหม่ · **v5.2 ไม่ต้องแก้อะไรเลย** เพราะ csDoc ส่งบัญชี
+       "ทั้งก้อน" อยู่แล้ว ตรารุ่นจึงติดไปเองในนั้น */
+    if (typeof fbPayload === 'function') {
+      const _xpPayload = fbPayload;
+      fbPayload = function (user, a) {
+        const p = _xpPayload.apply(this, arguments) || {};
+        try { if (a && typeof a.xpv === 'string' && a.xpv) p.xpv = a.xpv; }
+        catch (e) { baXpErr(e, 'payload'); }
+        return p;
+      };
+    }
+
+    if (typeof lrApply === 'function') {
+      const _xpLrApply = lrApply;
+      lrApply = function (a, r) {
+        const n = _xpLrApply.apply(this, arguments);
+        /* ไม่บวกตัวนับ hit ของ v5.7 โดยตั้งใจ — ตรารุ่นไม่ใช่ "ค่าที่ครูดู"
+           การบวกจะไปสั่งวาดตารางใหม่ฟรีทุกครั้งที่สัญญาณเข้ามา */
+        try { if (a && r && typeof r.xpv === 'string' && r.xpv) a.xpv = r.xpv; }
+        catch (e) { baXpErr(e, 'lrApply'); }
+        return n;
+      };
+    }
+
+    if (typeof migrateAccount === 'function') {
+      const _xpMig = migrateAccount;
+      migrateAccount = function (a) {
+        const r = _xpMig.apply(this, arguments);
+        try {
+          const t = r || a;
+          const res = baInitProgression(t);
+          if (res && res.gained > 0) {
+            BA_XP_N.sync++;
+            if (res.retro) BA_XP_N.retro++;
+            if (t.user) BA_XP_ANN[t.user] = res;   /* รอ startGame มาหยิบไปประกาศ */
+            _xpMig.call(this, t);
+          }
+        } catch (e) { baXpErr(e, 'mig'); }
+        return r;
+      };
+    }
+
+    if (typeof startGame === 'function') {
+      const _xpStart = startGame;
+      startGame = function () {
+        BA_XP_READY = false;
+        const r = _xpStart.apply(this, arguments);
+        try {
+          const g = baG();
+          if (g) {
+            /* G เป็นอ็อบเจกต์ใหม่ที่ไม่มีตรารุ่นติดมา ห้ามให้แปลงย้อนหลังซ้ำเด็ดขาด */
+            baInitProgression(g, false);
+            g.maxExp = baGetRequiredExp(g.level);
+            try { recalcStats(); } catch (e) {}
+            g.hp = Math.min(g.hp, g.maxHp);
+          }
+          BA_XP_MISS = 0; BA_XP_MISS_F = 0;
+          BA_XP_READY = true;
+
+          const ann = (CURRENT_USER && BA_XP_ANN[CURRENT_USER]) || null;
+          if (ann) {
+            delete BA_XP_ANN[CURRENT_USER];
+            baXpNotify('SYNC', { from: ann.lv0, to: ann.lv, gained: ann.gained,
+                                 total: ann.total, free: baXpFree(g) });
+            if (ann.tier0 === 'c1' && ann.tier === 'c2') baXpAwaken(g);
+          }
+          baXpSyncBadges();
+        } catch (e) { baXpErr(e, 'start'); }
+        return r;
+      };
+    }
+
+    if (typeof exitGame === 'function') {
+      const _xpExit = exitGame;
+      exitGame = function () {
+        BA_XP_READY = false;
+        BA_XP_MISS = 0; BA_XP_MISS_F = 0;
+        return _xpExit.apply(this, arguments);
+      };
+    }
+
+    // ══ ทางเข้าสาธารณะสำหรับชุดเทสต์ ═══════════════════════════════════════════
+    if (typeof baBattleAudit === 'function') {
+      const _xpAudit = baBattleAudit;
+      baBattleAudit = function () {
+        const o = _xpAudit.apply(this, arguments) || {};
+        try {
+          const g = baG();
+          const lv = baXpLv(g ? g.level : 1);
+          const ex = g ? Math.max(0, g.exp | 0) : 0;
+
+          /* ทับค่าที่ v7.6 รายงานไว้ให้ตรงกับเส้นโค้งที่ทำงานจริง — ชุดเทสต์ที่
+             อ่านผ่าน audit จึงยังวัดของจริงอยู่โดยไม่ต้องรู้จักชั้นนี้
+             (ท่าเดียวกับที่ v8.4 ทับ superBoss.cut / apex.doomMax ของ v8.2)
+             สองพจน์ของสูตรใหม่ลงกรอบ k·lv^p + k2·lv^p2 ของเดิมพอดี เพราะ
+             lv × 35 คือ 35·lv^1.0 ตรงตัว */
+          if (o.lvScale && o.lvScale.exp) {
+            o.lvScale.exp.k  = BA_XP_K;
+            o.lvScale.exp.p  = BA_XP_P;
+            o.lvScale.exp.k2 = BA_XP_LIN;
+            o.lvScale.exp.p2 = 1;
+            o.lvScale.exp.now  = baGetRequiredExp(lv);
+            o.lvScale.exp.next = baGetRequiredExp(lv + 1);
+            o.lvScale.exp.live = (typeof expForLevel === 'function') ? expForLevel(lv) : 0;
+          }
+
+          o.progression = {
+            ver: BA_XP_VER, ready: BA_XP_READY, max: BA_XP_MAX,
+            curve: { k: BA_XP_K, p: BA_XP_P, lin: BA_XP_LIN },
+            lv: lv, exp: ex, need: baGetRequiredExp(lv),
+            cum: baGetCumulativeExp(lv), cumNext: baGetCumulativeExp(lv + 1),
+            total: baGetCumulativeExp(lv) + ex,
+            toL50: baGetCumulativeExp(BA_XP_TIER), toMax: baGetCumulativeExp(BA_XP_MAX),
+            tier: baXpTierOf(lv), tierLv: BA_XP_TIER, free: baXpFree(g),
+            legacy: { req: baXpLegacyReq(lv), cum: baXpLegacyCum(lv) },
+            clear: { floor: BA_XP_FLOOR, zone: BA_XP_ZONE, apex: BA_XP_APEX,
+                     flaw: BA_XP_FLAW, perRun: baXpPerRun() },
+            lastClear: BA_XP_CLEAR ? Object.assign({}, BA_XP_CLEAR) : null,
+            miss: BA_XP_MISS, missFloor: BA_XP_MISS_F,
+            flawless: baXpFlawless(g ? (g.floor | 0) : -1),
+            last: BA_XP_LAST ? Object.assign({}, BA_XP_LAST) : null,
+            pending: Object.keys(BA_XP_ANN).length,
+            /* คืน "สำเนา" เสมอ — ชุดเทสต์จับค่าก่อน/หลังไว้เทียบกัน ถ้าคืน reference
+               จะได้ส่วนต่าง 0 ทุกครั้ง (บทเรียนเดิมของ v8.3) */
+            n: Object.assign({}, BA_XP_N)
+          };
+        } catch (e) { baXpErr(e, 'audit'); }
+        return o;
+      };
+    }
+
+    /* EXP ที่ได้จากการเคลียร์ครบหนึ่งรอบหอคอย (ไม่รวม EXP จากการตอบถูก)
+       ใช้ทั้งในเอกสารและในชุดเทสต์ จึงคิดจากค่าคงที่จริง ไม่ได้พิมพ์เลขทับไว้ */
+    function baXpPerRun() {
+      try {
+        const fm = (typeof FLOOR_MAX === 'number') ? FLOOR_MAX : 20;
+        let t = 0;
+        for (let f = 1; f <= fm; f++) t += baXpKind(f).exp;
+        return t;
+      } catch (e) { return 0; }
+    }
+
+    (function baXpInstall() {
+      try {
+        /* ไม่มีอะไรต้องติดตั้งบนจอเลย — เส้นโค้งถูกเขียนทับตั้งแต่ตอนแยกไฟล์
+           และการแปลงย้อนหลังเกิดเองที่ loadStore() ครั้งแรก (ล็อกอิน · เปิดห้องควบคุม)
+           **ห้ามเรียก saveStore() ตรงนี้เพื่อ "เซฟให้เลย"** เพราะ saveStore ถูก
+           v5.2/v5.3/Micro-Patch นิวเคลียร์ห่อไว้ การเขียนตอนยังไม่มีใครล็อกอิน
+           จะยิงคำขอออกคลาวด์โดยไม่มีเหตุ · การแปลงเป็น deterministic อยู่แล้ว
+           ไม่เซฟตอนนี้ก็ได้ผลเท่าเดิมในการอ่านครั้งถัดไป */
+        BA_XP_LAST = null;
+        BA_XP_CLEAR = null;
+      } catch (e) { baXpErr(e, 'install'); }
+    })();
+
     (function baInstall() {
       try {
         /* .g-monster-area อยู่ใน HTML แบบสแตติกอยู่แล้ว จึงสร้างได้ตั้งแต่โหลดหน้า

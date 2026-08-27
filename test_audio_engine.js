@@ -71,7 +71,7 @@ function head(s) { log('\n══ ' + s + ' ' + '═'.repeat(Math.max(0, 62 - s.l
      แล้ว QUESTION_TIMER เป็น null โดยชอบธรรม เคสจะตกด้วยเหตุผลผิด) */
   await ev(() => {
     G.maxFloor = FLOOR_MAX; recalcStats();
-    CD_CARD = CD_BY_ID['mana']; CD_BAND = cdBandOf(G.floor);
+    CD_CARD = null; CD_BAND = cdBandOf(G.floor); CD_SKIP = G.floor;
     CD_ST = { ward:0, noItem:0, noHeal:0, atk:0, perfect:true, hit:0, miss:0, paid:0 };
     cdPaintUi();
     clearQuestionTimer(); startQuestionTimer();
@@ -330,20 +330,20 @@ function head(s) { log('\n══ ' + s + ' ' + '═'.repeat(Math.max(0, 62 - s.l
     /* การ์ด — ยิงเสียงประจำใบตอนเลือก */
     const card = await ev(() => {
       window.AU_LOG.length = 0; AU_LAST = {};
-      CD_OPEN = true; CD_OFFER = [CD_BY_ID['inferno'], CD_BY_ID['curse'], CD_BY_ID['ward']];
+      CD_OPEN = true; CD_OFFER = [CD_BY_ID['inferno'], CD_BY_ID['edge'], CD_BY_ID['ward']];
       cdPick(0);
       const a = window.AU_LOG.slice();
       window.AU_LOG.length = 0; AU_LAST = {};
-      CD_OPEN = true; CD_OFFER = [CD_BY_ID['inferno'], CD_BY_ID['curse'], CD_BY_ID['ward']];
+      CD_OPEN = true; CD_OFFER = [CD_BY_ID['inferno'], CD_BY_ID['edge'], CD_BY_ID['ward']];
       cdPick(1);
       const b = window.AU_LOG.slice();
       window.AU_LOG.length = 0; AU_LAST = {};
-      CD_OPEN = true; CD_OFFER = [CD_BY_ID['inferno'], CD_BY_ID['curse'], CD_BY_ID['ward']];
+      CD_OPEN = true; CD_OFFER = [CD_BY_ID['inferno'], CD_BY_ID['edge'], CD_BY_ID['ward']];
       cdPick(2);
       return { fire: a, light: b, plain: window.AU_LOG.slice() };
     });
     ok('🔥 เปลวเพลิงล้างบาง → SFX_CARD_FIRE', card.fire.indexOf('SFX_CARD_FIRE') !== -1, card.fire.join(','));
-    ok('⚡ คำสาปย้อนกลับ → SFX_CARD_LIGHTNING', card.light.indexOf('SFX_CARD_LIGHTNING') !== -1, card.light.join(','));
+    ok('⚡ คำสาปย้อนกลับถูกตัดออกจากสำรับ (keep-8) → ใบที่เหลือยิง SFX_CARD_DRAW', card.light.indexOf('SFX_CARD_DRAW') !== -1, card.light.join(','));
     ok('การ์ดใบอื่น → SFX_CARD_DRAW', card.plain.indexOf('SFX_CARD_DRAW') !== -1, card.plain.join(','));
     await wait(900);
 
@@ -433,7 +433,7 @@ function head(s) { log('\n══ ' + s + ' ' + '═'.repeat(Math.max(0, 62 - s.l
   head('8. Trigger Mapping · FLOOR · DOWN · GUARD');
   {
     await ev(() => {
-      CD_CARD = null; CD_ST = null; CD_BAND = cdBandOf(G.floor); cdPaintUi();
+      CD_CARD = null; CD_ST = null; CD_BAND = cdBandOf(G.floor); CD_SKIP = G.floor; cdPaintUi();
       G.practiceMode = false; G.hp = G.maxHp;
     });
 
@@ -537,7 +537,7 @@ function head(s) { log('\n══ ' + s + ' ' + '═'.repeat(Math.max(0, 62 - s.l
     await clearDraft();
     await ev(() => {
       G.floor = 3; G.floorProgress = 0; G.practiceMode = false;
-      CD_CARD = CD_BY_ID['mana']; CD_BAND = cdBandOf(G.floor);
+      CD_CARD = null; CD_BAND = cdBandOf(G.floor); CD_SKIP = G.floor;
       CD_ST = { ward:0, noItem:0, noHeal:0, atk:0, perfect:true, hit:0, miss:0, paid:0 };
       cdPaintUi();
       G.locked = false;

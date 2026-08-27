@@ -459,7 +459,7 @@ async function clearOverlays(page) {
     const blocked = await page.evaluate(() => {
       G.maxFloor = FLOOR_MAX; recalcStats();
       G.items.freeze = 1; renderItems();
-      CD_CARD = CD_BY_ID['seal'];
+      CD_CARD = CD_BY_ID['ward'];
       CD_BAND = cdBandOf(G.floor);
       CD_ST = { ward: 0, noItem: 1, noHeal: 0, atk: 0, perfect: true, hit: 0, miss: 0, paid: 0 };
       const before = G.items.freeze;
@@ -478,7 +478,7 @@ async function clearOverlays(page) {
     const noHeal = await page.evaluate(() => {
       G.items.focus = 0; renderStats();
       addItem('focus', 1); renderStats();
-      CD_CARD = CD_BY_ID['vow'];
+      CD_CARD = CD_BY_ID['ward'];
       CD_BAND = cdBandOf(G.floor);
       CD_ST = { ward: 0, noItem: 0, noHeal: 1, atk: 0, perfect: true, hit: 0, miss: 0, paid: 0 };
       const tank = baBattleAudit().shop.elixir.tank;

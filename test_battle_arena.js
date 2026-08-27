@@ -62,9 +62,10 @@ async function arena(page, floor, opts) {
   await page.evaluate(o => {
     critChance = () => (o.crit ? 100 : 0);
     expDoubleChance = () => 0;
-    if (typeof CD_BY_ID !== 'undefined' && CD_BY_ID.mana) {
-      CD_CARD = CD_BY_ID.mana;
+    if (typeof CD_BAND !== 'undefined') {
+      CD_CARD = null;
       CD_BAND = cdBandOf(o.floor);
+      CD_SKIP = o.floor;   /* กันหน้าต่างจั่วเด้งตอนยืนชั้นแรกของช่วง (1/6/11/16) แบบมือเปล่า */
       CD_ST = { ward: 0, noItem: 0, noHeal: 0, atk: 0, perfect: true, hit: 0, miss: 0 };
       if (typeof cdPaintUi === 'function') cdPaintUi();
     }

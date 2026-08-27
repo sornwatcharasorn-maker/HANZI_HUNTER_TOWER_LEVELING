@@ -91,7 +91,7 @@ async function login(page, id, mode) {
   await clearOverlays(page);
   await page.evaluate(() => {
     G.maxFloor = FLOOR_MAX; recalcStats();
-    try { CD_CARD = CD_BY_ID['mana']; CD_BAND = cdBandOf(G.floor); cdPaintUi(); } catch (e) {}
+    try { CD_CARD = null; CD_BAND = cdBandOf(G.floor); CD_SKIP = G.floor; cdPaintUi(); } catch (e) {}
   });
 }
 

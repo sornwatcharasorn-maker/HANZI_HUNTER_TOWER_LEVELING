@@ -72,8 +72,9 @@ function eq(name, got, want) { ok(name + ' (=' + JSON.stringify(want) + ')', got
      แล้ว QUESTION_TIMER เป็น null โดยชอบธรรม เคสจะตกด้วยเหตุผลผิด */
   async function safeCard() {
     await page.evaluate(() => {
-      CD_CARD = CD_BY_ID['mana'];
+      CD_CARD = null;
       CD_BAND = cdBandOf(G.floor);
+      CD_SKIP = G.floor;
       CD_ST = { ward:0, noItem:0, noHeal:0, atk:0, perfect:true, hit:0, miss:0, paid:0 };
       cdPaintUi();
     });
@@ -390,7 +391,7 @@ function eq(name, got, want) { ok(name + ' (=' + JSON.stringify(want) + ')', got
   const streak = await page.evaluate(async () => {
     G.tq.done.L = []; G.tq.L.streak = 0; G.items = {}; tqSeedSeen();
     G.floor = 3; G.floorProgress = 0; G.hp = G.maxHp;
-    CD_CARD = CD_BY_ID['mana']; CD_BAND = cdBandOf(G.floor);
+    CD_CARD = null; CD_BAND = cdBandOf(G.floor); CD_SKIP = G.floor;
     CD_ST = { ward:0, noItem:0, noHeal:0, atk:0, perfect:true, hit:0, miss:0, paid:0 };
     G.streak = TQ_STREAK_GOAL - 1;
     G.locked = false; nextMonster();

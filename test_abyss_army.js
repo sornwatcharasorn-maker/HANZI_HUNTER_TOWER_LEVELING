@@ -78,7 +78,7 @@ function ok(c, n, x) {
   /* การ์ดที่ยุ่งกับนาฬิกา (🧘 สมาธิแน่วแน่) ทำให้ QUESTION_TIMER เป็น null โดยชอบธรรม
      สลับเป็นใบที่ไม่แตะนาฬิกาก่อน แล้วทุกเคสที่วัดสถานะ "กำลังสู้" จะเชื่อถือได้ */
   await page.evaluate(() => {
-    CD_CARD = CD_BY_ID.mana; CD_BAND = cdBandOf(G.floor); cdPaintUi();
+    CD_CARD = null; CD_BAND = cdBandOf(G.floor); CD_SKIP = G.floor; cdPaintUi();
     G.maxFloor = FLOOR_MAX; recalcStats();
   });
   await page.waitForTimeout(300);
@@ -241,11 +241,11 @@ function ok(c, n, x) {
     G.monsterMaxHp = 99999; G.monsterHp = 99999;
     BA_INC_F = 7; BA_INC_AT = 0; BA_INC_ID = 's13'; BA_INC_M = null;
     nextMonster();
-    CD_CARD = CD_BY_ID.vow; CD_BAND = cdBandOf(G.floor); CD_ST.noHeal = 1;
+    CD_CARD = CD_BY_ID['ward']; CD_BAND = cdBandOf(G.floor); CD_ST.noHeal = 1;
     G.hp = 1; const hp0 = G.hp;
     BA_INC_G = 40; G.monsterHp = 1; onMonsterDefeated();
     const out = G.hp - hp0;
-    CD_ST.noHeal = 0; CD_CARD = CD_BY_ID.mana;
+    CD_ST.noHeal = 0; CD_CARD = null;
     return out;
   });
   ok(noheal === 0, 'ห้ามฟื้นพลังตอนถือ 💀 พันธสัญญาโลหิตทมิฬ', noheal);

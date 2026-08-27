@@ -363,7 +363,7 @@ async function setCombo(page, n) {
   ok(vpFull === 0, 'HP เต็มแล้วไม่ล้นออกนอกหลอด');
   const vpVow = await page.evaluate(() => {
     G.hp = Math.max(1, G.maxHp - 500);
-    CD_CARD = CD_BY_ID['vow']; CD_BAND = cdBandOf(G.floor);
+    CD_CARD = CD_BY_ID['ward']; CD_BAND = cdBandOf(G.floor);
     CD_ST = { ward: false, noItem: true, noHeal: true, atk: 0, perfect: true, hit: 0, miss: 0 };
     const b = G.hp; const h = baCbVamp();
     CD_CARD = null; CD_BAND = -1;

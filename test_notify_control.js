@@ -51,8 +51,9 @@ async function settle(page) {
     await page.waitForTimeout(900);          /* > CD_OUT_MS 620 */
   }
   await page.evaluate(() => {
-    CD_CARD = CD_BY_ID['mana'];
+    CD_CARD = null;
     CD_BAND = cdBandOf(G.floor);
+    CD_SKIP = G.floor;
     CD_ST = { ward:0, noItem:0, noHeal:0, atk:0, perfect:true, hit:0, miss:0 };
     cdPaintUi();
     clearQuestionTimer(); startQuestionTimer();

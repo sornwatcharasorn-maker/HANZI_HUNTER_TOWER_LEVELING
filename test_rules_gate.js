@@ -234,8 +234,9 @@ const scrollBottom = page => page.evaluate(() => {
        โดยชอบธรรม แล้วเคสจะตกด้วยเหตุผลผิด — สลับเป็นใบที่ไม่ยุ่งกับนาฬิกาก่อนเสมอ
        (ตั้งเป็น null ไม่ได้ เพราะ "มือเปล่าบนชั้นแรกของช่วง" คือเงื่อนไขจั่วใหม่ของ v4.7) */
     await page.evaluate(() => {
-      CD_CARD = CD_BY_ID['mana'];
+      CD_CARD = null;
       CD_BAND = cdBandOf(G.floor);
+      CD_SKIP = G.floor;
       cdPaintUi();
       clearQuestionTimer();
       startQuestionTimer();

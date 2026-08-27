@@ -433,7 +433,7 @@ async function loginAs(page, u) {
 
     /* 💀 พันธสัญญาโลหิตทมิฬห้ามฟื้นทุกทาง — levelUpCheck เซ็ต hp = maxHp ตอนขึ้นเลเวล */
     const vow = await b.page.evaluate(() => {
-      CD_CARD = CD_BY_ID['vow']; CD_BAND = cdBandOf(G.floor);
+      CD_CARD = CD_BY_ID['ward']; CD_BAND = cdBandOf(G.floor);
       CD_ST = { ward: false, noItem: true, noHeal: true, atk: 0, perfect: true, hit: 0, miss: 0 };
       G.hp = 1;
       const hp0 = G.hp;

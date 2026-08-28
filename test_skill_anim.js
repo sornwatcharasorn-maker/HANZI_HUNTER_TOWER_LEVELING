@@ -395,11 +395,39 @@ const cls = page => page.evaluate(() => {
     await b.ctx.close();
   }
 
-  // ══ บล็อก 6 · สายอื่นไม่ถูกแตะ ═════════════════════════════════════════
-  head('บล็อก 6 · สายอาชีพอื่นไม่ถูกแตะเลยสักบรรทัด');
+  // ══ บล็อก 6 · สายอื่นไม่ถูกแตะ (ก่อนมี v8.8) / ยังไม่มีภาพจึงตกกลับ ══════
+  head('บล็อก 6 · สายที่ยังไม่มีภาพ (priest) ยังตกกลับไปใช้ท่า v6.3 เหมือนเดิม');
   {
+    /* ตั้งแต่ v8.8 · UNIVERSAL HOT-PLUG ASSET ENGINE ห่อ baAnimOn ให้เปิดเครื่อง
+       อนิเมชันของชั้นนี้ให้ "ทุกสายที่มีภาพจริง" ไม่ใช่แค่ assassin อีกต่อไป —
+       เคสนี้จึงต้องทดสอบกับสายที่ **ยังไม่มีไฟล์ต้นฉบับจริง ๆ** (priest/soulmaster)
+       เพื่อยืนยันว่า "ไม่มีภาพ = ตกกลับไปใช้ท่าพุ่งของ v6.3" ยังทำงานถูกต้อง
+       (พลิกจากเดิมที่ใช้ guardian ซึ่งได้ภาพไปแล้วตอนฝังสไปรต์ 4 สายเพิ่ม —
+       precedent: v7.4 · v7.8 · v7.9 · v8.1-v8.4 พลิกกันมาแล้วทุกชั้น) */
     const b = await boot(browser);
     await enterGame(b.page, 'anm6');
+    const other = await b.page.evaluate(() => {
+      baPlSwitch('priest');
+      baAnimRevert();
+      const on = baBattleAudit().skillAnim.on;
+      G.questionStart = Date.now() - 6000;
+      baStrike(12, false, false);
+      const a = baBattleAudit().skillAnim;
+      return { on: on, key: a.key, cls: Array.from(document.getElementById('baHero').classList) };
+    });
+    ok('สายนักบวช (ยังไม่มีภาพ) ไม่เข้าเงื่อนไขของชั้นนี้', other.on === false, other);
+    eq('ตอบถูกแล้วไม่มีท่าของชั้นนี้เล่น', other.key, '');
+    ok('ท่าพุ่งของ v6.3 ยังทำงานตามเดิม',
+       other.cls.indexOf('ba-atk') >= 0 || other.cls.indexOf('ba-atk2') >= 0, other.cls);
+    ok('ไม่มี pageerror', b.errs.length === 0, b.errs);
+    await b.ctx.close();
+  }
+
+  // ══ บล็อก 6.1 · v8.8 เปิดเครื่องอนิเมชันให้สายที่มีภาพจริงแล้ว ═════════════
+  head('บล็อก 6.1 · v8.8 · สายที่ฝังภาพแล้ว (guardian) ได้เครื่องอนิเมชันของตัวเอง');
+  {
+    const b = await boot(browser);
+    await enterGame(b.page, 'anm61');
     const other = await b.page.evaluate(() => {
       baPlSwitch('guardian');
       baAnimRevert();
@@ -409,10 +437,12 @@ const cls = page => page.evaluate(() => {
       const a = baBattleAudit().skillAnim;
       return { on: on, key: a.key, cls: Array.from(document.getElementById('baHero').classList) };
     });
-    ok('สายผู้พิทักษ์ไม่เข้าเงื่อนไขของชั้นนี้', other.on === false, other);
-    eq('ตอบถูกแล้วไม่มีท่าของชั้นนี้เล่น', other.key, '');
-    ok('ท่าพุ่งของ v6.3 ยังทำงานตามเดิม',
-       other.cls.indexOf('ba-atk') >= 0 || other.cls.indexOf('ba-atk2') >= 0, other.cls);
+    ok('สายผู้พิทักษ์ (มีภาพแล้ว) เข้าเงื่อนไขของ v8.8', other.on === true, other);
+    ok('ตอบถูกแล้วมีท่าของตัวเองเล่น (dash/s1)', other.key === 'dash' || other.key === 's1', other);
+    ok('คลาสที่ติดคือของผู้พิทักษ์ ไม่ใช่ของนักลอบสังหาร',
+       other.cls.some(c => c.indexOf('ba-guardian-') === 0)
+         && !other.cls.some(c => c.indexOf('ba-assassin-') === 0 || c.indexOf('ba-monarch-') === 0),
+       other.cls);
     ok('ไม่มี pageerror', b.errs.length === 0, b.errs);
     await b.ctx.close();
   }

@@ -41,7 +41,12 @@ EXT = ('.jpg', '.jpeg', '.png', '.webp')
 DIRS = ('', 'assets', os.path.join('assets', 'skills'), os.path.join('assets', 'sprites'))
 
 # ── ตำแหน่งของบล็อกทะเบียนในไฟล์เกม ──────────────────────────────────────
-BLOCK_RE = re.compile(r'(const BA_ANM_DEF = \{)(.*?)(\n    \};)', re.S)
+# **สองก้อน ไม่ใช่ก้อนเดียว** — v8.7 ให้สารบัญมาเฉพาะสาย assassin ส่วนอีก 6 role
+# อยู่ที่ BA_DS_ART ของ v8.8 (เพิ่มตอน Multi-Role Sprite Patch) ทั้งคู่โครงเดียวกันเป๊ะ
+BLOCKS = (
+    ('BA_ANM_DEF', re.compile(r'(const BA_ANM_DEF = \{)(.*?)(\n    \};)', re.S)),
+    ('BA_DS_ART',  re.compile(r'(const BA_DS_ART = \{)(.*?)(\n    \};)',  re.S)),
+)
 # ผูกตัวปิดด้วย "สิ่งที่เนื้อในเป็นไปไม่ได้" ไม่ใช่ .*? ลอย ๆ — บทเรียนข้อ 35
 
 
@@ -105,10 +110,17 @@ def webp(path, fw, frames, q):
 
 
 def parse(block):
-    """คืน [(ร่าง, คีย์, ชื่อไฟล์, จำนวนเฟรม, ตำแหน่งของ u: '' ในสตริง)] ตามลำดับที่พบ"""
+    """คืน [(กลุ่ม, คีย์, ชื่อไฟล์, จำนวนเฟรม, ตำแหน่งของ u: '...' ในสตริง)] ตามลำดับที่พบ
+
+    "กลุ่ม" คือคีย์ระดับบนของบล็อก — `c1`/`c2` ใน BA_ANM_DEF และชื่อ role
+    (`blade` · `guardian` · …) ใน BA_DS_ART · **แยกด้วยระดับการย่อหน้า**
+    (6 ช่อง = กลุ่ม · 8 ช่อง = สถานะ) ไม่ใช่ด้วยรายชื่อที่ต้องมาซิงก์กันเอง
+    ทั้งสองบล็อกอยู่ในต้นฉบับซึ่งการย่อหน้าคงที่เสมอ (ไฟล์แจกไม่เคยถูกสคริปต์นี้แตะ)
+    """
     out = []
     tier = ''
-    for m in re.finditer(r"^\s*(c1|c2):\s*\{|^\s*(idle|dash|s[1-4]):\s*\{"
+    for m in re.finditer(r"^ {6}([A-Za-z0-9_]+):\s*\{"
+                         r"|^ {8}(idle|dash|s[1-4])\s*:\s*\{"
                          r"|f:\s*'([^']*)'|n:\s*(\d+)|u:\s*'([^']*)'", block, re.M):
         if m.group(1):
             tier = m.group(1)
@@ -120,6 +132,16 @@ def parse(block):
             out[-1][3] = int(m.group(4))
         elif m.group(5) is not None and out:
             out[-1][4] = m.span()
+    # ⚠️ ตาข่ายกันพลาดที่เสียเวลาไปแล้วหนึ่งรอบ — ถ้าหัวสถานะตัวไหนไม่ตรงรูปแบบ
+    # (เช่นเผลอเขียน `s1  : {` โดยมีช่องว่างคั่นก่อนโคลอน) ตัวจับ f:/n:/u: จะไป
+    # ผูกกับ "สถานะก่อนหน้า" แทนแบบเงียบ ๆ แล้วไฟล์จะถูกฝังผิดช่องโดยไม่มี error
+    # ให้เห็นเลย · จำนวนช่อง u ต้องเท่ากับจำนวนหัวสถานะเสมอ
+    heads = len(out)
+    us = len(re.findall(r"u:\s*'[^']*'", block))
+    if heads != us:
+        sys.exit('อ่านทะเบียนไม่ตรงกัน — เจอหัวสถานะ %d ช่อง แต่มีช่อง u %d ช่อง\n'
+                 '    เช็กการย่อหน้า/รูปแบบคีย์ในบล็อกก่อน (ต้องเป็น `s1:   { ... }`)'
+                 % (heads, us))
     return [x for x in out if x[4]]
 
 
@@ -132,41 +154,53 @@ def main(argv):
     pick = [a for a in pick if not a.isdigit()]
 
     src = open(GAME, encoding='utf-8').read()
-    mb = BLOCK_RE.search(src)
-    if not mb:
-        sys.exit('หาบล็อก BA_ANM_DEF ไม่เจอ — ชั้น v8.7 ถูกถอดออกไปแล้วหรือเปล่า')
-    block = mb.group(2)
-    rows = parse(block)
-    if not rows:
+    found = []
+    for name_, rx in BLOCKS:
+        mb = rx.search(src)
+        if mb:
+            found.append((name_, mb, parse(mb.group(2))))
+        else:
+            print('  ⚠️  หาบล็อก %s ไม่เจอ — ข้ามไปก่อน' % name_)
+    if not found:
+        sys.exit('หาบล็อกทะเบียนไม่เจอสักก้อน — ชั้น v8.7/v8.8 ถูกถอดออกไปแล้วหรือเปล่า')
+    if not any(rows for _, _, rows in found):
         sys.exit('อ่านทะเบียนไม่ออก')
 
     if clear:
-        nb = re.sub(r"u:\s*'[^']*'", "u: ''", block)
-        write(src, mb, nb, dry)
+        # ไล่จากท้ายไปหน้า ตำแหน่งของบล็อกก่อนหน้าจึงไม่เลื่อนตามที่เขียนไปแล้ว
+        for name_, mb, _ in sorted(found, key=lambda x: -x[1].start(2)):
+            nb = re.sub(r"u:\s*'[^']*'", "u: ''", mb.group(2))
+            src = src[:mb.start(2)] + nb + src[mb.end(2):]
+        write_src(src, dry)
         print('ถอดภาพทุกใบแล้ว — ตกกลับไปใช้เฟรมฮีโร่ของ v6.5')
         return
 
     todo = []
-    for tier, key, name, frames, span in rows:
-        if pick and tier not in pick and key not in pick and (tier + '.' + key) not in pick:
-            continue
-        path = resolve(name)
-        if not path:
-            print('  ✗ %-3s %-5s ไม่เจอไฟล์  %s' % (tier, key, name))
-            continue
-        todo.append((tier, key, name, frames, span, path))
+    for name_, mb, rows in found:
+        for tier, key, fname, frames, span in rows:
+            if pick and tier not in pick and key not in pick and (tier + '.' + key) not in pick:
+                continue
+            if not fname:
+                continue                  # สารบัญยังไม่ได้ตั้งชื่อไฟล์ (เช่น priest) — เงียบไว้
+            path = resolve(fname)
+            if not path:
+                print('  ✗ %-9s %-5s ไม่เจอไฟล์  %s' % (tier, key, fname))
+                continue
+            todo.append((name_, tier, key, fname, frames, span, path))
 
     if not todo:
         sys.exit('\nไม่มีไฟล์ให้ฝังเลย — อัปโหลดสไปรต์เข้ารากrepoก่อน (ดูชื่อในสารบัญ)')
 
-    base = len(src.encode('utf-8'))
+    # เพดานต้องคิดจาก "ต้นฉบับที่ยังไม่มี URI ชุดนี้อยู่" ไม่งั้นจะนับของที่ฝังไว้แล้วซ้ำ
+    # แล้วรอบที่สองเป็นต้นไปจะรายงานว่าทะลุเพดานทั้งที่ยังไม่ทะลุ
+    base = len(src.encode('utf-8')) - sum(sp[1] - sp[0] for _, _, _, _, _, sp, _ in todo)
     for qq in ([q] if q else LADDER):
         parts, tot = {}, 0
-        for tier, key, name, frames, span, path in todo:
+        for bn, tier, key, fname, frames, span, path in todo:
             data, size = webp(path, w, frames, qq)
             uri = 'data:image/webp;base64,' + base64.b64encode(data).decode('ascii')
-            parts[(tier, key)] = (uri, size, len(data))
-            tot += len(uri)
+            parts[(bn, tier, key)] = (uri, size, len(data))
+            tot += len(uri) + 7
         after = (base + tot) / 1024.0
         print('\nq%-3d w%-4d รวม base64 %.1f KB → ต้นฉบับ %.0f KB (เพดาน %.0f KB)'
               % (qq, w, tot / 1024.0, after, BUDGET_KB))
@@ -179,23 +213,28 @@ def main(argv):
     if after > BUDGET_KB:
         sys.exit('\n⚠️  ทะลุเพดาน %.1f KB — ต้องคืนที่ "ที่ภาพ" ก่อน' % (after - BUDGET_KB))
 
-    nb, off = block, 0
-    for tier, key, name, frames, span, path in todo:
-        uri, size, raw = parts[(tier, key)]
-        a, b = span[0] + off, span[1] + off
-        rep = "u: '" + uri + "'"
-        nb = nb[:a] + rep + nb[b:]
-        off += len(rep) - (b - a)
-        print('  ✓ %-3s %-5s %dx%d (%d เฟรม) · %.1f KB  ←  %s'
-              % (tier, key, size[0], size[1], frames, raw / 1024.0, os.path.basename(path)))
-    write(src, mb, nb, dry)
+    # เขียนทีละบล็อก · **ไล่จากท้ายไปหน้าเสมอ** ตำแหน่งของบล็อกที่อยู่ก่อนหน้า
+    # จึงไม่เลื่อนตามความยาวที่เปลี่ยนไปของบล็อกที่เขียนไปแล้ว
+    for name_, mb, _rows in sorted(found, key=lambda x: -x[1].start(2)):
+        nb, off = mb.group(2), 0
+        for bn, tier, key, fname, frames, span, path in todo:
+            if bn != name_:
+                continue
+            uri, size, raw = parts[(bn, tier, key)]
+            a, b = span[0] + off, span[1] + off
+            rep = "u: '" + uri + "'"
+            nb = nb[:a] + rep + nb[b:]
+            off += len(rep) - (b - a)
+            print('  ✓ %-9s %-5s %dx%d (%d เฟรม) · %.1f KB  ←  %s'
+                  % (tier, key, size[0], size[1], frames, raw / 1024.0, os.path.basename(path)))
+        src = src[:mb.start(2)] + nb + src[mb.end(2):]
+    write_src(src, dry)
 
 
-def write(src, mb, nb, dry):
+def write_src(out, dry):
     if dry:
         print('\n(--dry: ไม่ได้เขียนทับ)')
         return
-    out = src[:mb.start(2)] + nb + src[mb.end(2):]
     open(GAME, 'w', encoding='utf-8').write(out)
     print('\nเขียนลงต้นฉบับแล้ว → %s' % os.path.basename(GAME))
     embed_common.rebuild(ROOT)

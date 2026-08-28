@@ -36681,13 +36681,13 @@
     const BA_PL_PIP_MAX = 8;
 
     // ══ 4) ค่าคลาสสวิตช์ ════════════════════════════════════════════════════
-    /* ครั้งแรกฟรี · ครั้งถัดไป 100,000 💎 ตามสเปก
-       **หมายเหตุบาลานซ์ที่ต้องรู้:** AB_SHARD_CAP ของ v4.6 หนีบเศษคริสตัลไว้ที่
-       99,999 ซึ่ง *ต่ำกว่า* ราคานี้อยู่ 1 หน่วย การเปลี่ยนสายครั้งที่สองจึงเป็นไป
-       ไม่ได้ในทางปฏิบัติจนกว่าจะมีคนขยับเพดานนั้น — แผงโปรไฟล์บอกส่วนที่ยังขาด
-       ตรง ๆ ไม่ปล่อยให้ผู้เล่นเดา */
+    /* Critical Bug Fix — เปลี่ยนสายอาชีพฟรีทุกครั้ง ไม่มีค่า 💎 อีกต่อไป
+       (ของเดิมคิด 100,000 ตั้งแต่ครั้งที่สอง ซึ่งเกินเพดานเศษคริสตัลของ v4.6
+       ที่ 99,999 อยู่ 1 หน่วย = เปลี่ยนสายครั้งที่สองเป็นไปไม่ได้ในทางปฏิบัติ
+       ทำให้ผู้เล่นที่พลาดสายแรกติดอยู่กับสายนั้นถาวร) baPlSwCost() คืน 0 เสมอ
+       ไม่ว่า class_change_count จะเป็นเท่าไร */
     const BA_PL_SW_FREE = 0;
-    const BA_PL_SW_COST = 100000;
+    const BA_PL_SW_COST = 0;
 
     // ══ 5) กระจกสูตรของ v4.0 — ใช้คิดอัตราส่วน/ส่วนต่างเท่านั้น ══════════════
     /* ปลอดภัยเพราะกฎเหล็กของ repo ห้ามแก้โค้ดของ v4.0 (ดูเหตุผลข้อ 2 ที่หัวชั้น) */
@@ -37283,7 +37283,14 @@
         recalcStats();          /* ค่าพลัง + HP สูงสุด คิดใหม่ทั้งชุดทันที */
         BA_PL_N.sw++;
         baPlSave();
-        try { renderStats(); renderSkills(); } catch (e) {}
+        /* Critical Bug Fix — แยก try กันคนละก้อน ไม่งั้น renderStats() throw
+           แล้ว renderSkills()/baSyncCurrentClassSkills() จะไม่ถูกเรียกเลย
+           แถบสกิลจะค้างแสดงของสายเก่าทั้งที่ g.classId เปลี่ยนไปแล้วจริง ๆ
+           เรียก baSyncCurrentClassSkills(true) ตรง ๆ ด้วย (ทางเข้าตามสเปกของ
+           v8.8) ไม่ต้องพึ่งแค่ renderSkills() อ้อมทาง renderStats() */
+        try { renderStats(); } catch (e) {}
+        try { renderSkills(); } catch (e) {}
+        try { if (typeof baSyncCurrentClassSkills === 'function') baSyncCurrentClassSkills(true); } catch (e) {}
         baPlUltPaint();
         baPlRender();
         const c = BA_PL_BY_ID[id];
@@ -39227,15 +39234,22 @@
     }
 
     /* เสียบสไปรต์ของสายปัจจุบันลง #baHero ตอนยืนเฉย ๆ (ท่า idle)
-       ยังไม่ฝังภาพ = ไม่ทำอะไรเลย ปล่อยเฟรมของ v6.5 เล่นต่อตามเดิม */
+       ยังไม่ฝังภาพ = ไม่ทำอะไรเลย ปล่อยเฟรมของ v6.5 เล่นต่อตามเดิม
+
+       **ต้องผ่าน baAnimPaint()/baAnimState() ตัวเดียวกับ baAnimRevert() เสมอ**
+       สไปรต์ท่ายืนของ v8.7 เป็นแถบหลายเฟรม (idle 3 · dash 4) — ตั้งแค่
+       backgroundImage เฉย ๆ แบบเดิมจะโดนกฎ background-size:contain ของ
+       baAnimStyle()/baDsStyle() บีบทั้งแถบลงกรอบ 62×60 เดียว เห็นทั้ง 3 เฟรม
+       ซ้อนกันเป็นภาพเล็กจิ๋ว (บั๊คของเดิม) · baAnimPaint() ตั้ง
+       backgroundSize เป็น (n*100)% 100% ให้ถูกต้องอยู่แล้ว จึงยืมมาใช้แทน
+       การคำนวณเอง ไม่ต้องมีตรรกะสไลซ์เฟรมชุดที่สอง */
     function baDsSyncArt() {
       try {
         const g = baG(); if (!g) return;
-        const u = baGetHeroSprite(baDsRoleOf(g), baPlTier(g), 'idle');
-        const el = document.getElementById('baHero');
-        if (!el || !u) return;
-        el.style.backgroundImage = 'url("' + u + '")';
-        el.classList.add('ba-anm-on', 'ba-' + baDsRoleOf(g) + '-idle');
+        if (BA_ANM_KEY) return;      /* ท่าอื่นกำลังเล่นอยู่ ห้ามแย่งภาพกลางท่า */
+        const st = baAnimState(baPlTier(g), 'idle');
+        if (!st || !st.u) return;
+        baAnimPaint(st, false);
         BA_DS_N.art++;
       } catch (e) { baDsErr(e, 'art'); }
     }

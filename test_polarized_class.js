@@ -347,13 +347,17 @@ async function goFloor(p, f) {
   }
 
   // ══ บล็อก 6 · เปลี่ยนสายอาชีพ ═══════════════════════════════════════════
-  log('\n── บล็อก 6 · Class Switch (ครั้งแรกฟรี · ครั้งถัดไป 100,000 💎) ──');
+  /* Critical Bug Fix — เปลี่ยนสายอาชีพฟรีทุกครั้ง ไม่มีค่า 💎 อีกต่อไป
+     (ของเดิมคิด 100,000 ตั้งแต่ครั้งที่สอง ซึ่งเกินเพดานเศษคริสตัลของ v4.6
+     ที่ 99,999 อยู่ 1 หน่วย ทำให้เปลี่ยนสายครั้งที่สองเป็นไปไม่ได้ในทางปฏิบัติ)
+     บล็อกนี้จึงยืนยันว่าเปลี่ยนได้ไม่จำกัดครั้งโดยไม่มี 💎 เลยสักหน่วย */
+  log('\n── บล็อก 6 · Class Switch (Free Class Change — ทุกครั้งไม่มีค่า 💎) ──');
   {
     const p = await openGame(browser, 'plF', 390, 844);
     const a0 = await p.evaluate(() => baBattleAudit().polarized);
     eq('เริ่มต้นเปลี่ยนไป 0 ครั้ง', a0.switches, 0);
     eq('ครั้งแรกราคา 0 💎', a0.swCost, 0);
-    eq('ราคาครั้งถัดไปคือ 100,000 💎', a0.swPaid, 100000);
+    eq('ราคาครั้งถัดไปก็ยังเป็น 0 💎', a0.swPaid, 0);
 
     const first = await p.evaluate(() => {
       G.level = 30; recalcStats();
@@ -368,7 +372,7 @@ async function goFloor(p, f) {
     eq('ครั้งแรกไม่หัก 💎', first.sh, 0);
     eq('สายเปลี่ยนเป็น guardian', first.classId, 'guardian');
     eq('ตัวนับเดินเป็น 1', first.switches, 1);
-    eq('ราคาครั้งถัดไปกลายเป็น 100,000', first.swCost, 100000);
+    eq('ราคาครั้งถัดไปยังเป็น 0 💎 (ไม่มีค่าใช้จ่ายเลยแม้แต่ครั้งที่สอง)', first.swCost, 0);
     eq('เลเวลถูกคงไว้', first.lv, 30);
     eq('ค่าพลังคิดใหม่เป็นของ guardian (VIT 30+2×29)', first.stats.vit, 30 + 29 * 2);
     /* สูตรของสเปกให้ 750+VIT*15 · ที่เหลือเป็นของที่ตั้งฉากกับค่าพลังซึ่งบวกทับต่อ
@@ -379,17 +383,17 @@ async function goFloor(p, f) {
     eq('HP ยังชันขึ้น 15 ต่อ VIT 1 แต้ม หลังเปลี่ยนสาย', slope[1] - slope[0], 15);
 
     const second = await p.evaluate(() => {
-      const b = abOf(G); b.shards = 99999;      /* เพดานของ v4.6 คือ 99,999 */
+      const b = abOf(G); b.shards = 0;      /* ไม่มี 💎 เลยสักหน่วยก็ยังต้องเปลี่ยนได้ */
       const done = baPlSwitch('priest');
       const a = baBattleAudit().polarized;
       return { done, classId: a.classId, switches: a.switches, sh: abShards(G) };
     });
-    ok('💎 ไม่ถึง 100,000 เปลี่ยนไม่ได้', second.done === false);
-    eq('สายไม่ถูกเปลี่ยน', second.classId, 'guardian');
-    eq('ตัวนับไม่เดิน', second.switches, 1);
-    eq('💎 ไม่ถูกหัก', second.sh, 99999);
+    ok('เปลี่ยนสายครั้งที่สองก็ยังฟรี — ไม่มี 💎 เลยก็เปลี่ยนสำเร็จ', second.done === true);
+    eq('สายเปลี่ยนเป็น priest', second.classId, 'priest');
+    eq('ตัวนับเดินเป็น 2', second.switches, 2);
+    eq('💎 ไม่ถูกหักแม้แต่หน่วยเดียว', second.sh, 0);
 
-    const same = await p.evaluate(() => baPlSwitch('guardian'));
+    const same = await p.evaluate(() => baPlSwitch('priest'));
     ok('เปลี่ยนเป็นสายเดิมไม่นับ', same === false);
     await p.close();
   }

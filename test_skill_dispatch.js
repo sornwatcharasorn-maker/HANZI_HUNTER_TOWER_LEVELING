@@ -273,6 +273,10 @@ async function enterGame(page, id) {
       const empty = {};
       ['assassin', 'monarch', 'blade', 'slayer', 'guardian', 'guard', 'priest', 'soulmaster']
         .forEach(role => { empty[role] = baGetHeroSprite(role, null, 'idle'); });
+      /* priest ยังไม่มีไฟล์ท่ายืนต้นฉบับ (dash/s1-s4 ฝังแล้ว) · soulmaster ยังไม่มี
+         ไฟล์ท่าสกิล s1-s4 ต้นฉบับ (idle/dash ฝังแล้ว) — เก็บไว้แยกกันเพราะคนละ
+         ช่องที่ยังว่างจริง (ดูข้อคิดเห็นบล็อกนี้ก่อนแก้) */
+      const soulS1 = baGetHeroSprite('soulmaster', null, 's1');
       /* เสียบภาพปลอมให้สายนักบวช C1 (ยังว่างจริง) แล้วต้องอ่านออกทันที (hot-plug) */
       const px = 'data:image/gif;base64,R0lGODlhAQABAAAAACw=';
       ba.assetRegistry.priest.c1.anim.idle.u = px;
@@ -280,18 +284,21 @@ async function enterGame(page, id) {
       G.classId = 'guardian'; recalcStats();
       const anim  = baBattleAudit().dispatch.art;
       ba.assetRegistry.priest.c1.anim.idle.u = '';
-      return { empty: empty, after: after === px, art: anim,
+      return { empty: empty, soulS1: soulS1, after: after === px, art: anim,
                imgs: document.querySelectorAll('#baArena img[src=""]').length };
     });
     /* Step 3 · Sprite Embedding (v8.7) + สไปรต์ 4 สาย (v8.8) — assassin/monarch/
-       blade/slayer/guardian/guard ฝังภาพครบแล้ว เหลือแค่ priest/soulmaster ที่ยัง
-       ไม่มีไฟล์ต้นฉบับ · เคสนี้เคยยืนยัน "ว่างทุก role" ซึ่งเป็นสถานะก่อนฝัง —
-       พลิกด้านโดยตั้งใจ (precedent: v7.4 · v7.8 · v7.9 · v8.1-v8.4 พลิกกันมาแล้วทุกชั้น) */
+       blade/slayer/guardian/guard ฝังภาพครบแล้ว · priest ฝัง dash/s1-s4 แล้ว
+       เหลือ idle ว่าง · soulmaster ฝัง idle/dash แล้ว เหลือ s1-s4 ว่าง —
+       เคสนี้เคยยืนยัน "ว่างทุก role" ซึ่งเป็นสถานะก่อนฝัง — พลิกด้านโดยตั้งใจ
+       (precedent: v7.4 · v7.8 · v7.9 · v8.1-v8.4 พลิกกันมาแล้วทุกชั้น) */
     ok('role ที่ฝังภาพแล้ว → คืน data URI จริง (6 role: assassin·monarch·blade·slayer·guardian·guard)',
        ['assassin', 'monarch', 'blade', 'slayer', 'guardian', 'guard']
          .every(k => /^data:image\//.test(r.empty[k] || '')), r.empty);
-    ok('role ที่ยังไม่มีภาพ → คืนค่าว่าง (ไม่ใช่ undefined)',
-       ['priest', 'soulmaster'].every(k => r.empty[k] === ''), r.empty);
+    ok('priest ยังไม่มีท่ายืนต้นฉบับ → idle ว่าง', r.empty.priest === '', r.empty.priest);
+    ok('soulmaster มีท่ายืนแล้ว (ฝังไปก่อนหน้านี้) → idle ไม่ว่าง',
+       /^data:image\//.test(r.empty.soulmaster || ''), r.empty.soulmaster);
+    ok('soulmaster ยังไม่มีท่าสกิลต้นฉบับ → ช่อง s1 ว่าง', r.soulS1 === '', r.soulS1);
     ok('ไม่มี <img> ว่างค้างในสนาม (ไม่มีรูปแตก)', r.imgs === 0, r.imgs);
     ok('เสียบ data URI แล้ว baGetHeroSprite อ่านออกทันที', r.after === true);
     ok('สายที่ฝังภาพแล้ว → art เป็น true (ผู้พิทักษ์)', r.art === true, r.art);

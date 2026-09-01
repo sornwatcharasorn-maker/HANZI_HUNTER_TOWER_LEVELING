@@ -396,26 +396,37 @@ const cls = page => page.evaluate(() => {
   }
 
   // ══ บล็อก 6 · สายอื่นไม่ถูกแตะ (ก่อนมี v8.8) / ยังไม่มีภาพจึงตกกลับ ══════
-  head('บล็อก 6 · สายที่ยังไม่มีภาพ (priest) ยังตกกลับไปใช้ท่า v6.3 เหมือนเดิม');
+  head('บล็อก 6 · สายที่ยังไม่มีภาพเลยสักสถานะ ยังตกกลับไปใช้ท่า v6.3 เหมือนเดิม');
   {
     /* ตั้งแต่ v8.8 · UNIVERSAL HOT-PLUG ASSET ENGINE ห่อ baAnimOn ให้เปิดเครื่อง
-       อนิเมชันของชั้นนี้ให้ "ทุกสายที่มีภาพจริง" ไม่ใช่แค่ assassin อีกต่อไป —
-       เคสนี้จึงต้องทดสอบกับสายที่ **ยังไม่มีไฟล์ต้นฉบับจริง ๆ** (priest/soulmaster)
-       เพื่อยืนยันว่า "ไม่มีภาพ = ตกกลับไปใช้ท่าพุ่งของ v6.3" ยังทำงานถูกต้อง
-       (พลิกจากเดิมที่ใช้ guardian ซึ่งได้ภาพไปแล้วตอนฝังสไปรต์ 4 สายเพิ่ม —
+       อนิเมชันของชั้นนี้ให้ "ทุกสายที่มีภาพจริง" (baDsHasArt เช็กแบบ .some() —
+       มีสักสถานะเดียวก็พอ) ไม่ใช่แค่ assassin อีกต่อไป
+
+       ตั้งแต่แพตช์สไปรต์ 4 สายเพิ่ม (v8.8) + ท่ายืน/ท่าฟาดของ priest/soulmaster
+       ทุกสายในเกมมีอย่างน้อยหนึ่งสถานะที่ฝังภาพแล้ว — ไม่มีสายไหนเหลือ "ว่างสนิท
+       ทุกสถานะ" ให้ทดสอบแบบเดิมอีกต่อไป เคสนี้จึงต้อง **เคลียร์ทะเบียนของสาย
+       priest ทิ้งชั่วคราวเองในเทสต์** (ท่าเดียวกับ hot-plug ของ test_skill_dispatch
+       บล็อก 5) แล้วคืนค่าเดิมกลับหลังวัดเสร็จ แทนที่จะยืมสถานะว่างจากของจริง
+       (พลิกจากเดิมที่ใช้ guardian แล้วภายหลังพลิกมาใช้ priest ล้วน ๆ —
        precedent: v7.4 · v7.8 · v7.9 · v8.1-v8.4 พลิกกันมาแล้วทุกชั้น) */
     const b = await boot(browser);
     await enterGame(b.page, 'anm6');
     const other = await b.page.evaluate(() => {
       baPlSwitch('priest');
+      const backup = JSON.parse(JSON.stringify(ba.assetRegistry.priest.c1.anim));
+      Object.keys(ba.assetRegistry.priest.c1.anim).forEach(k => {
+        ba.assetRegistry.priest.c1.anim[k].u = '';
+      });
       baAnimRevert();
       const on = baBattleAudit().skillAnim.on;
       G.questionStart = Date.now() - 6000;
       baStrike(12, false, false);
       const a = baBattleAudit().skillAnim;
-      return { on: on, key: a.key, cls: Array.from(document.getElementById('baHero').classList) };
+      const r = { on: on, key: a.key, cls: Array.from(document.getElementById('baHero').classList) };
+      Object.keys(backup).forEach(k => { ba.assetRegistry.priest.c1.anim[k].u = backup[k].u; });
+      return r;
     });
-    ok('สายนักบวช (ยังไม่มีภาพ) ไม่เข้าเงื่อนไขของชั้นนี้', other.on === false, other);
+    ok('สายที่ถูกเคลียร์ภาพจนว่างสนิท ไม่เข้าเงื่อนไขของชั้นนี้', other.on === false, other);
     eq('ตอบถูกแล้วไม่มีท่าของชั้นนี้เล่น', other.key, '');
     ok('ท่าพุ่งของ v6.3 ยังทำงานตามเดิม',
        other.cls.indexOf('ba-atk') >= 0 || other.cls.indexOf('ba-atk2') >= 0, other.cls);

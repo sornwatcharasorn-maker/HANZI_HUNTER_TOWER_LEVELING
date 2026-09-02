@@ -40512,6 +40512,83 @@
       try { baV91Style(); } catch (e) { baV91Err(e, 'install'); }
     })();
 
+    /* ══ Patch v9.2 · NORMALIZE HERO SPRITE SCALING TO MATCH MONSTERS ═════
+       อยู่ในเนมสเปซ ba ของชั้น v6.0 เดิม ไม่ได้ตั้งพรีฟิกซ์ใหม่ (กติกาเดียวกับ
+       v6.1–v9.1) วางท้ายสุดของไฟล์ ต่อจาก baInstallV91() และก่อน baInstall()
+       ไม่แก้โค้ดของ v4.0-v9.1 เลยแม้แต่บรรทัดเดียว — เติมกฎ CSS ใหม่กฎเดียว
+       ไม่มี wrapper ฟังก์ชันสักตัว เพราะไม่มีพฤติกรรมไหนต้องเปลี่ยน
+
+       ปัญหา: สไปรต์ฮีโร่รายคลาส (v8.7/v8.8 — background-image บน #baHero
+       ที่ได้คลาส .ba-sprite.ba-anm-on) ถูกจำกัดให้พอดีกรอบ .ba-sprite เดิม
+       (62x60 · 56x58 จอแคบ) ทั้งที่กรอบอสูร .ba-mon สูงถึง BA_MON_H (72px)
+       ฮีโร่จึงดูเตี้ยกว่าอสูรเสมอทุกคลาส/ทุกสถานะ (idle · dash · s1-s4)
+
+       ทางแก้: ใช้คุณสมบัติ CSS `scale` (แยกจาก `transform`) ตั้งค่าคงที่บน
+       .ba-sprite.ba-anm-on เพียงกฎเดียว — `scale`/`rotate`/`translate` เป็น
+       individual transform properties ที่ผสาน (compose) กับ `transform`
+       ของอนิเมชันชั้นล่างได้เสมอ (.ba-atk/.ba-atk2/.ba-hurt/.ba-down/.ba-stun
+       ของ v6.0/v6.3 · .ba-anm-in/.ba-anm-out ของ v8.7) โดยไม่ทับกัน — ต่างจาก
+       `transform:scale()` ตรง ๆ ซึ่งจะถูก keyframe ของอนิเมชันเขียนทับทั้งก้อน
+       ทันทีที่เล่นท่า (กระพริบเล็กลงกลางท่าแล้วสะดุดกลับตอนจบ) เบราว์เซอร์ที่
+       ไม่รู้จัก `scale` แบบเดี่ยวจะข้ามกฎนี้เงียบ ๆ แล้วได้ขนาดเดิม ไม่ใช่จอพัง
+
+       scale = BA_MON_H / 60 = 1.2 — ผูกกับค่าคงที่ BA_MON_H ของ v6.2 ที่เดียว
+       (จับคู่ "ความสูง" ไม่ใช่ความกว้าง เพราะ .ba-mon กว้าง 109 ในขณะที่
+       .ba-sprite แค่ 62 — สัดส่วนกรอบต่างกัน แต่ทุกภาพใช้ background-size:
+       contain รักษาสัดส่วนภาพเองอยู่แล้ว การจับคู่ความสูงจึงเป็นตัวเทียบที่ตรง
+       กับ "ยืนพื้นเดียวกัน" ที่สุดสำหรับตัวละครสองฝั่งที่กว้างกรอบไม่เท่ากัน)
+
+       transform-origin:bottom center — สเกลจากขอบล่างของกรอบ (จุดที่เท้าแตะ
+       พื้นตาม background-position:center bottom ของ baAnimStyle) กรอบจึงโต
+       ขึ้นเฉพาะด้านบน+ข้าง เท้าไม่มีวันจมพื้นหรือลอยขึ้น (baSpot() ยังคืนจุด
+       กึ่งกลาง x/y เดิมแทบไม่ขยับ เพราะสเกลสมมาตรตามแกน x และเท้าคือขอบล่าง
+       ของแกน y — ระยะพุ่ง/ตำแหน่งตัวเลขดาเมจจึงไม่ต้องแก้อะไรเพิ่ม)
+
+       ไม่แตะ width/height ของ .ba-sprite เอง (ยังเป็น 62x60 เท่าเดิมทุกจอ)
+       `scale` เป็นแค่การแปลงภาพตอนวาด (compositor) ไม่มีผลต่อ layout เลยแม้แต่
+       พิกเซลเดียว — box ของ #baArena/.ba-row/.ba-unit ไม่ขยับ CLS = 0 จริง
+       (ส่วนที่ล้นออกมาจากการสเกลถูก #baArena{overflow:hidden} ตัดให้เอง
+       กติกาเดียวกับที่ .ba-fig/.ba-mon ล้นกรอบ 62x60 อยู่แล้วตั้งแต่ v6.1/v6.2)
+
+       เข้าเงื่อนไขเฉพาะตอนมีสไปรต์รายคลาสจริง (.ba-anm-on ถูกเติมใน baAnimPaint
+       ของ v8.7 เฉพาะตอน st.u ไม่ว่าง) — ร่างที่ยังไม่มีภาพ หรือสวิตช์สนามรบปิด
+       อยู่ (yao_arena = off) จึงไม่ถูกแตะเลย ตกกลับไปใช้ .ba-fig ของ v6.1/v6.5
+       ขนาดเดิมทุกประการ */
+    const BA_HS_VER = 'v9.2';
+    const BA_HS_SCALE = BA_MON_H / 60; /* 1.2 */
+    function baHsErr(e, w) { try { baErr(e, 'hs:' + w); } catch (x) {} }
+
+    function baHsStyle() {
+      if (document.getElementById('baHsStyle')) return;
+      const st = document.createElement('style');
+      st.id = 'baHsStyle';
+      st.textContent =
+        '#baArena .ba-sprite.ba-anm-on{scale:' + BA_HS_SCALE + ';' +
+          'transform-origin:bottom center;will-change:transform,scale}';
+      document.head.appendChild(st);
+    }
+
+    /* ── ทางเข้าสาธารณะสำหรับชุดเทสต์ ──────────────────────────────────── */
+    if (typeof baBattleAudit === 'function') {
+      const _hsAudit = baBattleAudit;
+      baBattleAudit = function () {
+        const o = _hsAudit.apply(this, arguments) || {};
+        try {
+          o.heroScale = {
+            ver: BA_HS_VER,
+            scale: BA_HS_SCALE,
+            monH: BA_MON_H,
+            styled: !!document.getElementById('baHsStyle')
+          };
+        } catch (e) { baHsErr(e, 'audit'); }
+        return o;
+      };
+    }
+
+    (function baInstallHs() {
+      try { baHsStyle(); } catch (e) { baHsErr(e, 'install'); }
+    })();
+
 
     (function baInstall() {
       try {

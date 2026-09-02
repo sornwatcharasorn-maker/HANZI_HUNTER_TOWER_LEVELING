@@ -40589,6 +40589,68 @@
       try { baHsStyle(); } catch (e) { baHsErr(e, 'install'); }
     })();
 
+    /* ══ Patch v9.2.1 · FIX HERO SPRITE SHRINKING ON IDLE FRAME TICK ═════════
+       รายงาน: ยืนอยู่กับที่แล้วเฟรมภาพที่สลับเข้ามา (Idle Life-Cycling ของ v9.0
+       ทุก ~900ms) เล็กกว่าเฟรมแรกที่ยืนขึ้นมา — สเปกที่แนบมาวินิจฉัยว่า `scale`
+       ของ v9.2 "ไม่ครอบคลุมทุกสถานะ" แล้วเสนอเพิ่ม selector + !important
+       **การวินิจฉัยนั้นผิด** — กฎ scale ของ v9.2 ผูกกับ `.ba-sprite.ba-anm-on`
+       ที่ตัว #baHero เอง ครอบทุกภาพที่แปะอยู่เสมอไม่ว่าจะเป็นสถานะไหน (ยืนยันได้
+       จากการอ่านโค้ดตรง ๆ ไม่มี selector ไหนที่ scale ของ v9.2 "เข้าไม่ถึง")
+
+       ต้นเหตุจริงอยู่ที่ background-size ซึ่ง `baAnimPaint()` ของ v8.7 กับ
+       `baV9IdleLife()` ของ v9.0 ตั้งไว้ **ไม่เท่ากันระหว่างสองชนิดสถานะ**:
+       สถานะหลายเฟรม (idle 3 เฟรม · dash 4 เฟรม) ใช้ `(n*100)% 100%` ซึ่งบังคับ
+       ให้ทุกเฟรมในแถบสูงเต็มกรอบเสมอ (100% ของความสูง — ไม่รักษาสัดส่วนภาพ)
+       ส่วนสถานะเฟรมเดียว (s1-s4) ใช้ `contain` ซึ่ง **รักษาสัดส่วนภาพต้นฉบับ**
+       ถ้าครอปต้นฉบับของท่าโจมตีมีขอบเผื่อแนวตั้งมากกว่าเฟรมยืน ตัวละครในสถานะ
+       เฟรมเดียวจะเตี้ยกว่ากรอบเห็นได้ชัดทันทีที่สลับเข้ามา — คอมเมนต์ของ v9.2
+       เองที่เขียนไว้ว่า "ทุกภาพใช้ background-size:contain รักษาสัดส่วนภาพเอง
+       อยู่แล้ว" จึงไม่จริงสำหรับสถานะหลายเฟรม — เป็นที่มาของบั๊คนี้ตัวจริง
+
+       ทางแก้: เปลี่ยนกรณีเฟรมเดียวจาก `contain` เป็น `auto 100%` (บังคับสูงเต็ม
+       กรอบเท่ากับที่แถบหลายเฟรมได้อยู่แล้ว ส่วนกว้างคำนวณตามสัดส่วนภาพต้นฉบับเอง)
+       ทั้งสองชนิดสถานะจึงสูงเท่ากรอบเสมอเหมือนกันหมด ไม่มีจังหวะไหนเตี้ยกว่าอีก
+       ส่วนที่ล้นด้านข้างถูก `#baArena{overflow:hidden}` ตัดให้เอง — กติกาเดียวกับ
+       ที่ .ba-fig/.ba-mon ล้นกรอบ 62×60 อยู่แล้วตั้งแต่ v6.1/v6.2 (ไม่ใช่ความเสี่ยง
+       ใหม่) · ห่อจุดที่ตั้งค่าจริงสองจุด (`baAnimPaint` · `baV9IdleLife`) ไม่แก้
+       ในที่ — วัดผลหลังเรียกของเดิมจบเสมอ เพราะทั้งคู่ตั้ง inline style เองตรง ๆ
+       ไม่มีทางดักกลางฟังก์ชันได้โดยไม่แก้โค้ดของชั้นล่าง */
+    const BA_HS2_VER = 'v9.2.1';
+    function baHs2Err(e, w) { try { baErr(e, 'hs2:' + w); } catch (x) {} }
+    function baHs2Fix(el) {
+      if (el && el.style.backgroundSize === 'contain') el.style.backgroundSize = 'auto 100%';
+    }
+    if (typeof baAnimPaint === 'function') {
+      const _hs2Paint = baAnimPaint;
+      baAnimPaint = function (st, crit) {
+        const r = _hs2Paint.apply(this, arguments);
+        try { baHs2Fix(document.getElementById('baHero')); } catch (e) { baHs2Err(e, 'paint'); }
+        return r;
+      };
+    }
+    if (typeof baV9IdleLife === 'function') {
+      const _hs2Idle = baV9IdleLife;
+      baV9IdleLife = function () {
+        const r = _hs2Idle.apply(this, arguments);
+        try { baHs2Fix(document.getElementById('baHero')); } catch (e) { baHs2Err(e, 'idle'); }
+        return r;
+      };
+    }
+
+    /* ── ทางเข้าสาธารณะสำหรับชุดเทสต์ ──────────────────────────────────── */
+    if (typeof baBattleAudit === 'function') {
+      const _hs2Audit = baBattleAudit;
+      baBattleAudit = function () {
+        const o = _hs2Audit.apply(this, arguments) || {};
+        try { o.heroShrinkFix = { ver: BA_HS2_VER }; } catch (e) { baHs2Err(e, 'audit'); }
+        return o;
+      };
+    }
+
+    (function baInstallHs2() {
+      try { baHs2Fix(document.getElementById('baHero')); } catch (e) { baHs2Err(e, 'install'); }
+    })();
+
 
     (function baInstall() {
       try {

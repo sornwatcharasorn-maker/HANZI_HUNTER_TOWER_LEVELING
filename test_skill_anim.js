@@ -326,17 +326,39 @@ const cls = page => page.evaluate(() => {
     eq('ตอบช้ากว่ากรอบ win → ช่อง 1 ไม่ให้ดาเมจซ้ำ', n1.s1, 0);
     eq('ตอบถูกธรรมดา → ท่าโจมตีปกติ (dash)', n1.key, 'dash');
 
-    /* ตอบไวทันกรอบ → ช่อง 1 ทำงาน กลายเป็น Shadow Strike */
-    const s1 = await b.page.evaluate(() => {
+    /* ── เคสชุดนี้ถูกพลิกอีกครั้งตอน Patch v9.1 · ACTIVE SKILL CAST ──────────
+       ช่อง 1 (index 0) ถูกปิดไว้เป็นค่าเริ่มต้นตั้งแต่ v9.1 (baPlS1 คืน 0
+       เสมอนอกช่วง armed) แม้ตอบไวทันกรอบ win ก็ตาม — ต้อง "กดใช้" ก่อน
+       (BA_V91_ARM[0] = true) ถึงจะมีผล ตรงกับสเปกที่เรียกช่องนี้ว่า
+       "Active Cast" ไม่ใช่พาสซีฟที่ทำงานเองตลอดเวลาอีกต่อไป
+       (precedent: v7.4/v7.8/v7.9/v8.1-v8.4/v8.8 พลิกเคสกันมาแล้วทุกชั้น) */
+
+    /* ไวทันกรอบแต่ยังไม่กดใช้ (ไม่ armed) → ยังต้องได้ท่าโจมตีปกติ (dash) */
+    const n1b = await b.page.evaluate(() => {
       G.skills.assassin[0] = 2;
-      G.questionStart = Date.now();                /* ไวทันกรอบ 3.5 วิ */
+      G.questionStart = Date.now();
       baAnimRevert();
       baStrike(12, false, false);
       const a = baBattleAudit().skillAnim;
-      return { key: a.key, s1: baPlS1(G), cls: Array.from(document.getElementById('baHero').classList) };
+      return { key: a.key, s1: baPlS1(G) };
     });
-    ok('ตอบไวทันกรอบ win → ช่อง 1 ให้ดาเมจซ้ำจริง', s1.s1 > 0, s1);
-    eq('ตอบถูกขณะช่อง 1 ทำงาน → ท่า Shadow Strike', s1.key, 's1');
+    eq('ไวทันกรอบแต่ยังไม่กดใช้ → ช่อง 1 ไม่ให้ดาเมจซ้ำ', n1b.s1, 0);
+    eq('ไวทันกรอบแต่ยังไม่กดใช้ → ยังเป็นท่าโจมตีปกติ (dash)', n1b.key, 'dash');
+
+    /* ไวทันกรอบ + armed (กดใช้แล้ว) → ช่อง 1 ทำงาน กลายเป็น Shadow Strike */
+    const s1 = await b.page.evaluate(() => {
+      G.skills.assassin[0] = 2;
+      G.questionStart = Date.now();                /* ไวทันกรอบ 3.5 วิ */
+      BA_V91_ARM[0] = true;
+      baAnimRevert();
+      baStrike(12, false, false);
+      const a = baBattleAudit().skillAnim;
+      const out = { key: a.key, s1: baPlS1(G), cls: Array.from(document.getElementById('baHero').classList) };
+      BA_V91_ARM[0] = false;
+      return out;
+    });
+    ok('armed + ไวทันกรอบ win → ช่อง 1 ให้ดาเมจซ้ำจริง', s1.s1 > 0, s1);
+    eq('armed + ตอบถูกขณะช่อง 1 ทำงาน → ท่า Shadow Strike', s1.key, 's1');
     ok('ได้คลาส ba-assassin-slot1', s1.cls.indexOf('ba-assassin-slot1') >= 0, s1.cls);
 
     /* ท่าไม้ตายช่อง 4 — ยิงเฉพาะตอนปล่อยสำเร็จจริง */

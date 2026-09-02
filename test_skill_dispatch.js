@@ -311,25 +311,42 @@ async function enterGame(page, id) {
   {
     const b = await boot(browser);
     await enterGame(b.page, 'ds6');
-    /* ช่อง 1 · ดาเมจซ้ำ ต้องเท่ากับอะตอม dmg ของเมทริกซ์เป๊ะ (ตอบไวทันกรอบ) */
+    /* ช่อง 1 · ดาเมจซ้ำ ต้องเท่ากับอะตอม dmg ของเมทริกซ์เป๊ะ (ตอบไวทันกรอบ)
+       ⚠️ ตั้งแต่ Patch v9.1 · ACTIVE SKILL CAST ช่อง 1 (index 0) ถูกปิดไว้เป็น
+       ค่าเริ่มต้น (baPlS1 คืน 0) จนกว่าจะ "armed" ผ่านการกดใช้จริง (BA_V91_ARM[0])
+       เคสนี้จึงต้อง armed เองก่อนอ่าน — ทั้งสองเคสด้านล่างพลิกจากที่เคยยืนยันว่า
+       "ทำงานอัตโนมัติตลอดเวลา" (ของ v8.8) เป็น "ทำงานเฉพาะรอบที่ armed" (ของ v9.1)
+       ตามกติกาเดิมของ repo ที่ยอมให้แพตช์ถัดไปพลิกเคสเมื่อเปลี่ยนพฤติกรรมจริง
+       (precedent: v7.4/v7.8/v7.9/v8.1-v8.4/v8.8) */
     const s1 = await b.page.evaluate(() => {
       G.classId = 'assassin'; G.level = 1;
       G.skills.assassin[0] = 3;
       G.questionStart = Date.now();
+      BA_V91_ARM[0] = true;
       /* v8.5 กิน baPlS1 เป็น hunterAtk × (1 + v/100) — ตัวเลขของช่อง 1 ในสเปกคือ
          "ดาเมจรวม" (ขอบล่างของนักรบสังหาร = 100% พอดี = หมัดปกติ) จึงต้องส่ง
          "ส่วนที่เกินหมัดปกติ" ไป ไม่ใช่ยอดรวมทั้งก้อน */
       const want = baResolveSkillEffects('assassin', 'c1', 0, 3).fx.dmg - 100;
       return { want: want, got: baPlS1(G) };
     });
-    eq('baPlS1 = ดาเมจรวมของเมทริกซ์ − 100 (Lv3)', s1.got, s1.want);
+    eq('baPlS1 = ดาเมจรวมของเมทริกซ์ − 100 (Lv3) เมื่อ armed แล้ว', s1.got, s1.want);
 
-    /* กรอบ win — ตอบช้ากว่ากรอบต้องไม่ได้ */
+    /* ยังไม่ armed → ต้องคืน 0 เสมอ ต่อให้อยู่ในกรอบเวลาก็ตาม (ของใหม่ v9.1) */
+    const notArmed = await b.page.evaluate(() => {
+      BA_V91_ARM[0] = false;
+      G.questionStart = Date.now();
+      return baPlS1(G);
+    });
+    eq('ยังไม่ได้กดใช้ (ไม่ armed) → baPlS1 คืน 0', notArmed, 0);
+
+    /* กรอบ win — ตอบช้ากว่ากรอบต้องไม่ได้ แม้ armed อยู่ก็ตาม */
     const win = await b.page.evaluate(() => {
+      BA_V91_ARM[0] = true;
       G.questionStart = Date.now() - 9000;
       return baPlS1(G);
     });
-    eq('ตอบช้ากว่ากรอบ win → ไม่ได้ดาเมจซ้ำ', win, 0);
+    eq('armed แต่ตอบช้ากว่ากรอบ win → ไม่ได้ดาเมจซ้ำ', win, 0);
+    await b.page.evaluate(() => { BA_V91_ARM[0] = false; });
 
     /* ช่อง 4 · ท่าไม้ตาย — สายโจมตีใช้ dmg เป็นตัวคูณ · สายประคองใช้ heal เป็น % */
     const ult = await b.page.evaluate(() => {

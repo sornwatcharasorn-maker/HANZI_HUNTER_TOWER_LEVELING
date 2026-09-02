@@ -39743,7 +39743,13 @@
       try {
         baDsEnsureRegistry();
         baDsStyle();
-        document.addEventListener('click', baDsClick, true);
+        /* ผูกผ่าน closure ที่อ่านชื่อ baDsClick สด ๆ ทุกครั้งที่คลิก แทนการส่ง
+           reference ตรง ๆ — addEventListener จับค่าฟังก์ชัน ณ ตอนลงทะเบียน
+           ไม่ใช่ผูกกับชื่อ การ reassign "baDsClick = ..." ในแพตช์ถัดไป (v9.1)
+           จึงมีผลจริงโดยไม่ต้องเปิด listener ใบที่สอง (ซึ่งจะยิงคู่กับใบนี้
+           ทุกคลิกและหัก MP/ปล่อยท่าไม้ตายซ้ำสอง) — บรรทัดนี้จึงต้องเป็น
+           indirection เสมอ ห้ามกลับไปส่ง baDsClick ตรง ๆ */
+        document.addEventListener('click', function (e) { baDsClick(e); }, true);
       } catch (e) { baDsErr(e, 'install'); }
     })();
 
@@ -40177,6 +40183,284 @@
 
     (function baInstallV9() {
       try { baV9Style(); } catch (e) { baV9Err(e, 'install'); }
+    })();
+
+
+    /* ════════════════════════════════════════════════════════════════════════
+       Patch v9.1 · ACTIVE SKILL CAST — Click-to-Cast MP Drain & Cooldown Gate
+       ────────────────────────────────────────────────────────────────────────
+       อยู่ในเนมสเปซ ba ของชั้น v6.0 เดิม **ไม่ได้ตั้งพรีฟิกซ์ใหม่** (กติกาเดียวกับ
+       v6.1–v9.0) · วางท้ายสุดของไฟล์ ต่อจาก baInstallV9() ของ v9.0 และก่อน
+       baInstall() จึงห่อทับทุกชั้นได้ · ไม่แก้โค้ดของ v4.0-v9.0 เลยแม้แต่บรรทัดเดียว
+       **ยกเว้นบรรทัดเดียวใน baDsInstall() ของ v8.8** ที่เปลี่ยนจากส่ง
+       "baDsClick" ตรง ๆ เป็นห่อด้วย closure `function(e){ baDsClick(e); }`
+       — จำเป็นเพราะ addEventListener จับค่าฟังก์ชัน ณ ตอนลงทะเบียน ไม่ใช่ผูก
+       กับชื่อ การ reassign ตัวแปรทีหลังจึงไม่มีผลกับ listener ที่ผูกไปแล้ว
+       ถ้าเปิด listener ใบที่สองแทน จะยิงคู่กับใบเดิมทุกคลิก (หัก MP/ปล่อยท่า
+       ไม้ตายซ้ำสอง) — indirection บรรทัดเดียวนี้คือทางเดียวที่ปลอดภัย
+
+       อาการที่แพตช์นี้แก้ — ช่อง 1/3 ของแถบสกิลเป็นแค่ "พาสซีฟที่โชว์ทูลทิป"
+       ┌───────────────────────────────────────────────────────────────────────
+       │ baDsClick ของ v8.8 ให้ทุกช่องที่ cd >= 0 (คือทั้งช่อง 1/2/3 ตามดัชนี
+       │ 0/1/2 ก่อนถึงท่าไม้ตาย) ทำแค่โชว์ทูลทิปอธิบายว่า "ทำงานเองตอนตอบถูก"
+       │ ทั้งที่สารบัญ BA_PL_CLASSES ของ v8.5 ใส่ cd:3 (ช่อง 1) และ cd:4
+       │ (ช่อง 3) ไว้ตั้งแต่ต้น เตรียมไว้ให้เป็นสกิลกดใช้จริง (เอกสารของ v8.8
+       │ เองก็เขียนไว้ตรง ๆ ว่า "วันไหนสองช่องนั้นกลายเป็นสกิลกดใช้จริง การต่อ
+       │ เป็นบรรทัดเดียว") ผู้เล่นจึงไม่เคยได้กด "ใช้สกิล" จริงเลยนอกจากท่าไม้ตาย
+       └───────────────────────────────────────────────────────────────────────
+
+       ⚠️ ตารางค่าใช้จ่ายของสเปกที่สั่งมาตรงกับ cd ที่มีอยู่แล้วในสารบัญพอดี —
+       ไม่ใช่เรื่องบังเอิญ สเปกถูกออกแบบรอบ cd:3/cd:0/cd:4/cd:-1 ที่ v8.5 วางไว้
+
+       | ช่อง (index) | สเปกเรียก        | MP  | เงื่อนไข                        |
+       |---|---|---|---|
+       | 0 (cd 3)  | Active Cast        | 25  | ไม่ติดคูลดาวน์ (นับเป็น "เทิร์น" = จำนวนครั้งที่ resolveAnswer ทำงานจบ ไม่ใช่มิลลิวินาที เพราะเกมนี้ไม่มีแนวคิด "เทิร์นของบอส" แยกจากจังหวะตอบคำถาม) |
+       | 1 (cd 0)  | Passive            | 0   | คลิกแล้วได้แค่ข้อความอธิบาย ห้ามผูกคลิกหักมานาเด็ดขาด (สเปกข้อ 2 สั่งไว้ตรง ๆ) |
+       | 2 (cd 4)  | Active Buff/Debuff | 40  | เหมือนช่อง 0 |
+       | 3 (cd -1) | Ultimate           | —   | **ไม่ใช้ตาราง MP คงที่ 60 ของสเปก** — ช่อง 4 มีเครื่องยนต์ของตัวเองอยู่แล้วตั้งแต่ v9.0 (`baPlCast` หัก 40% ของ Max MP ตามเกจ 8 พิพ ไม่ใช่ MP คงที่) ยังคง**เกจ+เปอร์เซ็นต์**ไว้ตามเดิม เพราะเป็นค่าที่ผ่านชุดเทสต์ 76 เคสของ v9.0 มาแล้ว และเอกสาร v9.0 พูดถึงเกจ 8 พิพเป็นเงื่อนไขหลักอยู่แล้ว (ตรงกับสเปกข้อ 4 เป๊ะ) เปลี่ยนไปใช้ 60 คงที่จะรื้อบาลานซ์ที่ทดสอบแล้วโดยไม่มีเหตุผลใหม่มาสนับสนุน |
+
+       ⚠️ ผลของช่อง 0/2 "ทำงานอัตโนมัติตลอดเวลา" มาตั้งแต่ v8.8 (ผ่าน baPlS1
+       สำหรับช่อง 0 และผ่าน baDsAny/baDsCache สำหรับอะตอมที่ช่อง 2 ผลิต เช่น
+       sc2 ของราชันเงา · mist/cut ของนักบวช) — การทำให้เป็น "Active Cast"
+       จริง ๆ ตามสเปก จึงหมายถึง **ปิดผลนั้นไว้เป็นค่าเริ่มต้น แล้วเปิดให้เฉพาะ
+       รอบที่เพิ่งกดใช้** ไม่ใช่เพิ่มโบนัสใหม่ซ้อนทับของเดิม — ทำผ่านการ "ห่อ"
+       ตัวอ่านผลสองจุดเท่านั้น ไม่แตะตัวคำนวณเดิมสักบรรทัด:
+
+         1) baPlS1 (ช่อง 0 → hunterAtk ระหว่าง BA_LIVE) ห่อให้คืน 0 เสมอ
+            นอกช่วง "armed" (กำลังมีผลอยู่)
+         2) baDsCache (ต้นทางของ baDsAny/baDsVal ที่ critChance · hdBaseDamage ·
+            goldMul · questionMs ฯลฯ อ่านต่อ) ห่อให้ล้าง fx ของ slots[0] กับ
+            slots[2] ทิ้งก่อนรวม sum ทุกครั้งที่ยังไม่ armed — **คำนวณ sum ใหม่
+            ทุกครั้งจาก slots ที่เพิ่งกรอง ไม่แตะ/ไม่มิวเทตอ็อบเจกต์แคชเดิม**
+            เพราะ baDsCache ของ v8.8 ยังแคชไว้ด้วยคีย์ role+ระดับ (ไม่รู้จัก
+            สถานะ armed) จึงต้องกรองสดที่ชั้นนอกทุกครั้งแทนที่จะพึ่งแคชตรง ๆ
+
+       สายที่ 'dmg' ของช่อง 0 กับ 2 บังเอิญซ้ำกันในบางสาย (เช่น 'blade' มี
+       dmg ทั้งสองช่อง) ไม่กระทบ เพราะ baPlS1 อ่าน **เฉพาะ index 0** ตรง ๆ
+       (ไม่ผ่าน baDsCache) และ baDsAny ไม่มีใครเรียกด้วยคีย์ 'dmg' เลยสักที่
+       (ตรวจแล้ว — 'dmg' ถูกอ่านผ่าน r.fx.dmg ของ baResolveSkillEffects ตรง ๆ
+       ที่ baPlS1/baPlUltAmt เท่านั้น จึงไม่มีทางเจือปนข้ามช่อง)
+
+       ── สถานะของรอบการเล่น (ไม่เซฟ ไม่ผูกบัญชี) ──────────────────────────── */
+    const BA_V91_VER = 'v9.1';
+    const BA_V91_MP  = [25, 0, 40, 0];      /* ดัชนี 1/3 ไม่ใช้ค่านี้ (ดูตารางข้างบน) */
+    let   BA_V91_ARM = [false, false, false, false];  /* กำลังมีผล (เพิ่งกดใช้ ยังไม่ถูกใช้จริง) */
+    let   BA_V91_CD  = [0, 0, 0, 0];                  /* คูลดาวน์เหลือกี่ "เทิร์น" */
+    const BA_V91_N   = { cast: 0, block_cd: 0, block_mp: 0, passive_tip: 0, consumed: 0, pose: 0 };
+
+    function baV91Err(e, w) { try { baErr(e, 'v91:' + w); } catch (x) {} }
+    function baV91Active(i) { return !!BA_V91_ARM[i]; }
+    function baV91Cost(i) { return BA_V91_MP[i] || 0; }
+    function baV91Reset() { BA_V91_ARM = [false, false, false, false]; BA_V91_CD = [0, 0, 0, 0]; }
+
+    /* ── 1) ปิดผลของช่อง 0 ไว้เป็นค่าเริ่มต้น เปิดเฉพาะรอบที่ armed ──────────
+       ห่อ "หลัง" wrapper ของ v8.8 (โหลดทีหลัง จึงเป็นชั้นนอกสุด) คืน 0 ทันที
+       ถ้ายังไม่ armed โดยไม่ต้องเรียกของเดิมเลย (ประหยัดกว่าและชัดเจนกว่า) */
+    if (typeof baPlS1 === 'function') {
+      const _v91S1 = baPlS1;
+      baPlS1 = function () {
+        try { if (!baV91Active(0)) return 0; } catch (e) { baV91Err(e, 's1gate'); }
+        return _v91S1.apply(this, arguments);
+      };
+    }
+
+    /* ── 2) ปิดผลของช่อง 2 ไว้เป็นค่าเริ่มต้น — กรองที่ baDsCache จุดเดียว
+       เพราะเป็นต้นทางร่วมของ baDsAny/baDsVal ที่ทุกอะตอมของช่อง 2 (sc2 ·
+       mist · cut · heal ฯลฯ) ไหลผ่าน ไม่ต้องไปนั่งห่อ critChance/goldMul/
+       questionMs/hdBaseDamage ทีละตัวซ้ำกับที่ v8.8 ทำไปแล้ว */
+    if (typeof baDsCache === 'function') {
+      const _v91Cache = baDsCache;
+      baDsCache = function () {
+        const base = _v91Cache.apply(this, arguments);
+        try {
+          if (!base || !base.slots) return base;
+          const slots = base.slots.map(function (sl, i) {
+            if (i === 2 && !baV91Active(2)) return Object.assign({}, sl, { fx: {} });
+            return sl;
+          });
+          const sum = {};
+          slots.forEach(function (r) {
+            Object.keys(r.fx).forEach(function (k) { sum[k] = (sum[k] || 0) + r.fx[k]; });
+          });
+          return Object.assign({}, base, { slots: slots, sum: sum });
+        } catch (e) { baV91Err(e, 'cache'); }
+        return base;
+      };
+    }
+
+    /* ── 3) ตัวลงมือจริง — ตรวจคูลดาวน์ → ตรวจ/หัก MP → armed → ซิงก์ UI ────
+       ทั้งหมดเป็นฟังก์ชันใหม่ ไม่แตะของ v8.8/v8.5 สักบรรทัด */
+    function baV91Activate(i, g, r) {
+      try {
+        if (BA_V91_CD[i] > 0) {
+          BA_V91_N.block_cd++;
+          try { skillTip('⏳ ' + r.name + ' ยังติดคูลดาวน์ (เหลือ ' + BA_V91_CD[i] + ' เทิร์น)'); } catch (x) {}
+          return false;
+        }
+        const cost = baV91Cost(i);
+        if ((g.mp || 0) < cost) {
+          BA_V91_N.block_mp++;
+          try { skillTip('🔮 MP ไม่พอ — ' + r.name + ' ต้องการ ' + cost + ' MP (มี ' + (g.mp || 0) + ')'); } catch (x) {}
+          return false;
+        }
+        g.mp = Math.max(0, (g.mp || 0) - cost);
+        BA_V91_ARM[i] = true;
+        BA_V91_CD[i]  = r.cd;
+        BA_V91_N.cast++;
+        try { renderStats(); } catch (x) {}                              /* ซิงก์หลอด MP ทันที */
+        try { baSyncCurrentClassSkills(true); } catch (x) {}             /* ซิงก์แถบสกิลทันที */
+        try {
+          if (baTriggerSkillAnim(baPlTier(g), i + 1, false)) BA_V91_N.pose++;
+        } catch (x) {}
+        try {
+          skillTip('⚔️ ' + r.name + ' (Lv ' + r.lv + ') พร้อมมีผลในเทิร์นถัดไป — ' +
+                   baDsText(baDsRoleOf(g), null, i, r.lv) + ' · หัก ' + cost + ' MP');
+        } catch (x) {}
+        return true;
+      } catch (e) { baV91Err(e, 'activate'); }
+      return false;
+    }
+
+    /* ── 4) เขียนทับ baDsClick ทั้งก้อน — ปลอดภัยเพราะ baDsInstall ของ v8.8
+       ถูกแก้ให้ผูกผ่าน closure แล้ว (ดูหัวคอมเมนต์ของแพตช์นี้) ช่องไม้ตาย
+       (cd < 0) กับช่องพาสซีฟ (cd === 0) ยังทำงานเป๊ะเหมือนเดิมทุกตัวอักษร
+       มีแค่ช่อง Active (cd > 0) ที่เปลี่ยนจาก "โชว์ทูลทิปเฉย ๆ" เป็นของจริง */
+    if (typeof baDsClick === 'function') {
+      baDsClick = function (e) {
+        try {
+          const b = e.target && e.target.closest ? e.target.closest('#gSkills [data-ds]') : null;
+          if (!b) return;
+          const i = b.getAttribute('data-ds') | 0, g = baG();
+          if (!g) return;
+          const r = baResolveSkillEffects(baDsRoleOf(g), null, i, baPlSlotLv(g, i));
+
+          if (r.cd < 0) {                              /* ช่อง 4 · ท่าไม้ตาย — ทางเดิมของ v8.5/v8.8/v9.0 */
+            BA_DS_N.cast++; baPlCast(); baSyncCurrentClassSkills(true); return;
+          }
+          if (r.cd === 0) {                             /* ช่อง 2 · พาสซีฟ — ห้ามผูก MP ตามสเปกข้อ 2 */
+            BA_V91_N.passive_tip++;
+            try {
+              skillTip('✦ ' + r.name + ' (Lv ' + r.lv + ') — ' +
+                       baDsText(baDsRoleOf(g), null, i, r.lv) +
+                       ' · พาสซีฟ ทำงานอัตโนมัติตลอดเวลา ไม่ต้องกดใช้');
+            } catch (x) {}
+            return;
+          }
+          baV91Activate(i, g, r);                       /* ช่อง 1/3 · Active Cast — ของใหม่ */
+        } catch (e2) { baDsErr(e2, 'click'); }
+      };
+    }
+
+    /* ── 5) นับ "เทิร์น" ที่ resolveAnswer จุดเดียว ──────────────────────────
+       ลดคูลดาวน์ทุกครั้งที่ตัดสินข้อจบ (ถูกหรือผิดก็นับเป็นหนึ่งเทิร์น) แล้ว
+       ปลด armed ทิ้งหลังเทิร์นนั้น — ต้องทำ "หลัง" เรียกของเดิมเสมอ เพราะ
+       hunterAtk/critChance/ฯลฯ ที่อ่าน baPlS1/baDsCache อยู่ในสายเดียวกันกับ
+       _v91Res.apply ข้างใน (BA_LIVE เป็น true ระหว่างนั้น) — armed ต้องยัง
+       เป็น true ตลอดการเรียกของเดิม แล้วค่อยปลดทีหลังในบรรทัดนี้ */
+    if (typeof resolveAnswer === 'function') {
+      const _v91Res = resolveAnswer;
+      resolveAnswer = function () {
+        const out = _v91Res.apply(this, arguments);
+        try {
+          for (let i = 0; i < 4; i++) {
+            if (BA_V91_CD[i] > 0) BA_V91_CD[i]--;
+            if (BA_V91_ARM[i]) { BA_V91_ARM[i] = false; BA_V91_N.consumed++; }
+          }
+          baSyncCurrentClassSkills(true);
+        } catch (e) { baV91Err(e, 'resolve'); }
+        return out;
+      };
+    }
+
+    /* รีเซ็ตสถานะของรอบการเล่น — ไม่ใช่ของบัญชี จึงไม่เซฟ (กฎเดียวกับ BA_LIVE
+       ของ v6.0 · HD_TIMEOUT ของ v4.8) เปลี่ยนสาย/เข้า-ออกเกมแล้วต้องเริ่มนับใหม่ */
+    if (typeof baPlSwitch === 'function') {
+      const _v91Sw = baPlSwitch;
+      baPlSwitch = function () {
+        const out = _v91Sw.apply(this, arguments);
+        try { baV91Reset(); } catch (e) { baV91Err(e, 'switch'); }
+        return out;
+      };
+    }
+    if (typeof startGame === 'function') {
+      const _v91Sg = startGame;
+      startGame = function () {
+        const out = _v91Sg.apply(this, arguments);
+        try { baV91Reset(); } catch (e) { baV91Err(e, 'start'); }
+        return out;
+      };
+    }
+    if (typeof exitGame === 'function') {
+      const _v91Eg = exitGame;
+      exitGame = function () {
+        try { baV91Reset(); } catch (e) { baV91Err(e, 'exit'); }
+        return _v91Eg.apply(this, arguments);
+      };
+    }
+
+    /* ── 6) Real-Time Sync — ปุ่มโชว์คูลดาวน์/ราคา MP/สถานะ armed สด ────────
+       ห่อ baDsBarHtml ต่อจาก v8.9 (ไอคอน) อีกชั้น — จับคู่ด้วย data-ds="N"
+       ตรง ๆ (ไม่ต้องนับลำดับแบบ v8.9 เพราะแอตทริบิวต์บอกดัชนีอยู่แล้ว) แล้ว
+       แก้เฉพาะ <span class="g-skill-mp"> กับคลาสของปุ่ม สำหรับช่อง 0/2 เท่านั้น
+       ช่อง 1/3 ปล่อยผ่าน (full) ไม่แตะ */
+    if (typeof baDsBarHtml === 'function') {
+      const _v91Bar = baDsBarHtml;
+      baDsBarHtml = function () {
+        let h = _v91Bar.apply(this, arguments);
+        try {
+          h = h.replace(/<button class="g-skill ([^"]*)" data-ds="(\d)">([\s\S]*?)<\/button>/g,
+            function (full, cls, idxStr, inner) {
+              const i = idxStr | 0;
+              if (i !== 0 && i !== 2) return full;
+              const cd = BA_V91_CD[i] || 0, armed = !!BA_V91_ARM[i], cost = baV91Cost(i);
+              let tag, stateCls;
+              if (armed)        { tag = '⚡ พร้อมใช้';         stateCls = 'ba-v91-armed'; }
+              else if (cd > 0)  { tag = 'CD ' + cd + ' เทิร์น'; stateCls = 'ba-v91-cd'; }
+              else              { tag = '🔮 ' + cost + ' MP';   stateCls = 'ba-v91-ready'; }
+              const newCls = (cls.replace(/\boff\b|\bready\b/g, '').trim() + ' ' + stateCls).trim();
+              const newInner = inner.replace(/<span class="g-skill-mp">[\s\S]*?<\/span>/,
+                '<span class="g-skill-mp">' + tag + '</span>');
+              return '<button class="g-skill ' + newCls + '" data-ds="' + i + '">' + newInner + '</button>';
+            });
+        } catch (e) { baDsErr(e, 'v91bar'); }
+        return h;
+      };
+    }
+
+    /* ── 7) CSS — สีบอกสถานะสามแบบ ไม่แตะขนาดกล่องของ .g-skill เลยสักกฎ
+       (ยืมโครง .g-skill ของ v4.0 ทั้งดุ้น เปลี่ยนแค่สี/เงา) */
+    function baV91Style() {
+      if (document.getElementById('baV91Style')) return;
+      const st = document.createElement('style');
+      st.id = 'baV91Style';
+      st.textContent =
+        '#gSkills .g-skill.ba-v91-ready{border-color:#22c55e;box-shadow:0 0 0 1px rgba(34,197,94,.35) inset}' +
+        '#gSkills .g-skill.ba-v91-armed{border-color:#f59e0b;box-shadow:0 0 8px rgba(245,158,11,.55)}' +
+        '#gSkills .g-skill.ba-v91-cd{opacity:.55;filter:grayscale(.4)}';
+      document.head.appendChild(st);
+    }
+
+    /* ── 8) ทางเข้าสาธารณะสำหรับชุดเทสต์ ────────────────────────────────── */
+    if (typeof baBattleAudit === 'function') {
+      const _v91Audit = baBattleAudit;
+      baBattleAudit = function () {
+        const o = _v91Audit.apply(this, arguments) || {};
+        try {
+          o.activeSkill = {
+            ver: BA_V91_VER,
+            mp: BA_V91_MP.slice(),
+            armed: BA_V91_ARM.slice(),
+            cd: BA_V91_CD.slice(),
+            styled: !!document.getElementById('baV91Style'),
+            n: Object.assign({}, BA_V91_N)
+          };
+        } catch (e) { baV91Err(e, 'audit'); }
+        return o;
+      };
+    }
+
+    (function baInstallV91() {
+      try { baV91Style(); } catch (e) { baV91Err(e, 'install'); }
     })();
 
 

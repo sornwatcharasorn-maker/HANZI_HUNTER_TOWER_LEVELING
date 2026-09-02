@@ -39833,7 +39833,7 @@
 
     const BA_V9_VER = '9.0';
     const BA_V9_N = { mrush: 0, recoilFoe: 0, recoilHero: 0, ghostFix: 0,
-                       fallback: 0, mpBlock: 0, mpSpend: 0 };
+                       fallback: 0, mpBlock: 0, mpSpend: 0, idleLife: 0 };
     function baV9Err(e, w) { try { baErr(e, 'v9:' + w); } catch (x) {} }
 
     /* ── 1) Ghosting Fix ────────────────────────────────────────────────────
@@ -39887,6 +39887,100 @@
             BA_V9_N.ghostFix++;
           }
         } catch (e) { baV9Err(e, 'paint'); }
+      };
+    }
+
+    /* 1.3 · Idle Life-Cycling — "หายใจ" ตอนยืนนิ่งแบบไม่ใช้ animation:infinite
+       `baAnimPaint()` ของ v8.7 ตั้ง backgroundPositionX เป็น '0%' ตายตัวเสมอ
+       (บรรทัด `el.style.backgroundPositionX = '0%';` ที่ 38552) แถบหลายเฟรม
+       อย่างท่ายืนของนักลอบสังหาร (n:3) จึงค้างอยู่ที่เฟรมแรกตลอด ดูนิ่งสนิท
+       ทั้งที่มีเฟรมให้สลับอยู่แล้ว — **ไม่ได้แก้ด้วย CSS `animation:infinite`**
+       (สเปกขอ `baHeroIdleBreathing` ที่ยืด/บีบด้วย transform วนไม่รู้จบ)
+       เพราะกับดักข้อ 31 ของ repo นี้พิสูจน์มาแล้วว่าอนิเมชันวนซ้ำตลอดเวลาใน
+       สนามรบทำให้ test_dual_warp_gate แกว่งจาก 8 เคสตกคงที่เป็น 8-12 แบบสุ่ม
+       (ต้นทุนคือ "ตอนรัน" ไม่ใช่ "ตอนโหลด" — วัดด้วยการปิดสนามรบทั้งก้อนแล้ว
+       เทียบ 3 รอบจึงแยกออก)
+
+       **⚠️ กับดักที่เจอระหว่างเขียนแพตช์นี้ — `baIdleTick()` ของ v6.1 เป็นโค้ดตาย
+       ตั้งแต่ v6.5 แล้ว อย่าไปเกาะมันอีก** ตอนแรกตั้งใจเกาะ `baIdleTick()` (นาฬิกา
+       900ms เดิมของ v6.1) ตามคำเตือนของ v6.5 เอง แต่วัดจริงด้วย Playwright แล้ว
+       พบว่า `BA_IDLE_T` เป็น `null` ค้างตลอดกาล ไม่เคยถูกอาร์มเลย — สาเหตุคือ
+       v6.5 section 4b เขียนทับ binding ระดับบนสุดของ `baIdleArm` ทั้งฟังก์ชัน
+       (`if (typeof baIdleArm === 'function') { baIdleArm = function () {...} }`
+       ที่บรรทัด ~23332) ให้ไปอาร์ม `BA_T5`/`baTick5()` (150ms) แทน **โดยตั้งใจ
+       ไม่เรียก `_old.apply()` เลย** ตามคอมเมนต์ของมันเอง: "ไม่เรียกของเดิม
+       เพราะจะได้นาฬิกาสองตัวขับเฟรมเดียวกันคนละคาบ แล้วท่ายืนจะกระตุกไม่เป็นจังหวะ"
+       — `baIdleTick()`/`BA_IDLE_T`/`baIdleArm()` ของ v6.1 จึงเป็นซากที่ไม่มีใคร
+       เรียกมาตั้งแต่ v6.5 ทุกจุดที่ยังเรียก `baIdleArm()` (startGame · renderMonster)
+       อาร์ม `BA_T5` ให้เองอยู่แล้วโดยที่เราไม่ต้องแตะอะไรเพิ่ม
+       **ใช้ **เกาะนาฬิกา `baTick5()` ตัวจริงที่ยังมีชีวิตอยู่แทน** (150ms ต่อจังหวะ
+       เดียวกับที่ v6.5 เตือนไว้ว่า "ห้ามตั้งนาฬิกาใหม่") แล้วหน่วงด้วยตัวนับของ
+       ตัวเองให้ทำงานทุก `BA_V9_IDLE_EV` (6) จังหวะ = ทุก 900ms พอดี — ตรงกับ
+       คาบ "หายใจ" ที่สเปกขอ ไม่เร็วจนดูกระตุก
+
+       สลับคลาส `.on` บนเฟรม `<img>` ที่ decode ไว้แล้ว = รีเพนต์กล่องเดียวหนึ่งครั้ง
+       คนละระดับกับ animation:infinite ที่รีคอมโพสิตทั้งหน้าทุกเฟรม — สลับ
+       backgroundPositionX/backgroundImage ด้วย **inline style ธรรมดา** (ไม่ใส่
+       !important) จึงชนกับ .ba-anm-in/.ba-anm-out (คุม transform คนละพร็อพเพอร์ตี้
+       กันสนิท) หรือคลาสอื่นของ v6.0/v6.3/v6.9 ไม่ได้เลย
+
+       สองกรณีถูกยุบเป็นเงื่อนไขเดียว — "ไล่รวมทุกเฟรมของทุกสถานะที่มีภาพจริง
+       ในสาย/ร่างที่กำลังเล่นอยู่ (idle → dash → s1-s4 ตามลำดับ BA_V9_FB_ORDER)
+       เป็นลิสต์แบนก้อนเดียว แล้ววนไปทีละก้อน" — มีทั้งนักลอบสังหาร (idle เอง
+       มี 3 เฟรมให้วนอยู่แล้ว) และ Soul Master / Priest (แต่ละสถานะมีแค่ 1 เฟรม
+       แต่มีหลายสถานะที่ต่างกัน จึงสลับ "ภาพ" แทนสลับ "เฟรมในภาพเดียว") — ตรงกับ
+       สิ่งที่ผู้เล่นขอ ("ถ้าทำ breathing ไม่ได้ ให้ใช้เฟรมภาพอื่นในคลาสเดียวกัน
+       สลับกันระหว่างรอต่อสู้") พอดีเป๊ะ โดยไม่ต้องรู้ว่าสายไหนมีกี่สถานะ/กี่เฟรม
+
+       **มีผลเฉพาะตอน `ba-anm-on` เท่านั้น** (โหมด per-class sprite ของ v8.7)
+       — โหมดเดิม (.ba-fig ของ v6.1/v6.5) มีตัวสลับของมันเองอยู่แล้วที่ `baHeroPose()`
+       (เรียกจาก `baTick5()` ทุก `BA_POSE_EV` จังหวะ = 450ms) ห้ามไปแตะซ้ำ
+       ไม่งั้นสองระบบจะแย่งกันวาดเฟรมเดียวกัน — กันด้วยเงื่อนไข `ba-anm-on` ที่
+       เป็นคนละโหมดกันเป๊ะอยู่แล้ว (มีอย่างใดอย่างหนึ่งเท่านั้น ไม่มีวันซ้อนกัน) */
+    const BA_V9_IDLE_EV = 6;    /* 6 จังหวะของ baTick5 (150ms) = 900ms ต่อการสลับ */
+    let BA_V9_IDLE_N = 0;
+    let BA_V9_IDLE_IX = 0;
+    function baV9IdleFrames(anim) {
+      const list = [];
+      for (let i = 0; i < BA_V9_FB_ORDER.length; i++) {
+        const st = anim[BA_V9_FB_ORDER[i]];
+        if (!st || !st.u) continue;
+        const n = st.n || 1;
+        for (let f = 0; f < n; f++) list.push({ u: st.u, n: n, i: f });
+      }
+      return list;
+    }
+    function baV9IdleLife() {
+      /* ท่าโจมตี/ท่าไม้ตายยังค้างอยู่ = ห้ามแตะเด็ดขาด (กันชนกับ baHeroPose()
+         ด้วยตัวแปรตัวเดียวกัน BA_ACT_TO — กติกาเดียวกับที่ baTriggerSkillAnim ล็อกไว้) */
+      if (BA_ACT_TO && Date.now() < BA_ACT_TO) return;
+      if (!baCanPlay() || baPaused()) return;
+      try {
+        const el = document.getElementById('baHero');
+        if (!el || !el.classList.contains('ba-anm-on')) return;
+        const g = baG();
+        if (!g) return;
+        baDsEnsureRegistry();
+        const cid = baPlClass(g).id, tier = baPlTier(g);
+        const anim = ba.assetRegistry[cid] && ba.assetRegistry[cid][tier] &&
+                     ba.assetRegistry[cid][tier].anim;
+        if (!anim) return;
+        const frames = baV9IdleFrames(anim);
+        if (frames.length < 2) return;   /* มีภาพให้โชว์แค่เฟรมเดียว ไม่มีอะไรให้สลับ */
+        BA_V9_IDLE_IX = (BA_V9_IDLE_IX + 1) % frames.length;
+        const fr = frames[BA_V9_IDLE_IX];
+        el.style.backgroundImage = 'url("' + fr.u + '")';
+        el.style.backgroundSize = (fr.n > 1 ? (fr.n * 100) + '% 100%' : 'contain');
+        el.style.backgroundPositionX = (fr.n > 1 ? (fr.i / (fr.n - 1)) * 100 : 0) + '%';
+        BA_V9_N.idleLife++;
+      } catch (e) { baV9Err(e, 'idlelife'); }
+    }
+    if (typeof baTick5 === 'function') {
+      const _v9Tick5 = baTick5;
+      baTick5 = function () {
+        _v9Tick5.apply(this, arguments);
+        BA_V9_IDLE_N++;
+        if (BA_V9_IDLE_N % BA_V9_IDLE_EV === 0) baV9IdleLife();
       };
     }
 
@@ -40055,6 +40149,16 @@
         const o = _v9Audit.apply(this, arguments) || {};
         try {
           const g = baG();
+          let idleFrames = 0;
+          if (g) {
+            try {
+              baDsEnsureRegistry();
+              const cid = baPlClass(g).id, tier = baPlTier(g);
+              const anim = ba.assetRegistry[cid] && ba.assetRegistry[cid][tier] &&
+                           ba.assetRegistry[cid][tier].anim;
+              if (anim) idleFrames = baV9IdleFrames(anim).length;
+            } catch (e) {}
+          }
           o.combatV9 = {
             ver: BA_V9_VER,
             ultMpPct: BA_V9_ULT_MP_PCT,
@@ -40062,6 +40166,8 @@
             mp: g ? (g.mp || 0) : 0,
             maxMp: g ? maxMpOf(g) : 0,
             styled: !!document.getElementById('baV9Style'),
+            idleIx: BA_V9_IDLE_IX,
+            idleFrames: idleFrames,
             n: Object.assign({}, BA_V9_N)
           };
         } catch (e) { baV9Err(e, 'audit'); }

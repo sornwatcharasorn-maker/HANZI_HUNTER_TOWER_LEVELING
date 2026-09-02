@@ -6,7 +6,7 @@
  * ชี้ไปที่ "ไฟล์แจก" ที่รากrepo โดยเจตนา — ต้องพิสูจน์ของที่นักเรียนได้ใช้จริง
  * ไม่ใช่ต้นฉบับที่ไม่มีใครได้ใช้ (แก้ต้นฉบับแล้วต้อง build ก่อนรันเสมอ · กับดักข้อ 28)
  *
- * สามเรื่องที่พิสูจน์
+ * สี่เรื่องที่พิสูจน์
  *   1) Ghosting Fix — สถานะที่ไม่มีภาพในทะเบียน (เช่น priest.c1.idle ว่าง)
  *      ยืมภาพจากสถานะพี่น้องในทะเบียนเดียวกันแทนที่จะปล่อยให้สไปรต์นักลอบสังหาร
  *      เดิมทะลุออกมา (.ba-fig) + แนวป้องกันชั้นที่สอง (ba-anm-on ถูกบังคับเสมอ)
@@ -14,6 +14,9 @@
  *      โดยไม่แตะเกจ 8 ขีดเลยสักหน่วย
  *   3) Full-Range Dash & Recoil — อสูรพุ่งเต็มระยะตอนสวนกลับ (เดิมมีแค่ฝั่งฮีโร่)
  *      + ท่า "โดนอัด" ที่ฝั่งถูกตีทั้งสองทาง
+ *   4) Idle Life-Cycling — สลับเฟรม/ภาพของ #baHero ระหว่างยืนรอต่อสู้ (เกาะ
+ *      baTick5() ตัวจริง ไม่ใช่ baIdleTick() ที่ตายไปแล้วตั้งแต่ v6.5)
+ *      ไม่ใช้ animation:infinite เด็ดขาด (กับดักข้อ 31)
  */
 const { chromium } = require('playwright');
 const fs = require('fs');
@@ -469,8 +472,80 @@ async function arena(page, floor, opts) {
     ok(log.length === 0, 'ไม่มีรายการของชั้นนี้ตกลง Error Log ของ v4.3 (' + log.length + ' รายการ)');
   }
 
-  // ══ บล็อก 15 · เลย์เอาต์ไม่ขยับแม้แต่พิกเซลเดียว (CLS = 0) ═════════════
-  head('บล็อก 15 · ความสูงการ์ดโจทย์ (CLS = 0)');
+  /* ══ บล็อก 15 · Idle Life-Cycling — "หายใจ" ตอนยืนนิ่งด้วยการสลับเฟรม ═════
+     ยืนยันว่า baV9IdleLife() เกาะ baTick5() (150ms) จริง ไม่ใช่ baIdleTick()
+     ที่ตายไปแล้วตั้งแต่ v6.5 (ดูคอมเมนต์ในซอร์ส "1.3 · Idle Life-Cycling")
+     · ทำงานเฉพาะตอน ba-anm-on (per-class sprite ของ v8.7) · หยุดตอนท่าโจมตี
+     ยังค้างอยู่ (BA_ACT_TO) · ไม่แตะ classList/transform เลยสักบรรทัด */
+  head('บล็อก 15 · Idle Life-Cycling ("หายใจ" ตอนยืนนิ่ง)');
+  {
+    /* 15.1 — สายที่มีแค่ 1 เฟรมต่อสถานะแต่หลายสถานะ (priest c1: dash+s1-s4
+       มีภาพ 5 สถานะ · idle ว่าง) ต้องสลับ "ภาพ" ไปเรื่อย ๆ ระหว่างรอสู้ */
+    await arena(page, 1, { classId: 'priest', level: 1, tanky: true });
+    const r1 = await page.evaluate(async () => {
+      const hero = document.getElementById('baHero');
+      const a0 = baBattleAudit().combatV9;
+      const seq = [];
+      for (let i = 0; i < 6; i++) {
+        await new Promise(res => setTimeout(res, 950));
+        seq.push({ bg: hero.style.backgroundImage, ix: baBattleAudit().combatV9.idleIx });
+      }
+      const a1 = baBattleAudit().combatV9;
+      return {
+        onClass: hero.classList.contains('ba-anm-on'),
+        idleFrames0: a0.idleFrames,
+        n0: a0.n.idleLife, n1: a1.n.idleLife,
+        distinctBg: new Set(seq.map(s => s.bg)).size,
+        distinctIx: new Set(seq.map(s => s.ix)).size
+      };
+    });
+    ok(r1.onClass, 'priest เข้าโหมด ba-anm-on (มีภาพจริงอย่างน้อยหนึ่งสถานะ)');
+    ok(r1.idleFrames0 >= 2, 'priest มีเฟรมให้สลับ ≥ 2 ใบ (ได้ ' + r1.idleFrames0 + ' — dash+s1-s4)');
+    ok(r1.n1 > r1.n0, 'ตัวนับ idleLife ขยับขึ้นเรื่อย ๆ ระหว่างยืนรอ (' + r1.n0 + ' → ' + r1.n1 + ')');
+    ok(r1.distinctBg >= 2, 'backgroundImage สลับไปมาจริง (' + r1.distinctBg + ' ค่าที่ต่างกันจาก 6 ตัวอย่าง)');
+    ok(r1.distinctIx >= 2, 'ดัชนีเฟรม (idleIx) ขยับจริง ไม่ค้างที่ตัวเดียว');
+
+    /* 15.2 — สายที่มีสถานะหลายเฟรมในภาพเดียว (assassin c1: idle n=3, dash n=4)
+       ต้องเห็น backgroundPositionX ไล่ค่าไปตามสูตร i/(n-1)*100% ไม่ใช่ค้างที่ 0% */
+    await arena(page, 1, { classId: 'assassin', level: 1, tanky: true });
+    const r2 = await page.evaluate(async () => {
+      const hero = document.getElementById('baHero');
+      const posXs = [];
+      for (let i = 0; i < 8; i++) {
+        await new Promise(res => setTimeout(res, 950));
+        posXs.push(hero.style.backgroundPositionX);
+      }
+      return { posXs: posXs, distinct: new Set(posXs).size };
+    });
+    ok(r2.distinct >= 2, 'assassin (มีแถบหลายเฟรม) — backgroundPositionX ไล่ค่าจริง (' +
+      r2.distinct + ' ค่าที่ต่างกัน: ' + r2.posXs.join(', ') + ')');
+    ok(r2.posXs.indexOf('0%') !== -1, 'ยังมีจังหวะที่เฟรม 0 โผล่ตามปกติ (ไม่ได้ข้ามไปเลย)');
+
+    /* 15.3 — ต้องหยุดสนิทระหว่างท่าโจมตี/ท่าไม้ตายค้างอยู่ (BA_ACT_TO)
+       ไม่ไปแย่งเฟรมกับ baFullMeleeStrike/baTriggerSkillAnim ที่กำลังเล่นอยู่ */
+    const r3 = await page.evaluate(async () => {
+      const g = G;
+      g.classId = 'assassin';
+      recalcStats();
+      if (typeof baTriggerSkillAnim === 'function') baTriggerSkillAnim(baPlTier(g), 0, false);
+      const lockedAt = BA_ANM_END;
+      const n0 = baBattleAudit().combatV9.n.idleLife;
+      /* ท่านี้ (โจมตีปกติ) กินเวลาสั้น ๆ ตาม st.ms — สุ่มระหว่างค้างแล้วเช็กว่า
+         idleLife ไม่ขยับตราบใดที่ Date.now() < BA_ANM_END */
+      await new Promise(res => setTimeout(res, Math.max(50, lockedAt - Date.now() - 60)));
+      const stillLocked = Date.now() < BA_ANM_END;
+      const n1 = baBattleAudit().combatV9.n.idleLife;
+      await new Promise(res => setTimeout(res, 1400));   /* ผ่านล็อกไปแล้ว + รอบสลับถัดไป */
+      const n2 = baBattleAudit().combatV9.n.idleLife;
+      return { stillLocked: stillLocked, n0: n0, n1: n1, n2: n2 };
+    });
+    ok(r3.stillLocked, 'จับจังหวะได้ตอนท่าโจมตียังล็อกอยู่จริง (BA_ANM_END ยังไม่ถึง)');
+    ok(r3.n1 === r3.n0, 'ระหว่างล็อกท่าโจมตี idleLife ไม่ขยับเลย (' + r3.n0 + ' → ' + r3.n1 + ')');
+    ok(r3.n2 > r3.n1, 'พ้นล็อกไปแล้ว idleLife กลับมาขยับต่อตามปกติ (' + r3.n1 + ' → ' + r3.n2 + ')');
+  }
+
+  // ══ บล็อก 16 · เลย์เอาต์ไม่ขยับแม้แต่พิกเซลเดียว (CLS = 0) ═════════════
+  head('บล็อก 16 · ความสูงการ์ดโจทย์ (CLS = 0)');
   {
     for (const w of [320, 390, 768]) {
       const p2 = await boot(browser, w, w === 320 ? 690 : (w === 768 ? 1024 : 844));

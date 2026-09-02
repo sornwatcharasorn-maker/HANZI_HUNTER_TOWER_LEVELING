@@ -40651,6 +40651,152 @@
       try { baHs2Fix(document.getElementById('baHero')); } catch (e) { baHs2Err(e, 'install'); }
     })();
 
+    /* ══════════════════════════════════════════════════════════════════════════
+       Patch v9.3 · UNIVERSAL CONTACT DASH & IMPACT SLASH VFX
+       ──────────────────────────────────────────────────────────────────────────
+       อยู่ในเนมสเปซ ba ของชั้น v6.0 เดิม ไม่ได้ตั้งพรีฟิกซ์ใหม่ (กติกาเดียวกับ
+       v6.1–v9.2.1) วางท้ายสุดของไฟล์ ต่อจาก baInstallHs2() ของ v9.2.1 และก่อน
+       baInstall() ไม่แก้โค้ดของ v4.0-v9.2.1 เลยแม้แต่บรรทัดเดียว
+
+       ⚠️ สเปกที่สั่งงานแพตช์นี้เรียกตัวเองว่า "v9.2" และขอ CSS ที่วัดระยะพุ่งด้วย
+       `calc(100cqw - 90px)` (container query units) พร้อมคลาสชื่อ .ba-hero-dashing /
+       .ba-monster-dashing / .ba-enemy-hit-recoil / .ba-hero-hit-recoil — เลขรุ่นชนกับ
+       "Patch v9.2 · NORMALIZE HERO SPRITE SCALING" ที่มีอยู่แล้วจริงในไฟล์นี้ (บวก
+       v9.2.1 ต่อท้าย) จึงต้องเลื่อนเป็น v9.3 ตามกติกาเดิมของ repo ที่เลขชั้นเดินตาม
+       ลำดับการห่อจริงเสมอ ไม่ใช่ตามเลขในคำสั่ง (precedent: v4.9.2 เรียกตัวเองว่า
+       "v4.8.2" ในคำสั่ง · v5.2 เรียกตัวเองว่า "v5.0")
+
+       และ **ระบบพุ่งเต็มระยะ + Impact Recoil ที่สเปกขอ มีอยู่แล้วเกือบทั้งหมด**
+       ตั้งแต่ v8.7 (baFullMeleeStrike — ฝั่งฮีโร่) และ v9.0 (baFullMeleeStrikeFoe +
+       ba-target-recoil/ba-v9-recoil-l — ฝั่งอสูร) ทั้งคู่วัดระยะจริงด้วย baSpot()
+       ไม่ใช่ cqw เพราะกรอบสนามกว้างไม่เท่ากันทุกจอ (คอมเมนต์ของ v9.0 เขียนไว้ตรง ๆ
+       ว่า "ไม่ใช้ cqw") — เขียนระบบคู่ขนานที่ใช้ cqw ทับเข้าไปอีกชุดจะได้ **สองระบบ
+       แย่งกันอนิเมท transform ของโหนดเดียวกัน** แถม cqw ยังต้องมี container-type:size
+       ประกาศไว้ที่บรรพบุรุษซึ่งไฟล์นี้ไม่เคยตั้ง และคำนวณระยะจาก "ความกว้างกรอบทั้งหมด"
+       ไม่ใช่ "ระยะถึงศัตรูจริง" (ตัวละครแต่ละตัวกว้างไม่เท่ากัน ยืนคนละจุดในแต่ละความ
+       กว้างจอ) ผลคือพุ่งเลยตัวศัตรูไปหรือหยุดก่อนถึง — แพตช์นี้จึงเรียกฟังก์ชันเดิมของ
+       v8.7/v9.0 ตรง ๆ แทนการเขียนระบบพุ่งซ้ำ
+
+       สองเรื่องที่ยังขาดจริง ๆ ถึงเติมในแพตช์นี้:
+
+       1) Universal Contact Dash (ฝั่งฮีโร่ กรณีสำรอง) — baStrike ของ v8.7 เรียก
+          baTriggerSkillAnim() ซึ่งพุ่งเต็มระยะให้ก็ต่อเมื่อ baAnimOn(g) เป็นจริง
+          (สายที่มีภาพสไปรต์ฝังแล้ว) วันนี้ทั้ง 8 role มีอย่างน้อยสถานะ dash/s1 ฝัง
+          ภาพครบจึงพุ่งเต็มระยะกันหมดแล้วในทางปฏิบัติ **แต่ไม่ได้การันตีไว้ในโค้ด**
+          — สายอาชีพใหม่ในอนาคตที่ยังไม่ได้ฝังภาพจะตกกลับไปใช้ท่าพุ่งสั้น 60/90px
+          ของ v6.3 (.ba-atk/.ba-atk2) ทันที ต่างจากฝั่งอสูรที่ v9.0 การันตี full-range
+          ไว้แบบไม่มีเงื่อนไขอยู่แล้ว (baFullMeleeStrikeFoe ถูกเรียกจาก baCounter
+          โดยไม่เช็ก baAnimOn เลย) แพตช์นี้ปิดช่องว่างนั้นด้วยการเรียก
+          baFullMeleeStrike() ตัวเดิมของ v8.7 ตรง ๆ **เฉพาะตอนที่เส้นทางสไปรต์ไม่ได้
+          พุ่งให้อยู่แล้ว** (!baAnimOn(g)) กันชนกับ v8.7 สองชั้น: เช็กเงื่อนไขก่อนเรียก
+          และ baFullMeleeStrike() เองก็ถอดคลาส .ba-atk/.ba-atk2 ทิ้งก่อนเสมออยู่แล้ว
+       2) Impact Slash VFX — เส้นแสงฟันดาบพาดทแยงตรงจุดปะทะ (คนละแบบกับ .ba-slash
+          เดิมของ v6.0 ที่เป็นเสี้ยววงแหวนกวาดผ่าน) ยิงที่จังหวะ BA_IMPACT เดียวกับ
+          ตัวเลขดาเมจ/Hit Stun/recoil ทุกอย่าง — เป็นของใหม่แท้ ๆ ไม่มีอะไรให้ชนซ้อน
+
+       ระบบ Impact Recoil ของ v9.0 (.ba-target-recoil / .ba-v9-recoil-l) ไม่ถูกแตะ
+       เลยสักบรรทัด — มันครอบข้อกำหนด "ชะงักถอย + แฟลชสว่างวาบ" ของสเปกไว้ครบแล้ว
+       เขียนระบบคู่ขนานทับเข้าไปจะได้ transform/filter ชนกันสองชุดบนโหนดเดียวโดยเปล่า
+       ประโยชน์ (กับดักข้อ 36 อีกรูปแบบหนึ่ง) */
+    const BA_V93_VER = '9.3';
+    const BA_V93_N = { fallback: 0, slashFoe: 0, slashHero: 0 };
+    function baV93Err(e, w) { try { baErr(e, 'v93:' + w); } catch (x) {} }
+
+    /* ── 1) Impact Slash VFX — วางตำแหน่งด้วย baSpot()/inline left-top ตรง ๆ
+       (กติกาเดียวกับ .ba-slash/.ba-hit เดิม) ไม่ใช้ top:50%/left:50% ในคลาส CSS
+       เพราะ #baFx ครอบทั้งกรอบสนาม ไม่ใช่ครอบแค่ตัวละครตัวเดียว — ถ้าจัดกึ่งกลาง
+       ด้วย CSS ตรง ๆ เส้นแสงจะไปโผล่กลางสนามแทนที่จะอยู่ตรงตัวที่โดนฟัน */
+    function baV93Slash(spot) {
+      if (!spot) return;
+      const el = baSpawn('<div class="ba-slash-vfx"></div>', 260);
+      if (!el) return;
+      el.style.left = (spot.x - 65) + 'px';
+      el.style.top  = (spot.y - 3) + 'px';
+    }
+
+    /* ── 2) ฮีโร่ตอบถูก — เติมทางสำรองพุ่งเต็มระยะ + slash ที่ตัวอสูร ───────── */
+    if (typeof baStrike === 'function') {
+      const _v93Strike = baStrike;
+      baStrike = function (dmg, crit, sup) {
+        const r = _v93Strike.apply(this, arguments);
+        try {
+          const g = baG();
+          if (baCanPlay() && !(g && baAnimOn(g))) {
+            baFullMeleeStrike(BA_LUNGE, !!(crit || sup));
+            BA_V93_N.fallback++;
+          }
+        } catch (e) { baV93Err(e, 'fallback'); }
+        try {
+          if (baCanPlay()) {
+            baLater(function () {
+              baV93Slash(baSpot('baFoe'));
+              BA_V93_N.slashFoe++;
+            }, BA_IMPACT);
+          }
+        } catch (e) { baV93Err(e, 'slash-strike'); }
+        return r;
+      };
+    }
+
+    /* อสูรสวนกลับ (ตอบผิด) ก็ได้ slash เหมือนกัน — เว้นตอนเกราะรับไว้ (blocked)
+       เพราะดาบไม่ได้เชือดอะไรจริง ๆ ตอนนั้น (ท่าเดียวกับที่ v6.3 ไม่ยิง .ba-slash
+       เดิมในสาขา blocked ของ baCounter) — ฝั่งอสูรพุ่งเต็มระยะอยู่แล้วโดย v9.0
+       ไม่ต้องเติมทางสำรองซ้ำ */
+    if (typeof baCounter === 'function') {
+      const _v93Counter = baCounter;
+      baCounter = function (dmg, blocked) {
+        const r = _v93Counter.apply(this, arguments);
+        try {
+          if (!blocked && baCanPlay()) {
+            baLater(function () {
+              baV93Slash(baSpot('baHero'));
+              BA_V93_N.slashHero++;
+            }, BA_IMPACT);
+          }
+        } catch (e) { baV93Err(e, 'slash-counter'); }
+        return r;
+      };
+    }
+
+    /* ── 3) CSS — transform/opacity ล้วน + position:absolute อยู่ใน #baFx
+       (overflow:hidden ที่ #baArena ตัดส่วนเกินให้เอง) ไม่มีกฎไหนแตะขนาดกล่องของ
+       อะไรเลย (CLS = 0) */
+    function baV93Style() {
+      if (document.getElementById('baV93Style')) return;
+      const st = document.createElement('style');
+      st.id = 'baV93Style';
+      st.textContent =
+        '.ba-slash-vfx{position:absolute;width:130px;height:5px;pointer-events:none;' +
+          'background:linear-gradient(90deg,transparent,#fff 38%,#7fe8ff 62%,transparent);' +
+          'filter:drop-shadow(0 0 10px rgba(127,232,255,.9)) drop-shadow(0 0 16px rgba(255,255,255,.8));' +
+          'animation:baSlashVfx .22s ease-out forwards}' +
+        '@keyframes baSlashVfx{' +
+          '0%{transform:rotate(-35deg) scaleX(.15);opacity:0}' +
+          '32%{transform:rotate(-35deg) scaleX(1.15);opacity:1}' +
+          '100%{transform:rotate(-35deg) scaleX(.3);opacity:0}}';
+      document.head.appendChild(st);
+    }
+
+    /* ── 4) ทางเข้าสาธารณะสำหรับชุดเทสต์ ─────────────────────────────────── */
+    if (typeof baBattleAudit === 'function') {
+      const _v93Audit = baBattleAudit;
+      baBattleAudit = function () {
+        const o = _v93Audit.apply(this, arguments) || {};
+        try {
+          o.contactDash = {
+            ver: BA_V93_VER,
+            styled: !!document.getElementById('baV93Style'),
+            n: Object.assign({}, BA_V93_N)
+          };
+        } catch (e) { baV93Err(e, 'audit'); }
+        return o;
+      };
+    }
+
+    (function baInstallV93() {
+      try { baV93Style(); } catch (e) { baV93Err(e, 'install'); }
+    })();
+
 
     (function baInstall() {
       try {

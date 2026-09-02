@@ -418,7 +418,7 @@ const cls = page => page.evaluate(() => {
   }
 
   // ══ บล็อก 6 · สายอื่นไม่ถูกแตะ (ก่อนมี v8.8) / ยังไม่มีภาพจึงตกกลับ ══════
-  head('บล็อก 6 · สายที่ยังไม่มีภาพเลยสักสถานะ ยังตกกลับไปใช้ท่า v6.3 เหมือนเดิม');
+  head('บล็อก 6 · สายที่ยังไม่มีภาพเลยสักสถานะ ตกกลับไปใช้ท่าพุ่งเต็มระยะของ v9.3 แทน');
   {
     /* ตั้งแต่ v8.8 · UNIVERSAL HOT-PLUG ASSET ENGINE ห่อ baAnimOn ให้เปิดเครื่อง
        อนิเมชันของชั้นนี้ให้ "ทุกสายที่มีภาพจริง" (baDsHasArt เช็กแบบ .some() —
@@ -430,7 +430,15 @@ const cls = page => page.evaluate(() => {
        priest ทิ้งชั่วคราวเองในเทสต์** (ท่าเดียวกับ hot-plug ของ test_skill_dispatch
        บล็อก 5) แล้วคืนค่าเดิมกลับหลังวัดเสร็จ แทนที่จะยืมสถานะว่างจากของจริง
        (พลิกจากเดิมที่ใช้ guardian แล้วภายหลังพลิกมาใช้ priest ล้วน ๆ —
-       precedent: v7.4 · v7.8 · v7.9 · v8.1-v8.4 พลิกกันมาแล้วทุกชั้น) */
+       precedent: v7.4 · v7.8 · v7.9 · v8.1-v8.4 พลิกกันมาแล้วทุกชั้น)
+
+       ตั้งแต่ Patch v9.3 · UNIVERSAL CONTACT DASH & IMPACT SLASH VFX เคสนี้ถูกพลิก
+       อีกรอบ — wrapper ของ `baStrike` ในชั้นนั้นเรียก `baFullMeleeStrike()` (ท่าพุ่ง
+       เต็มระยะของ v8.7) เป็นทางสำรองทันทีที่ `!(g && baAnimOn(g))` เพื่อการันตีว่า
+       ทุกสายได้ท่าพุ่งเต็มระยะเสมอ ไม่ใช่แค่สายที่มีภาพสไปรต์ · และ `baFullMeleeStrike`
+       ถอด `.ba-atk`/`.ba-atk2` ของ v6.3 ออกก่อนเสมอ (กติกาเดิมของมันเองตั้งแต่ v8.7)
+       ท่าพุ่งสั้นของ v6.3 จึงไม่มีวันเล่นอีกเลยไม่ว่าสายไหนจะมีภาพหรือไม่ก็ตาม —
+       precedent เดียวกับข้างบน: พลิกเทสต์เมื่อแพตช์ใหม่เปลี่ยนพฤติกรรมพื้นฐานโดยตั้งใจ */
     const b = await boot(browser);
     await enterGame(b.page, 'anm6');
     const other = await b.page.evaluate(() => {
@@ -450,8 +458,10 @@ const cls = page => page.evaluate(() => {
     });
     ok('สายที่ถูกเคลียร์ภาพจนว่างสนิท ไม่เข้าเงื่อนไขของชั้นนี้', other.on === false, other);
     eq('ตอบถูกแล้วไม่มีท่าของชั้นนี้เล่น', other.key, '');
-    ok('ท่าพุ่งของ v6.3 ยังทำงานตามเดิม',
-       other.cls.indexOf('ba-atk') >= 0 || other.cls.indexOf('ba-atk2') >= 0, other.cls);
+    ok('ท่าพุ่งสั้นของ v6.3 ถูกถอดออก (ba-atk/ba-atk2 ไม่มีอีกต่อไป)',
+       other.cls.indexOf('ba-atk') < 0 && other.cls.indexOf('ba-atk2') < 0, other.cls);
+    ok('ท่าพุ่งเต็มระยะของ v9.3 เข้ามาแทน (ba-anm-in ของ baFullMeleeStrike)',
+       other.cls.indexOf('ba-anm-in') >= 0, other.cls);
     ok('ไม่มี pageerror', b.errs.length === 0, b.errs);
     await b.ctx.close();
   }

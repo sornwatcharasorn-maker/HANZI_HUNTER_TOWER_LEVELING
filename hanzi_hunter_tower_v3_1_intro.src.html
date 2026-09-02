@@ -40246,7 +40246,7 @@
     const BA_V91_MP  = [25, 0, 40, 0];      /* ดัชนี 1/3 ไม่ใช้ค่านี้ (ดูตารางข้างบน) */
     let   BA_V91_ARM = [false, false, false, false];  /* กำลังมีผล (เพิ่งกดใช้ ยังไม่ถูกใช้จริง) */
     let   BA_V91_CD  = [0, 0, 0, 0];                  /* คูลดาวน์เหลือกี่ "เทิร์น" */
-    const BA_V91_N   = { cast: 0, block_cd: 0, block_mp: 0, passive_tip: 0, consumed: 0, pose: 0 };
+    const BA_V91_N   = { cast: 0, block_cd: 0, block_mp: 0, passive_tip: 0, consumed: 0, pose: 0, profile_paint: 0 };
 
     function baV91Err(e, w) { try { baErr(e, 'v91:' + w); } catch (x) {} }
     function baV91Active(i) { return !!BA_V91_ARM[i]; }
@@ -40440,6 +40440,53 @@
       document.head.appendChild(st);
     }
 
+    /* ── 7b) Diamond Matrix Parity — แผงโปรไฟล์แสดง MP เท่ากับแถบสกิล ──────
+       ห่อ baPlRender แล้วต่อท้าย "เนื้อข้อความ" ของป้าย .ba-pl-cd หลังวาด
+       เสร็จเท่านั้น — ไม่แตะ CSS/ขนาดการ์ดเลยสักกฎ (CLS = 0) เพราะเป็นการ
+       เติมความยาวข้อความในบรรทัดเดิม ไม่ใช่เพิ่มโหนด/แถวใหม่ · ป้ายอยู่ใน
+       `.ba-pl-sh` ที่ตั้ง `white-space` ปกติของหัวข้อ ความสูงการ์ดจึงไม่ขยับ
+
+       ตัวเลขอ่านจาก `baV91Cost(i)` / `BA_V9_ULT_MP_PCT` / `BA_PL_PIP_MAX`
+       ตัวเดียวกับที่แถบสกิล (baDsBarHtml) และตัวหักมานาจริง (baV91Activate
+       / baPlCast) ใช้อยู่แล้ว จึงไม่มีทางที่ป้ายนี้กับของจริงจะเพี้ยนกัน
+       (กติกาเดียวกับราคาร้านค้าของ v4.7.9.1) · **ห้ามฮาร์ดโค้ดเลข 25/40/40
+       ทับไว้** ต้องเรียกฟังก์ชัน/ค่าคงที่เดิมเสมอ
+
+       ตำแหน่ง i=0/1/2/3 ของ `.ba-pl-cd` ตรงกับลำดับ `c.slots.map()` ของ
+       `baPlRender` เป๊ะ (คงที่ทั้ง 4 สาย — cd 3/0/4/-1 เรียงเหมือนกันทุกสาย
+       ตาม `BA_PL_CLASSES`) ท่าเดียวกับที่ wrapper ของ baDsBarHtml ข้างบน
+       ใช้ดัชนี 0/2 ตัดสินช่อง Active โดยไม่ต้องอ่าน sl.cd ซ้ำ
+
+       ช่อง 2 (ดัชนี 1 · พาสซีฟ) ไม่ต่อท้ายอะไรเลย ตามสเปกข้อ 2 ที่ห้ามผูก
+       MP กับพาสซีฟ — ป้ายยังคงเป็น "PASSIVE" เฉย ๆ เหมือนเดิมทุกตัวอักษร
+
+       กันแทรกซ้ำ: `indexOf('MP') < 0` เช็กไว้เผื่อเรียกซ้อน แม้ในทางปฏิบัติ
+       `box.innerHTML = h` ของ baPlRender จะสร้างโหนดใหม่ทุกครั้งอยู่แล้ว */
+    if (typeof baPlRender === 'function') {
+      const _v91Pr = baPlRender;
+      baPlRender = function () {
+        const out = _v91Pr.apply(this, arguments);
+        try {
+          const box = document.getElementById('baPlBody');
+          const tags = box ? box.querySelectorAll('.ba-pl-cd') : null;
+          if (tags && tags.length) {
+            const suf = [
+              '· 🔮 ' + baV91Cost(0) + ' MP',
+              '',
+              '· 🔮 ' + baV91Cost(2) + ' MP',
+              '· 🔮 ' + BA_V9_ULT_MP_PCT + '% MP + ' + BA_PL_PIP_MAX + ' Pips'
+            ];
+            tags.forEach(function (el, i) {
+              const s = suf[i];
+              if (s && el.textContent.indexOf('MP') < 0) el.textContent += ' ' + s;
+            });
+            BA_V91_N.profile_paint++;
+          }
+        } catch (e) { baV91Err(e, 'plrender'); }
+        return out;
+      };
+    }
+
     /* ── 8) ทางเข้าสาธารณะสำหรับชุดเทสต์ ────────────────────────────────── */
     if (typeof baBattleAudit === 'function') {
       const _v91Audit = baBattleAudit;
@@ -40451,6 +40498,8 @@
             mp: BA_V91_MP.slice(),
             armed: BA_V91_ARM.slice(),
             cd: BA_V91_CD.slice(),
+            ultMpPctLabel: BA_V9_ULT_MP_PCT,
+            pipMaxLabel: BA_PL_PIP_MAX,
             styled: !!document.getElementById('baV91Style'),
             n: Object.assign({}, BA_V91_N)
           };

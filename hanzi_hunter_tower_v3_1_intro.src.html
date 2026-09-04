@@ -41273,6 +41273,242 @@
       try { baV95Style(); } catch (e) { baV95Err(e, 'install'); }
     })();
 
+    /* ══════════════════════════════════════════════════════════════════════
+       Patch v9.6 · SUBCONSCIOUS PURE GOLD ENDGAME (CODEX SEAL OVERWRITE)
+       ══════════════════════════════════════════════════════════════════════
+       อยู่ในเนมสเปซ `ba` ของชั้น v6.0 เดิม ไม่ได้ตั้งพรีฟิกซ์ใหม่ (กติกาเดียวกับ
+       v6.1–v9.5) วางท้ายสุดของไฟล์ ต่อจาก baInstallV95() และก่อน baInstall()
+       · ไม่แก้โค้ดของ v4.0-v9.5 เลยแม้แต่บรรทัดเดียว — ที่เพิ่มคือ wrapper 6 ตัว
+       (recordWord · TITLES.push · hunterAtk · renderStats · announceTitles ·
+       baV91Activate) บวกการ "เขียนทับในที่" ของ BA_MN_PILL[0].get (const
+       อาร์เรย์ แก้สมาชิกได้ — ท่าเดียวกับ AB_SEAL_FLOORS ของ v6.4 · BA_LVRANK
+       ของ v7.6) รายละเอียดตัวเลข/สูตรทั้งหมดอยู่ที่ CODEX_MASTERY_MATH.md
+
+       ⚠️ เขียนทับความหมายของผนึกดวงที่ 1 "📖 คลังอักขระ" ทั้งก้อนตามที่โจทย์สั่ง —
+       เดิมนับ "คำที่เคยตอบถูกอย่างน้อย 1 ครั้ง" (cxCount ของ v4.4) ตอนนี้นับเฉพาะ
+       คำที่ถึง Tier 4 (ศิลาทองคำบริสุทธิ์) เท่านั้น · cxCount / cxHas / CX_MILES
+       ของ v4.4 (หลอด MP/ทองจากคลังอักขระ) ไม่ถูกแตะเลย — เป็นระบบคนละเรื่องที่
+       ยังอ่าน "เคยตอบถูก" ตามเดิม ผนึกอันเดียวที่เปลี่ยนความหมายคือของ Monarch
+       Ascension (v8.0) เท่านั้น
+    */
+
+    const BA_SM_VER    = 'v9.6';
+    const BA_SM_N1      = 4;      /* Tier 1 คุ้นเคย — ปลดล็อกพินอิน */
+    const BA_SM_N2      = 8;      /* Tier 2 เขียวมรกต — ปลดล็อกคำแปล */
+    const BA_SM_N3      = 18;     /* Tier 3 ประกายทองคำ — กรอบการ์ด Shimmer */
+    const BA_SM_N4      = 30;     /* Tier 4 ศิลาทองคำบริสุทธิ์ — นับเข้าผนึก */
+    const BA_SM_GATE_FL = 12;     /* Gatekeeper ของ Tier 3/4 — ชั้น 12 ขึ้นไป */
+    const BA_SM_SPEED   = 2500;   /* Speed Test ของ Tier 4 — ตอบภายในกี่ ms */
+    const BA_SM_K       = 3;      /* ต้องไวติดกันกี่ครั้งล่าสุด */
+    const BA_SM_TKEY     = 'allknowing';
+    const BA_SM_TNAME    = 'ผู้หยั่งรู้รากอักขระ';
+    const BA_SM_CD_CUT   = 1;     /* CD สกิลทุกชนิด -1 เทิร์น */
+    const BA_SM_DMG_PCT  = 15;    /* ดาเมจทุกโหมด +15% */
+
+    function baSmErr(e, where) { try { baErr(e, 'sm:' + where); } catch (x) {} }
+
+    /* netScore = seen - 2×wrong (ไม่ใช่ seen-wrong ตรง ๆ) — จำเป็นเพื่อให้ตรง
+       กับข้อกำหนดของโจทย์เองว่า "ตอบผิดให้หักแต้มทันที (netScore-1)" ตอบถูก
+       ครั้งหนึ่งได้ +1 (seen+1) ตอบผิดครั้งหนึ่งต้องได้ -1 สุทธิ (seen+1, wrong+1
+       → net เปลี่ยน 1-2×1 = -1) สูตร seen-wrong เพียว ๆ ให้ผลตอบผิด = 0 สุทธิ
+       ซึ่งขัดกับข้อกำหนดของโจทย์เอง — ดู CODEX_MASTERY_MATH.md หัวข้อ 2 */
+    function baSmNet(w) { return (w && (((w.seen || 0)) - 2 * (w.wrong || 0))) || 0; }
+
+    function baSmGateOk(s) {
+      return !!s && ((s.maxFloor || 1) >= BA_SM_GATE_FL || !!(s.ab && s.ab.abyss));
+    }
+
+    /* คืนขั้น 0-4 ของคำหนึ่งคำ — อ่านจาก wordStats ที่ recordWord() ของ v4.0
+       เขียนอยู่แล้ว (ไม่มีฟิลด์ใหม่ที่ต้อง ensure/save เพิ่ม นอกจาก fastStreak
+       ที่ wrapper ของ recordWord ด้านล่างเติมเข้าไปในก้อนเดิม — รอดข้ามการ
+       ล็อกอินฟรีเพราะ saveProgress() ของ v4.0 ผูก a.wordStats = G.wordStats
+       ทั้งก้อนอยู่แล้ว ไม่ต้องเขียน save/load เพิ่มสักบรรทัด) */
+    function baSmTier(s, id) {
+      const w = s && s.wordStats && s.wordStats[String(id)];
+      if (!w) return 0;
+      const net = baSmNet(w);
+      if (net < BA_SM_N1) return 0;
+      if (net < BA_SM_N2) return 1;
+      if (net < BA_SM_N3) return 2;
+      if (net >= BA_SM_N4 && baSmGateOk(s) && (w.fastStreak || 0) >= BA_SM_K) return 4;
+      if (net >= BA_SM_N3 && baSmGateOk(s)) return 3;
+      return 2;
+    }
+
+    /* วนนับ Tier 4 จริงทั้ง 329 คำ — ใช้กับ "หลอดผนึก" ที่ต้องโชว์ความคืบหน้า
+       ระหว่างทาง (เช่น 150/329) จึง **ไม่มีด่านถูกแบบเหมา** เพราะด่านถูกแบบ
+       "s.correct >= 329×30" พิสูจน์ได้แค่ว่า "ครบ 329 หรือยัง" ไม่ได้แปลว่า
+       "ยังไม่ครบ 329 = นับได้ 0" — ผู้เล่นที่ทำได้ 200 คำแล้วยังต้องเห็น 200
+       ไม่ใช่ 0 ค้างอยู่จนกว่าจะครบ (แก้บั๊คที่พบระหว่างทดสอบ) · ยังปลอดภัยต่อ
+       ประสิทธิภาพเพราะฟังก์ชันนี้ถูกเรียกตอนเปิดแผงมงกุฎ/audit เท่านั้น
+       ไม่ใช่ทุกครั้งที่อ่าน store แบบ checkTitles */
+    function baSmTier4Count(s) {
+      if (!s || !s.wordStats || !(s.correct || 0)) return 0;
+      let n = 0;
+      for (let i = 0; i < VOCAB.length; i++) { if (baSmTier(s, VOCAB[i][0]) === 4) n++; }
+      return n;
+    }
+
+    /* boolean ล้วน — ใช้กับ checkTitles() ซึ่งถูกเรียกทุกครั้งที่อ่าน store
+       (ทุกบัญชี) จึงต้องมีด่านถูกแบบเหมาก่อนวนเสมอ (กติกาเดียวกับ archivist
+       ของ v4.4 / BA_C7 Mastery XII ของ v7.9): ผลรวม (seen-wrong) ของทุกคำ ===
+       s.correct เป๊ะ และ netScore_i <= (seen_i-wrong_i) เสมอ ดังนั้นถ้าจะให้
+       คำครบทั้ง 329 คำถึง netScore>=30 พร้อมกัน ต้องเคยตอบถูกรวมอย่างน้อย
+       329×30 ครั้ง จึงหนีบด่านถูกที่ s.correct >= VOCAB.length*N4 ได้ปลอดภัย
+       100% เฉพาะกับคำถาม "ครบหรือยัง" — ห้ามใช้ด่านนี้กับตัวนับความคืบหน้า */
+    function baSmAllGold(s) {
+      if (!s || (s.correct || 0) < VOCAB.length * BA_SM_N4) return false;
+      for (let i = 0; i < VOCAB.length; i++) { if (baSmTier(s, VOCAB[i][0]) !== 4) return false; }
+      return true;
+    }
+
+    function baSmGrandMastery(s) {
+      return !!s && Array.isArray(s.titles) && s.titles.indexOf(BA_SM_TKEY) !== -1;
+    }
+
+    /* ══ ผนึกดวงที่ 1 ── เขียนทับตัวนับของ Monarch Ascension (v8.0) ในที่ ═══ */
+    if (typeof BA_MN_PILL !== 'undefined' && Array.isArray(BA_MN_PILL) && BA_MN_PILL[0]) {
+      BA_MN_PILL[0].get = function (g) { return [baSmTier4Count(g), CX_TOTAL]; };
+    }
+
+    /* ══ Speed Streak ── ต่อท้ายเข้า wordStats ก้อนเดิมของ v4.0 ═══════════ */
+    if (typeof recordWord === 'function') {
+      const _smRecordWord = recordWord;
+      recordWord = function (id, wasCorrect, ms) {
+        const out = _smRecordWord.apply(this, arguments);
+        try {
+          const w = G.wordStats && G.wordStats[String(id)];
+          if (w) w.fastStreak = (wasCorrect && ms <= BA_SM_SPEED) ? ((w.fastStreak || 0) + 1) : 0;
+        } catch (e) { baSmErr(e, 'streak'); }
+        return out;
+      };
+    }
+
+    /* ══ ฉายา 👑 ผู้หยั่งรู้รากอักขระ — ไม่ใส่ bonus (v4.0) เพราะโบนัสของ
+       ผนึกนี้ถาวรไม่ว่าจะสวมฉายาไหน ผูกกับ "เคยได้ฉายานี้แล้วหรือยัง" แทน
+       ผ่าน baSmGrandMastery() ที่ wrapper สามตัวถัดไปเรียก ═════════════ */
+    (function () {
+      if (!TITLES.some(function (t) { return t.key === BA_SM_TKEY; })) {
+        TITLES.push({
+          key: BA_SM_TKEY, icon: '👑', name: BA_SM_TNAME,
+          cond: 'คลังอักขระถึงขั้นศิลาทองคำบริสุทธิ์ครบ ' + CX_TOTAL + ' คำ',
+          /* ด่านถูกก่อนวนนับ 329 คำ — กติกาเดียวกับ archivist ของ v4.4 */
+          check: function (s) { return baSmAllGold(s); }
+        });
+      }
+    })();
+
+    /* ══ CD สกิลทุกชนิด -1 เทิร์น ── ผูกกับ baV91Activate ของ v9.1 ซึ่งเป็น
+       ทางเดียวที่ผู้เล่นกด "ใช้สกิล" จริงในการเล่นปกติ (ช่อง 1/3 ของแถบสกิล
+       คลาส — ระบบ SKILLS/useSkill ของ v4.0 เดิมถูกแทนที่ไปแล้วตั้งแต่ v8.8/
+       v9.1 จึงไม่แตะ · ท่าไม้ตายช่อง 4 ใช้เกจ 8 ขีดไม่ใช่คูลดาวน์ ไม่มี "CD"
+       ให้ลด จึงไม่อยู่ในขอบเขตนี้เช่นกัน) ═══════════════════════════════ */
+    if (typeof baV91Activate === 'function') {
+      const _smV91Activate = baV91Activate;
+      baV91Activate = function (i, g, r) {
+        const out = _smV91Activate.apply(this, arguments);
+        try {
+          if (out && baSmGrandMastery(g) && typeof BA_V91_CD !== 'undefined' &&
+              (BA_V91_CD[i] || 0) > 0) {
+            BA_V91_CD[i] = Math.max(0, BA_V91_CD[i] - BA_SM_CD_CUT);
+          }
+        } catch (e) { baSmErr(e, 'cd'); }
+        return out;
+      };
+    }
+
+    /* ══ ดาเมจทุกโหมด +15% ── ห่อ hunterAtk() กด BA_LIVE เสมอ (บทเรียนของ
+       v7.9 · แกนพิฆาต): HP มอนสเตอร์คิดจาก hunterAtk() ตัวเดียวกันนี้ด้วย
+       ถ้าไม่กดด้วย BA_LIVE ตัวคูณจะไปดันเลือดมอนสเตอร์ให้หนาขึ้นตามไปด้วย
+       แล้วจ่ายราคาผนึกไปฟรี ๆ โดยไม่ได้อะไรเลย — BA_LIVE เป็นจริงเฉพาะ
+       ระหว่าง resolveAnswer() (v6.0) ซึ่งครอบทั้งหอคอย/เหวลึก/โหมดฝึกอยู่แล้ว
+       ตรงกับ "ดาเมจทุกโหมด" ตามคำสั่ง ═══════════════════════════════════ */
+    if (typeof hunterAtk === 'function') {
+      const _smHunterAtk = hunterAtk;
+      hunterAtk = function () {
+        const base = _smHunterAtk.apply(this, arguments);
+        try {
+          if (typeof BA_LIVE !== 'undefined' && BA_LIVE && baSmGrandMastery(baG())) {
+            return Math.max(1, Math.round(base * (1 + BA_SM_DMG_PCT / 100)));
+          }
+        } catch (e) { baSmErr(e, 'atk'); }
+        return base;
+      };
+    }
+
+    /* ══ ประกายละอองทองคำ ── ออร่าถาวรระหว่างอยู่ในสนามรบ ท่าเดียวกับ
+       .ba-elite ของ v6.4 เป๊ะ (static drop-shadow ผ่านคลาสสวิตช์ ไม่ใช้
+       animation:infinite ตามกับดักข้อ 31) ไม่มี DOM/รูปภาพเพิ่มสักไบต์ ═══ */
+    if (typeof renderStats === 'function') {
+      const _smRenderStats = renderStats;
+      renderStats = function () {
+        const out = _smRenderStats.apply(this, arguments);
+        try {
+          const arena = baArena();
+          if (arena) arena.classList.toggle('ba-sm-grand', baSmGrandMastery(baG()));
+        } catch (e) { baSmErr(e, 'stats'); }
+        return out;
+      };
+    }
+
+    function baSmStyle() {
+      if (document.getElementById('baSmStyle')) return;
+      const st = document.createElement('style');
+      st.id = 'baSmStyle';
+      st.textContent =
+        '#baArena.ba-sm-grand #baHero{filter:drop-shadow(0 0 10px rgba(255,200,69,.85)) ' +
+          'drop-shadow(0 0 18px rgba(255,225,140,.5))}';
+      document.head.appendChild(st);
+    }
+
+    /* ══ พิธีฉลองครั้งแรก ── ยืมสามฟังก์ชันที่มีอยู่แล้วล้วน ๆ ไม่เขียน
+       VFX/DOM/CSS ใหม่สักบรรทัด (baMnFlash ของ v8.0 · baBannerText ของ v6.3
+       · baSfx ของ v6.4) ห่อ announceTitles() จุดเดียวเพราะเป็นทางผ่านเดียว
+       ของทุกจุดที่ปลดฉายาในเกม (6 จุดเรียกทั้งไฟล์) ═════════════════════ */
+    if (typeof announceTitles === 'function') {
+      const _smAnnounce = announceTitles;
+      announceTitles = function (gained, fb) {
+        const out = _smAnnounce.apply(this, arguments);
+        try {
+          if (gained && gained.some(function (t) { return t.key === BA_SM_TKEY; })) {
+            try { baMnFlash(); } catch (e) {}
+            try {
+              baBannerText('👑 ' + BA_SM_TNAME,
+                'คลังอักขระตื่นเต็ม ' + CX_TOTAL + '/' + CX_TOTAL + ' · Pure Gold Mastery');
+            } catch (e) {}
+            try { baSfx('BA_SH_ROAR'); } catch (e) {}
+          }
+        } catch (e) { baSmErr(e, 'announce'); }
+        return out;
+      };
+    }
+
+    if (typeof baBattleAudit === 'function') {
+      const _smAudit = baBattleAudit;
+      baBattleAudit = function () {
+        const o = _smAudit.apply(this, arguments);
+        try {
+          const g = baG();
+          o.subconsciousMastery = {
+            ver: BA_SM_VER,
+            n1: BA_SM_N1, n2: BA_SM_N2, n3: BA_SM_N3, n4: BA_SM_N4,
+            gateFloor: BA_SM_GATE_FL, speedMs: BA_SM_SPEED, k: BA_SM_K,
+            tierOf: function (id) { return g ? baSmTier(g, id) : 0; },
+            t4count: g ? baSmTier4Count(g) : 0,
+            total: CX_TOTAL,
+            grand: g ? baSmGrandMastery(g) : false,
+            pillar0: (typeof BA_MN_PILL !== 'undefined' && g) ? BA_MN_PILL[0].get(g) : null,
+            styled: !!document.getElementById('baSmStyle')
+          };
+        } catch (e) { baSmErr(e, 'audit'); }
+        return o;
+      };
+    }
+
+    (function baInstallV96() {
+      try { baSmStyle(); } catch (e) { baSmErr(e, 'install'); }
+    })();
+
 
 
     (function baInstall() {

@@ -122,12 +122,28 @@ async function audit(page) { return await page.evaluate(() => baBattleAudit().mo
 /* ปั้นเสาหลักให้ครบทีละต้น — ทุกต้นอ่านจากฟิลด์ของชั้นล่างตรง ๆ จึงเสกได้หมด */
 async function fill(page, which) {
   await page.evaluate(w => {
-    if (w.codex) { G.wordStats = {}; VOCAB.forEach(v => { G.wordStats[v[0]] = { seen: 1, wrong: 0, recent: [] }; }); }
+    /* Patch v9.6 เขียนทับความหมายของผนึกดวงที่ 1 — ตอนนี้นับเฉพาะคำที่ถึง
+       Tier 4 (netScore=seen-2*wrong>=30 · ผ่านด่านชั้น 12+/เหวลึก · ไวติดกัน
+       3 ครั้งล่าสุด) จึงต้องปั้นฟิกซ์เจอร์ให้ผ่านทั้งสามเงื่อนไข · enterGame()
+       ตั้ง G.maxFloor = FLOOR_MAX ให้แล้วเสมอ ด่านชั้นจึงผ่านโดยอัตโนมัติ ·
+       G.correct ต้องพอสำหรับด่านถูกของ baSmAllGold (>= 329×30) ด้วย เพราะ
+       ฉายา 👑 ผู้หยั่งรู้รากอักขระ (ซึ่งขับพิธีขึ้นครองบัลลังก์ทั้งบล็อก 4/6)
+       เช็กเงื่อนไขนั้นแยกจากตัวนับของหลอดผนึก */
+    if (w.codex) {
+      G.wordStats = {};
+      VOCAB.forEach(v => { G.wordStats[v[0]] = { seen: 30, wrong: 0, recent: [], fastStreak: 3 }; });
+      G.correct = Math.max(G.correct || 0, VOCAB.length * 30);
+      /* correct=9870 กับ wrong เดิม (มักเป็น 0) จะดันความแม่นยำเป็น 100% เอง
+         ทำให้ผนึก "acc" ติดไปด้วยทั้งที่ไม่ได้ขอ (isolation ของบล็อก 2/3 พัง)
+         ดัน wrong ให้พอดันความแม่นยำลงต่ำกว่า 95% ไว้ก่อน — ถ้า w.acc ถูกขอ
+         มาด้วยในคำสั่งเดียวกัน บล็อกของมันซึ่งรันทีหลังจะรีเซ็ตกลับเป็น 0 ทับอยู่ดี */
+      if (!w.acc) G.wrong = Math.max(G.wrong || 0, 1000);
+    }
     if (w.core)  { const b = abOf(G) || abEnsure(G); AB_CORES.forEach(c => { b.core[c.key] = AB_CORE_MAX; }); }
     if (w.seal)  { const b = abOf(G) || abEnsure(G);
                    AB_SEAL_FLOORS.forEach(f => { b.seals[String(f)] = { broken: true, flawless: true }; }); }
     if (w.level) { G.level = BA_LV_MAX; recalcStats(); }
-    if (w.acc)   { G.correct = 200; G.wrong = 0; }
+    if (w.acc)   { G.correct = Math.max(G.correct || 0, 200); G.wrong = 0; }
     if (w.abyss) { const m = baMnOf(G) || baMnEnsure(G); m.sh = (1 << BA_MN_SH) - 1; }
     renderStats();
   }, which || {});

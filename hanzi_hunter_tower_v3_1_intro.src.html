@@ -42041,6 +42041,249 @@
       };
     }
 
+    // Patch v9.7.1 · AUDIT & EXPOSE SOUL CARDS UI
+    // ══════════════════════════════════════════════════════════════════
+    /* อยู่ในเนมสเปซ ba ของชั้น v6.0 เดิม ไม่ได้ตั้งพรีฟิกซ์ใหม่ (กติกาเดียวกับ
+       v6.1–v9.7) วางท้ายสุดของไฟล์ ต่อจาก baInstallV97()/audit hook ของ v9.7
+       และก่อน baInstall() · ไม่แก้โค้ดของ v4.0-v9.7 เลยแม้แต่บรรทัดเดียว
+       ทุกจุดเป็น wrapper หรือฟังก์ชันใหม่ล้วน (grep -c "baSc11\|ba-sc-tab
+       \|ba-sc-inlaybox\|ba-sc-equipbox" ยืนยันแล้วว่าว่างสนิทก่อนแพตช์นี้
+       — กับดักข้อ 36)
+
+       Audit: เครื่องยนต์ + คณิตศาสตร์ของ v9.7 ฝังอยู่ในโค้ดครบทุกบรรทัดและ
+       ผ่านชุดเทสต์แล้ว แต่ "ทางเข้า" มีอยู่ทางเดียวคือชิปเล็ก ๆ #baScChip
+       บนแถบหัวจอเล่น (v9.7 แทรกให้เองผ่าน baScPaintChip ที่ห่อ renderStats)
+       — ไม่มีปุ่มเด่นชัดใน Lobby (แถวปุ่มล่าง .g-actions) ไม่มีทางเข้าจาก
+       ร้านค้า และไม่มีทางเข้าจากประตูวาปก่อน/หลังบอส ผู้เล่นทั่วไปจึงแทบ
+       ไม่มีทางรู้ว่าระบบนี้มีอยู่ **นี่ไม่ใช่บั๊คของ v9.7** (ปุ่ม/โมดัลที่มีอยู่
+       ทำงานถูกต้องทุกอย่างเมื่อเปิดถึง) แต่เป็นงาน UX ที่ยังไม่เสร็จ — แพตช์นี้
+       จึงไม่แก้ตรรกะของ v9.7 เลยสักบรรทัด มีแค่ "เพิ่มทางเข้า" กับ "จัดแท็บ"
+
+       สามทางเข้าใหม่ (ปุ่มเดิม 10 ใบใน .g-actions ไม่ถูกลบ/แก้สักใบ — กับดักข้อ
+       11) และ Console Fallback หนึ่งทาง:
+       1) Lobby — ปุ่มเต็มแถวของตัวเอง ต่อท้าย .g-actions (บังคับ
+          grid-column:1/-1 ด้วย inline style เพราะ v8.5 ปิด auto full-span
+          ของ :last-child ไว้แล้วที่ specificity (1,2,1))
+       2) ร้านค้า #gShop — แทรกก่อนปุ่ม "✕ ปิดร้านค้า" (เปลือกโมดัลเป็น HTML
+          สแตติก ไม่เคยถูก innerHTML ทับทั้งก้อน จึงติดตั้งครั้งเดียวพอ)
+       3) ประตูวาปก่อน/หลังบอส #gWarp — มิเรอร์ท่าเดียวกับปุ่ม dwShop ของ
+          v4.9.2 เป๊ะ (เงื่อนไขการโชว์เดียวกัน: kind === DW_PRE || DW_POST
+          ไม่โชว์ตอน checkpoint หลัง HP หมด — DW_PRE/DW_POST เป็น const
+          ระดับสคริปต์ อ่านได้ตรงจากโค้ดที่แทรกทีหลังในสคริปต์เดียวกัน)
+       4) ba.openSoulCardsModal() — เรียกจาก Console ได้ทันที ไม่ต้องพึ่งปุ่มใด
+
+       Tab Split: ไม่ได้เขียน baScRow()/baScRender() ของ v9.7 ใหม่ (กติกาห้าม
+       แก้โค้ดของชั้นก่อนหน้า) ห่อทั้งสองแทน — Tab 1 "สมุดภาพ" ซ่อนแถบปุ่ม
+       สวม/หลอมของทุกแถวด้วย CSS attribute-selector บน data-tab (ไม่แตะ DOM
+       ของแถว) แล้วโชว์กล่องสรุปโบนัสถาวร (baScInlay ของ v9.7 อ่านตรง ๆ)
+       Tab 2 "สกัด & สวมใส่" โชว์กล่องสรุป 3 ช่องสวม + ปล่อยให้ปุ่มเดิมของ
+       v9.7 ทำงานตามปกติ — ไม่มีสารบัญข้อมูลชุดที่สอง (กับดักข้อ 35) ตัวเลข
+       ทั้งหมดอ่านจาก baScInlay/baScStar/baScDefOf ของ v9.7 ตัวเดียวกัน */
+
+    function baSc11Err(e, where) { try { baScErr(e, '11:' + where); } catch (x) {} }
+
+    // ── ทางเข้าที่ 1 · Lobby (.g-actions) ────────────────────────────
+    /* .g-actions เป็น HTML สแตติกตั้งแต่โหลดหน้า จึงเติมได้ทันทีตอนติดตั้ง
+       (กติกาเดียวกับ baPlMenu ของ v8.5 ที่เรียกตรงในบล็อกติดตั้งของมันเอง) */
+    function baSc11Menu() {
+      try {
+        if (document.getElementById('baScMenuBtn')) return;
+        const act = document.querySelector('.g-actions');
+        if (!act) return;
+        act.insertAdjacentHTML('beforeend',
+          '<button type="button" class="g-btn hint" id="baScMenuBtn" ' +
+          'onclick="baScOpen()" style="grid-column:1 / -1">' +
+          '🎴 คลังการ์ดวิญญาณ — ฝังถาวร · สวมการ์ด</button>');
+      } catch (e) { baSc11Err(e, 'menu'); }
+    }
+
+    // ── ทางเข้าที่ 2 · ร้านค้า #gShop ─────────────────────────────────
+    function baSc11Shop() {
+      try {
+        if (document.getElementById('baScShopBtn')) return;
+        const shop = document.getElementById('gShop');
+        if (!shop) return;
+        const close = shop.querySelector('.g-btn[onclick*="closeShop"]');
+        if (!close) return;
+        close.insertAdjacentHTML('beforebegin',
+          '<button type="button" class="g-btn hint" id="baScShopBtn" onclick="baScOpen()">' +
+          '🎴 คลังการ์ดวิญญาณ</button>');
+      } catch (e) { baSc11Err(e, 'shop'); }
+    }
+
+    // ── ทางเข้าที่ 3 · ประตูวาป #gWarp (มิเรอร์ dwShop ของ v4.9.2) ────
+    function baSc11Gate() {
+      try {
+        const w = document.getElementById('gWarp');
+        if (!w || document.getElementById('baScGateBtn')) return;
+        const go = w.querySelector('.g-warp-go');
+        if (!go) return;
+        go.insertAdjacentHTML('beforebegin',
+          '<button type="button" class="dw-shop" id="baScGateBtn" onclick="baScOpen()" ' +
+          'style="display:none">🎴 คลังการ์ดวิญญาณ</button>');
+      } catch (e) { baSc11Err(e, 'gate'); }
+    }
+    /* renderWarp ถูก v4.9.2 ห่อไว้แล้วหนึ่งชั้น (dwPaintGate) — ห่อซ้ำอีกชั้น
+       เป็นแบบแผนปกติของไฟล์นี้ · เงื่อนไขโชว์/ซ่อนเดียวกับปุ่ม dwShop เป๊ะ */
+    if (typeof renderWarp === 'function') {
+      const _baSc11Warp = renderWarp;
+      renderWarp = function (kind) {
+        const r = _baSc11Warp.apply(this, arguments);
+        try {
+          baSc11Gate();
+          const btn = document.getElementById('baScGateBtn');
+          if (btn) btn.style.display = (kind === DW_PRE || kind === DW_POST) ? 'block' : 'none';
+        } catch (e) { baSc11Err(e, 'warp'); }
+        return r;
+      };
+    }
+
+    // ── ทางเข้าที่ 4 · Console Fallback ───────────────────────────────
+    /* ตามสเปกข้อ 3 — พิมพ์ ba.openSoulCardsModal() ใน Console แล้วต้องเด้ง
+       ขึ้นมาได้ทันทีไม่ว่าจะยืนอยู่ตรงไหนของเกม (แค่ต้องล็อกอินแล้ว) */
+    if (typeof ba === 'object' && ba) {
+      ba.openSoulCardsModal = function () {
+        try { baScOpen(); } catch (e) { baSc11Err(e, 'console'); }
+      };
+    }
+
+    // ── Tab Split — ห่อ baScDom()/baScRender() ของ v9.7 ไม่แก้ในที่ ────
+    function baSc11Tab(t) {
+      try {
+        const board = document.getElementById('baScBoard');
+        if (!board) return;
+        board.dataset.tab = (t === 'equip') ? 'equip' : 'album';
+        const tabs = document.getElementById('baScTabs');
+        if (!tabs) return;
+        const btns = tabs.querySelectorAll('.ba-sc-tabbtn');
+        for (let i = 0; i < btns.length; i++) {
+          btns[i].classList.toggle('on', btns[i].getAttribute('data-t') === board.dataset.tab);
+        }
+      } catch (e) { baSc11Err(e, 'tab'); }
+    }
+    if (typeof baScDom === 'function') {
+      const _baSc11Dom = baScDom;
+      baScDom = function () {
+        const existed = !!document.getElementById('baScBoard');
+        const r = _baSc11Dom.apply(this, arguments);
+        try {
+          if (!existed) {
+            const board = document.getElementById('baScBoard');
+            const body  = document.getElementById('baScBody');
+            if (board && body && !document.getElementById('baScTabs')) {
+              board.dataset.tab = 'album';
+              body.insertAdjacentHTML('beforebegin',
+                '<div class="ba-sc-tabs" id="baScTabs">' +
+                  '<button type="button" class="ba-sc-tabbtn on" data-t="album" ' +
+                  'onclick="baSc11Tab(\'album\')">📔 สมุดภาพ · ฝังถาวร</button>' +
+                  '<button type="button" class="ba-sc-tabbtn" data-t="equip" ' +
+                  'onclick="baSc11Tab(\'equip\')">⚔️ สกัด · สวมใส่ 3 ช่อง</button>' +
+                '</div>' +
+                '<div class="ba-sc-inlaybox" id="baScInlayBox"></div>' +
+                '<div class="ba-sc-equipbox" id="baScEquipBox"></div>');
+            }
+          }
+        } catch (e) { baSc11Err(e, 'dom'); }
+        return r;
+      };
+    }
+    if (typeof baScRender === 'function') {
+      const _baSc11Render = baScRender;
+      baScRender = function () {
+        const r = _baSc11Render.apply(this, arguments);
+        try {
+          const g = baG();
+          const s = g ? baScOf(g) : null;
+          const ib = document.getElementById('baScInlayBox');
+          if (ib) {
+            ib.innerHTML = !g ? '' :
+              '<div class="ba-sc-inlay-t">📔 โบนัสสะสมถาวร — มีในคลังก็ได้ ไม่ต้องสวม</div>' +
+              '<div class="ba-sc-inlay-row">❤️ HP +' + baScInlay(g, 'hp') + ' · ' +
+                '⚔️ ดาเมจ +' + baScInlay(g, 'atk') + '% · ' +
+                '🪙 ทอง +' + baScInlay(g, 'gold') + '%</div>' +
+              '<div class="ba-sc-inlay-row">🃏 สะสมแล้ว ' + baScUniqueCount(g) + ' / ' +
+                baScCat().length + ' ใบ · เก็บครบทุกใบในธาตุเดียวกันจึงได้โบนัสทอง</div>';
+          }
+          const eb = document.getElementById('baScEquipBox');
+          if (eb) {
+            const rows = [];
+            for (let i = 0; i < 3; i++) {
+              const id = s && s.equip[i];
+              const d  = id ? baScDefOf(id) : null;
+              rows.push('<div class="ba-sc-slot">ช่อง ' + (i + 1) + ': ' +
+                (d ? esc(d.name) + (baScStar(g, id) > 0 ? ' ' + '⭐'.repeat(baScStar(g, id)) : '')
+                   : '— ว่าง —') + '</div>');
+            }
+            eb.innerHTML = '<div class="ba-sc-inlay-t">⚔️ ช่องสวม 3 ช่อง</div>' + rows.join('');
+          }
+        } catch (e) { baSc11Err(e, 'render'); }
+        return r;
+      };
+    }
+
+    // ── CSS — กฎทั้งหมดอยู่ใต้แผงคลังการ์ด/ปุ่มทางเข้า ไม่แตะเลย์เอาต์
+    //         ของหน้าเล่นเลยสักบรรทัด (CLS = 0) ═══════════════════════
+    function baSc11Style() {
+      if (document.getElementById('baSc11Style')) return;
+      const st = document.createElement('style');
+      st.id = 'baSc11Style';
+      st.textContent =
+        '#baScBoard .ba-sc-tabs{display:flex;gap:6px;margin-bottom:8px}' +
+        '#baScBoard .ba-sc-tabbtn{flex:1;border:1px solid rgba(255,255,255,.18);border-radius:8px;' +
+          'padding:7px 6px;background:rgba(255,255,255,.04);color:inherit;font:inherit;' +
+          'font-size:11.5px;cursor:pointer}' +
+        '#baScBoard .ba-sc-tabbtn.on{border-color:rgba(255,200,69,.6);' +
+          'background:rgba(255,200,69,.14);color:#ffe08a}' +
+        '#baScBoard .ba-sc-inlaybox,#baScBoard .ba-sc-equipbox{display:none;padding:8px 10px;' +
+          'border:1px solid rgba(255,255,255,.13);border-radius:8px;background:rgba(255,255,255,.03);' +
+          'margin-bottom:8px;font-size:12px}' +
+        '#baScBoard .ba-sc-inlay-t{font-weight:600;margin-bottom:4px;opacity:.85}' +
+        '#baScBoard .ba-sc-inlay-row{margin-top:3px}' +
+        '#baScBoard .ba-sc-slot{padding:2px 0}' +
+        '#baScBoard[data-tab="album"] .ba-sc-inlaybox{display:block}' +
+        '#baScBoard[data-tab="equip"] .ba-sc-equipbox{display:block}' +
+        '#baScBoard[data-tab="album"] .ba-sc-row .ba-sc-btns{display:none}' +
+        '#baScMenuBtn{background:linear-gradient(180deg,#2a1a3a,#150a20);' +
+          'border-color:rgba(255,157,108,.45);color:#ff9d6c}';
+      (document.head || document.documentElement).appendChild(st);
+    }
+
+    (function baInstallV971() {
+      try {
+        baSc11Style();
+        baSc11Menu();   /* .g-actions สแตติกอยู่แล้ว เติมได้ตั้งแต่โหลดหน้า */
+        baSc11Shop();   /* #gShop สแตติกอยู่แล้วเช่นกัน — เปลือกไม่เคยถูกทับใหม่ */
+      } catch (e) { baSc11Err(e, 'install'); }
+    })();
+
+    // ══ ทางเข้าสาธารณะสำหรับชุดเทสต์ ═══════════════════════════════════
+    if (typeof baBattleAudit === 'function') {
+      const _baSc11Audit = baBattleAudit;
+      baBattleAudit = function () {
+        const o = _baSc11Audit.apply(this, arguments) || {};
+        try {
+          const board = document.getElementById('baScBoard');
+          o.soulCardsUi = {
+            ver: '9.7.1',
+            menuBtn: !!document.getElementById('baScMenuBtn'),
+            shopBtn: !!document.getElementById('baScShopBtn'),
+            gateBtn: !!document.getElementById('baScGateBtn'),
+            gateVisible: (function () {
+              const b = document.getElementById('baScGateBtn');
+              return !!b && getComputedStyle(b).display !== 'none';
+            })(),
+            tabs: !!document.getElementById('baScTabs'),
+            tab: board ? (board.dataset.tab || 'album') : '',
+            inlayBox: !!document.getElementById('baScInlayBox'),
+            equipBox: !!document.getElementById('baScEquipBox'),
+            styled: !!document.getElementById('baSc11Style'),
+            consoleFallback: typeof ba === 'object' && ba && typeof ba.openSoulCardsModal === 'function'
+          };
+        } catch (e) { baSc11Err(e, 'audit'); }
+        return o;
+      };
+    }
+
 
     (function baInstall() {
       try {

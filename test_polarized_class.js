@@ -399,29 +399,46 @@ async function goFloor(p, f) {
   }
 
   // ══ บล็อก 7 · แถวปุ่มล่างสองคอลัมน์ + SYSTEM SCAN ═══════════════════════
+  // v9.7.1 · SOUL CARDS ต่อปุ่มที่ 11 (เต็มแถวของตัวเอง) เข้าไปหลัง PROFILE
+  // จึง SCAN/PROFILE ไม่ใช่ "สองปุ่มสุดท้าย" อีกต่อไป — จับคู่ด้วยข้อความแทน
+  // ตำแหน่งท้ายอาร์เรย์ (เคสของชุดเดิมที่ถูกพลิกโดยตั้งใจ — ดู CLAUDE.md กับดักข้อ 11)
   log('\n── บล็อก 7 · Bottom Menu 2-Col + SYSTEM SCAN 🪙 5,000 ──');
   {
     const p = await openGame(browser, 'plG', 390, 844);
     const m = await p.evaluate(() => {
       const bs = [...document.querySelectorAll('.g-actions .g-btn')];
-      const last = bs[bs.length - 1], prev = bs[bs.length - 2];
-      const cs = getComputedStyle(last), cs2 = getComputedStyle(prev);
-      const rl = last.getBoundingClientRect(), rp = prev.getBoundingClientRect();
-      return { n: bs.length, lastTxt: last.textContent.trim(), prevTxt: prev.textContent.trim(),
-               lastSpan: cs.gridColumn, prevSpan: cs2.gridColumn,
-               sameRow: Math.abs(rl.top - rp.top) < 3,
-               sideBySide: rp.right <= rl.left + 2, price: baScanPrice(),
-               id: last.id, gridCols: getComputedStyle(document.querySelector('.g-actions')).gridTemplateColumns };
+      const scan = bs.find(b => /SYSTEM SCAN/.test(b.textContent));
+      const prof = bs.find(b => /PROFILE/.test(b.textContent));
+      const soul = bs.find(b => /คลังการ์ดวิญญาณ/.test(b.textContent));
+      const rs = scan.getBoundingClientRect(), rp = prof.getBoundingClientRect();
+      const rSoul = soul ? soul.getBoundingClientRect() : null;
+      return { n: bs.length, scanTxt: scan.textContent.trim(), profTxt: prof.textContent.trim(),
+               profSpan: getComputedStyle(prof).gridColumn,
+               sameRow: Math.abs(rs.top - rp.top) < 3,
+               sideBySide: rs.right <= rp.left + 2, price: baScanPrice(),
+               soulTxt: soul ? soul.textContent.trim() : null,
+               soulSpan: soul ? getComputedStyle(soul).gridColumn : null,
+               soulIsLast: soul === bs[bs.length - 1],
+               soulBelow: rSoul ? rSoul.top > rp.bottom - 3 : null,
+               gridCols: getComputedStyle(document.querySelector('.g-actions')).gridTemplateColumns };
     });
-    eq('ปุ่มในแถวล่างครบ 10 ใบ', m.n, 10);
-    ok('คอลัมน์ซ้ายคือ SYSTEM SCAN', /SYSTEM SCAN/.test(m.prevTxt), m.prevTxt);
-    eq('ป้าย SYSTEM SCAN มีราคา 🪙 5,000', m.prevTxt, 'SYSTEM SCAN — เฉลยอักขระ (🪙 5,000)');
-    ok('คอลัมน์ขวาคือ PROFILE', /PROFILE/.test(m.lastTxt), m.lastTxt);
-    eq('ปุ่มขวาคือ 👤 PROFILE — ข้อมูลตัวละคร', m.lastTxt, '👤 PROFILE — ข้อมูลตัวละคร');
-    eq('ปุ่มสุดท้ายไม่กินเต็มแถวแล้ว', m.lastSpan, 'auto');
-    ok('สองปุ่มอยู่แถวเดียวกัน', m.sameRow === true, m);
-    ok('เรียงซ้าย-ขวาจริง', m.sideBySide === true, m);
+    eq('ปุ่มในแถวล่างครบ 11 ใบ (10 เดิม + คลังการ์ดวิญญาณของ v9.7.1)', m.n, 11);
+    ok('มีปุ่ม SYSTEM SCAN', /SYSTEM SCAN/.test(m.scanTxt), m.scanTxt);
+    eq('ป้าย SYSTEM SCAN มีราคา 🪙 5,000', m.scanTxt, 'SYSTEM SCAN — เฉลยอักขระ (🪙 5,000)');
+    ok('มีปุ่ม PROFILE', /PROFILE/.test(m.profTxt), m.profTxt);
+    eq('ปุ่ม PROFILE คือ 👤 PROFILE — ข้อมูลตัวละคร', m.profTxt, '👤 PROFILE — ข้อมูลตัวละคร');
+    eq('ปุ่ม PROFILE ยังไม่กินเต็มแถว (จับคู่กับ SCAN)', m.profSpan, 'auto');
+    ok('SCAN กับ PROFILE อยู่แถวเดียวกัน', m.sameRow === true, m);
+    ok('SCAN กับ PROFILE เรียงซ้าย-ขวาจริง', m.sideBySide === true, m);
     eq('ราคาสแกนคงที่ 5,000', m.price, 5000);
+
+    /* v9.7.1 · ปุ่มคลังการ์ดวิญญาณเป็นปุ่มที่ 11 กินเต็มแถวของตัวเอง
+       ต่อจาก SCAN/PROFILE (แถวที่ 6) — inline style ชนะกฎ CSS ของ v8.5
+       ที่ปิด auto-full-span ของ :last-child ไว้แล้ว (ดู CLAUDE.md v9.7.1) */
+    ok('มีปุ่มคลังการ์ดวิญญาณ (v9.7.1)', !!m.soulTxt, m.soulTxt);
+    eq('ปุ่มคลังการ์ดวิญญาณเป็นปุ่มสุดท้าย', m.soulIsLast, true);
+    eq('ปุ่มคลังการ์ดวิญญาณกินเต็มแถวของตัวเอง', m.soulSpan, '1 / -1');
+    ok('ปุ่มคลังการ์ดวิญญาณอยู่แถวถัดจาก SCAN/PROFILE', m.soulBelow === true, m);
 
     /* กันแทรกซ้ำ (กับดักข้อ 2) */
     const dup = await p.evaluate(() => { for (let i = 0; i < 8; i++) baPlMenu();

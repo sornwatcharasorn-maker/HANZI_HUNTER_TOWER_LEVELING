@@ -8706,7 +8706,7 @@
         return (b.getAttribute('onclick') || '').indexOf('openShop') !== -1;
       })[0];
       const html = '<button class="g-btn hint" id="cxBoardBtn" onclick="cxOpenBoard()">' +
-                   '📖 CODEX — คลังอักขระ<span class="cx-badge" id="cxBadge" style="display:none">0</span></button>';
+                   '📖 CODEX — คลังอักขระทองคำ<span class="cx-badge" id="cxBadge" style="display:none">0</span></button>';
       if (shop) shop.insertAdjacentHTML('afterend', html);
       else act.insertAdjacentHTML('beforeend', html);
     }
@@ -32741,20 +32741,38 @@
        ทุกต้นอ่านจากฟังก์ชันของชั้นล่างตรง ๆ **ไม่มีตัวนับซ้อน** ยกเว้นต้นที่ 6
        ซึ่งต้องจำว่า "ทัพเงาตัวไหนถูกปราบไปแล้วบ้าง" เพราะ v6.6 ไม่เคยเก็บไว้ */
     const BA_MN_PILL = [
-      { id: 'codex', icon: '📖', name: 'คลังอักขระ',    col: '#2ef2d0',
+      { id: 'codex', icon: '📖', name: 'คลังอักขระทองคำ', col: '#2ef2d0',
+        desc: 'นับเฉพาะคำที่ไต่ถึงขั้น Tier 4 · ศิลาทองคำบริสุทธิ์ 👑 เท่านั้น ' +
+              '(netScore = ตอบถูก − 2×ตอบผิด ต้อง ≥ 30 · ผ่านด่าน Gatekeeper ที่ชั้น 12 ' +
+              'หรือเปิดโหมดเหวลึกแล้ว · และมีสถิติตอบถูกไว ≤2.5 วิ ติดกันอย่างน้อย 3 ครั้งล่าสุด) ' +
+              'ไม่ใช่แค่คำที่เคยตอบถูกครั้งเดียวเหมือนคลังอักขระของ v4.4 อีกต่อไป — ' +
+              'ต้องทบทวนคำเดิมซ้ำจนแม่นจริงถึงจะนับ ครบ 329 คำเมื่อไรรับฉายา 👑 ผู้หยั่งรู้รากอักขระทันที',
         get: function (g) { return [cxCount(g), CX_TOTAL]; } },
       { id: 'core',  icon: '⚙️', name: 'แกนกลางระบบ',   col: '#8fd8ff',
+        desc: 'ผลรวมระดับของแกนกลางระบบทั้ง 7 เส้น (มานา · เวลา · โชคลาภ · ชีวิต · พิฆาต · เกราะ · สังหาร) ' +
+              'ที่ซื้อด้วย 💎 เศษคริสตัลเหวลึกในแผงระบบ ⚙️ SYSTEM CORE — แต่ละเส้นอัปได้สูงสุด ' +
+              AB_CORE_MAX + ' ขั้น ต้องอัปครบทุกเส้นให้เต็มถึงจะปิดผนึกดวงนี้',
         get: function (g) {
           return [AB_CORES.reduce(function (s, c) { return s + abCoreLv(g, c.key); }, 0),
                   AB_CORES.length * AB_CORE_MAX];
         } },
       { id: 'seal',  icon: '🔓', name: 'ผนึกประตูบอส',  col: '#c084fc',
+        desc: 'จำนวนประตูบอสที่ทลายเกราะผนึกสำเร็จแล้ว (ชั้น 4 · 8 · 12 · 16 · 20) — ' +
+              'ทลายด้วยการตอบถูกขณะสตรีคสูงหรือใช้ไอเทมกดเกราะ ตอบผิดจะซ่อมตัวเองบางส่วน ' +
+              'ทลายให้ครบทั้ง 5 บานเพื่อปิดผนึกดวงนี้',
         get: function (g) { return [abSealCount(g), AB_SEAL_FLOORS.length]; } },
       { id: 'level', icon: '👑', name: 'เลเวลสูงสุด',    col: '#ffc845',
+        desc: 'เลเวลปัจจุบันของฮันเตอร์เทียบกับเพดานสูงสุด Lv.' + BA_LV_MAX +
+              ' — ได้ EXP จากการตอบคำถามถูกและเคลียร์ชั้นหอคอย เส้นโค้ง EXP ยิ่งสูงยิ่งชันมาก ' +
+              'ต้องไต่หอคอยสะสมเวลานานพอสมควรถึงจะแตะเพดาน',
         get: function (g) { return [baLvNow(g), BA_LV_MAX]; } },
       { id: 'acc',   icon: '🎯', name: 'ความแม่นยำ',     col: '#7ee787',
+        desc: 'ความแม่นยำสะสมตลอดการเล่น (ตอบถูก ÷ ตอบทั้งหมด) ต้องรักษาให้ถึง ' + BA_MN_ACC +
+              '% — ยิ่งตอบข้อมากยิ่งขยับยาก ควรทบทวนคำที่เคยพลาดก่อนลุยข้อใหม่เพื่อไม่ให้เปอร์เซ็นต์ร่วง',
         get: function (g) { return [accAccuracy(g), BA_MN_ACC]; } },
       { id: 'abyss', icon: '🕳️', name: 'ทัพเงาเหวลึก',   col: '#ef4444',
+        desc: 'จำนวนทัพเงาเหวลึกทั้ง 25 ตัวที่เคยปราบสำเร็จ (ทั้งจากการเปิดโหมดเหวลึกเองและ ' +
+              'จากผู้บุกรุกที่โผล่มาแทรกกลางหอคอยปกติ) ปราบให้ครบทั้ง ' + BA_MN_SH + ' ตัวเพื่อปิดผนึกดวงนี้',
         get: function (g) { return [baMnShCount(g), BA_MN_SH]; } }
     ];
 
@@ -32831,7 +32849,7 @@
         } catch (e) { n = 0; d = 1; }
         if (n > d) n = d;                       /* เกินเป้าไม่นับเป็นเกิน 100% */
         sum += n / d;
-        list.push({ id: p.id, icon: p.icon, name: p.name, col: p.col,
+        list.push({ id: p.id, icon: p.icon, name: p.name, col: p.col, desc: p.desc || '',
                     n: n, d: d, r: n / d, ok: n >= d });
       });
       const done = list.every(function (x) { return x.ok; });
@@ -32957,7 +32975,8 @@
           return '<div class="ba-mn-p' + (p.ok ? ' ok' : '') + '" style="--c:' + p.col + '">' +
             '<div class="ba-mn-ph"><b>' + p.icon + ' ' + esc(p.name) + '</b>' +
               '<span>' + p.n + ' / ' + p.d + (p.ok ? ' ✅' : '') + '</span></div>' +
-            '<div class="ba-mn-pb"><i style="width:' + Math.round(p.r * 100) + '%"></i></div></div>';
+            '<div class="ba-mn-pb"><i style="width:' + Math.round(p.r * 100) + '%"></i></div>' +
+            (p.desc ? '<div class="ba-mn-pd">' + esc(p.desc) + '</div>' : '') + '</div>';
         }).join('') +
         (asc ? '' :
           '<button class="ba-mn-go" onclick="baMnAscend()"' + (s.done ? '' : ' disabled') + '>' +
@@ -33268,6 +33287,7 @@
         '.ba-mn-ph span{white-space:nowrap;opacity:.8;font-size:11.5px}' +
         '.ba-mn-pb{height:4px;margin-top:5px;border-radius:3px;background:rgba(255,255,255,.1);overflow:hidden}' +
         '.ba-mn-pb i{display:block;height:100%;background:var(--c)}' +
+        '.ba-mn-pd{margin-top:6px;font-size:10.5px;line-height:1.5;opacity:.72;word-break:break-word}' +
         '.ba-mn-go{width:100%;margin:4px 0 8px;border:1px solid rgba(255,200,69,.65);border-radius:8px;' +
           'padding:9px;background:rgba(255,200,69,.16);color:#ffe08a;font:inherit;font-size:12.5px;cursor:pointer}' +
         '.ba-mn-go:disabled{opacity:.4;cursor:default;border-color:rgba(255,255,255,.18);' +

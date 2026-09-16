@@ -41529,6 +41529,183 @@
       try { baSmStyle(); } catch (e) { baSmErr(e, 'install'); }
     })();
 
+    /* Patch v9.7 · TIER 4 HUD & CODEX — ป้าย/ตรวจสอบ 3 มิติ + HUD ลอย + แท็บใกล้ทองคำ/ต้องลงเหวลึก
+       ต่อยอด Subconscious Mastery ของ v9.6 (baSmTier/baSmNet/baSmGateOk) ล้วน ๆ
+       ไม่แก้โค้ดของชั้นก่อนหน้าเลยสักบรรทัด — ห่อ cxDetailHtml/cxTabsHtml/cxList/recordWord/baBattleAudit */
+    const BA_T4_VER = 'v9.7';
+    const BA_T4_LABEL = { 0: 'ยังไม่คุ้นเคย', 1: 'คุ้นเคย', 2: 'เขียวมรกต', 3: 'ประกายทองคำ', 4: 'ศิลาทองคำบริสุทธิ์' };
+
+    function baT4Err(e, where) { try { baErr(e, 't4:' + where); } catch (x) {} }
+
+    function baT4Style() {
+      if (document.getElementById('baT4Style')) return;
+      const st = document.createElement('style');
+      st.id = 'baT4Style';
+      st.textContent =
+        '.cx-detail .cx-t4-badge{display:inline-block;margin:2px 0 8px;padding:3px 10px;' +
+          'border-radius:999px;font-size:11px;font-weight:800;letter-spacing:.3px;' +
+          'border:1px solid rgba(255,255,255,.25)}' +
+        '.cx-detail .cx-t4-t0{background:rgba(255,255,255,.08);color:#9aa4b2}' +
+        '.cx-detail .cx-t4-t1{background:rgba(120,170,255,.16);color:#9fc4ff;border-color:rgba(120,170,255,.4)}' +
+        '.cx-detail .cx-t4-t2{background:rgba(80,220,150,.16);color:#7ee8b8;border-color:rgba(80,220,150,.4)}' +
+        '.cx-detail .cx-t4-t3{background:rgba(255,210,90,.18);color:#ffe08a;border-color:rgba(255,210,90,.5)}' +
+        '.cx-detail .cx-t4-t4{background:rgba(255,200,69,.22);color:#ffd977;border-color:rgba(255,220,120,.7);' +
+          'box-shadow:0 0 10px rgba(255,200,69,.35)}' +
+        '.cx-detail .cx-t4-check{margin:6px 0 10px;display:flex;flex-direction:column;gap:5px}' +
+        '.cx-detail .cx-t4-row{display:flex;justify-content:space-between;gap:8px;' +
+          'padding:6px 9px;border-radius:8px;background:rgba(255,255,255,.05);font-size:12px}' +
+        '.cx-detail .cx-t4-row span{color:#b9c3ce}' +
+        '.cx-detail .cx-t4-row b{color:#e8ecf2;font-weight:700}' +
+        '.cx-detail .cx-t4-row.ok{background:rgba(80,220,150,.1)}' +
+        '.cx-detail .cx-t4-row.ok b{color:#7ee8b8}';
+      document.head.appendChild(st);
+    }
+
+    if (typeof cxDetailHtml === 'function') {
+      const _t4CxDetail = cxDetailHtml;
+      cxDetailHtml = function (id) {
+        const out = _t4CxDetail.apply(this, arguments);
+        try {
+          const g = cxSrc();
+          if (!g || !cxHas(g, id)) return out;
+          const w = g.wordStats && g.wordStats[String(id)];
+          if (!w) return out;
+          const tier = baSmTier(g, id);
+          const net = baSmNet(w);
+          const gateOk = baSmGateOk(g);
+          const speedN = Math.min(BA_SM_K, w.fastStreak || 0);
+          const speedOk = speedN >= BA_SM_K;
+          const lastSec = (w.lastMs != null) ? (Math.round(w.lastMs / 100) / 10) : null;
+          let dots = '';
+          for (let i = 0; i < BA_SM_K; i++) dots += (i < speedN ? '●' : '○') + (i < BA_SM_K - 1 ? ' ' : '');
+          const badge = '<div class="cx-t4-badge cx-t4-t' + tier + '">Tier ' + tier + ' · ' +
+            (BA_T4_LABEL[tier] || '') + '</div>';
+          const check = '<div class="cx-t4-check">' +
+            '<div class="cx-t4-row' + (gateOk ? ' ok' : '') + '"><span>🗻 ผ่านชั้น 12+ / เหวลึก</span>' +
+              '<b>' + (gateOk ? '✅ ผ่านแล้ว' : '❌ ชั้น ' + (g.maxFloor || 1)) + '</b></div>' +
+            '<div class="cx-t4-row' + (net >= BA_SM_N4 ? ' ok' : '') + '"><span>📊 คะแนนสุทธิ (ถูก − 2×ผิด)</span>' +
+              '<b>' + net + ' / ' + BA_SM_N4 + '</b></div>' +
+            '<div class="cx-t4-row' + (speedOk ? ' ok' : '') + '"><span>⚡ ตอบไว ≤2.5 วิ ติดกัน</span>' +
+              '<b>' + dots + (lastSec != null ? ' · ล่าสุด ' + lastSec + ' วิ' : '') + '</b></div>' +
+          '</div>';
+          let mod = out.replace('<div class="cx-d-han">', badge + '<div class="cx-d-han">');
+          mod = mod.replace(/(<span>บันทึกเมื่อ<\/span><b>[^<]*<\/b><\/div><\/div>)/, '$1' + check);
+          return mod;
+        } catch (e) { baT4Err(e, 'detail'); }
+        return out;
+      };
+    }
+
+    if (typeof cxTabsHtml === 'function') {
+      const _t4CxTabs = cxTabsHtml;
+      cxTabsHtml = function () {
+        const out = _t4CxTabs.apply(this, arguments);
+        try {
+          const extra =
+            '<button class="cx-tab' + (CX_FILTER === 'nearGold' ? ' on' : '') +
+              '" onclick="cxSetFilter(\'nearGold\')">✨ ใกล้ทองคำ</button>' +
+            '<button class="cx-tab' + (CX_FILTER === 'needAbyss' ? ' on' : '') +
+              '" onclick="cxSetFilter(\'needAbyss\')">🕳️ ต้องลงเหวลึก</button>';
+          return out.replace('</div>', extra + '</div>');
+        } catch (e) { baT4Err(e, 'tabs'); }
+        return out;
+      };
+    }
+
+    if (typeof cxList === 'function') {
+      const _t4CxList = cxList;
+      cxList = function () {
+        if (CX_FILTER !== 'nearGold' && CX_FILTER !== 'needAbyss') {
+          return _t4CxList.apply(this, arguments);
+        }
+        try {
+          const g = cxSrc();
+          const q = CX_QUERY;
+          return VOCAB.filter(function (v) {
+            const id = v[0];
+            if (!cxHas(g, id)) return false;
+            const w = g && g.wordStats && g.wordStats[String(id)];
+            if (!w) return false;
+            const net = baSmNet(w);
+            const gateOk = baSmGateOk(g);
+            const speedOk = (w.fastStreak || 0) >= BA_SM_K;
+            const pass = (CX_FILTER === 'nearGold')
+              ? (net >= 20 || (net >= BA_SM_N4 && (!gateOk || !speedOk)))
+              : (net >= BA_SM_N3 && !gateOk);
+            if (!pass) return false;
+            if (!q) return true;
+            if (v[1].indexOf(q) !== -1) return true;
+            if (cxPlain(v[2]).indexOf(q) !== -1) return true;
+            return meaningOf(id).toLowerCase().indexOf(q) !== -1;
+          });
+        } catch (e) { baT4Err(e, 'list'); return []; }
+      };
+    }
+
+    if (typeof recordWord === 'function') {
+      const _t4RecordWord = recordWord;
+      recordWord = function (id, wasCorrect, ms) {
+        let tierBefore = 0;
+        try {
+          const gPre = baG();
+          if (gPre) tierBefore = baSmTier(gPre, id);
+        } catch (e) {}
+        const out = _t4RecordWord.apply(this, arguments);
+        try {
+          const g = baG();
+          const w = g && g.wordStats && g.wordStats[String(id)];
+          if (w) {
+            w.lastMs = ms;
+            if (wasCorrect) {
+              const net = baSmNet(w);
+              const secs = Math.round(ms / 100) / 10;
+              const dots = Math.min(BA_SM_K, w.fastStreak || 0);
+              try {
+                if (typeof baCbTip === 'function' && typeof baSpot === 'function') {
+                  baCbTip('+1 แต้ม (' + net + '/' + BA_SM_N4 + ') · สปีด ' + secs + ' วิ (🔥 ' + dots + '/' + BA_SM_K + ')',
+                    baSpot('baHero'));
+                }
+              } catch (e) {}
+            }
+            const tierAfter = baSmTier(g, id);
+            if (tierBefore < 4 && tierAfter === 4) {
+              try { baBannerText('👑 บรรลุศิลาทองคำ!', ''); } catch (e) {}
+            }
+          }
+        } catch (e) { baT4Err(e, 'record'); }
+        return out;
+      };
+    }
+
+    if (typeof baBattleAudit === 'function') {
+      const _t4Audit = baBattleAudit;
+      baBattleAudit = function () {
+        const o = _t4Audit.apply(this, arguments);
+        try {
+          const g = baG();
+          o.tier4Hud = {
+            ver: BA_T4_VER,
+            tierOf: function (id) { return g ? baSmTier(g, id) : 0; },
+            netOf: function (id) {
+              const w = g && g.wordStats && g.wordStats[String(id)];
+              return w ? baSmNet(w) : 0;
+            },
+            lastMsOf: function (id) {
+              const w = g && g.wordStats && g.wordStats[String(id)];
+              return (w && w.lastMs != null) ? w.lastMs : null;
+            },
+            gateOk: g ? baSmGateOk(g) : false,
+            styled: !!document.getElementById('baT4Style')
+          };
+        } catch (e) { baT4Err(e, 'audit'); }
+        return o;
+      };
+    }
+
+    (function baInstallT4() {
+      try { baT4Style(); } catch (e) { baT4Err(e, 'install'); }
+    })();
+
     (function baInstall() {
       try {
         /* .g-monster-area อยู่ใน HTML แบบสแตติกอยู่แล้ว จึงสร้างได้ตั้งแต่โหลดหน้า

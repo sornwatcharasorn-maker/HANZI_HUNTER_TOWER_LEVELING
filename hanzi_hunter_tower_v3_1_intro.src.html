@@ -42131,33 +42131,6 @@
       } catch (e) { baSc11Err(e, 'shop'); }
     }
 
-    // ── ทางเข้าที่ 3 · ประตูวาป #gWarp (มิเรอร์ dwShop ของ v4.9.2) ────
-    function baSc11Gate() {
-      try {
-        const w = document.getElementById('gWarp');
-        if (!w || document.getElementById('baScGateBtn')) return;
-        const go = w.querySelector('.g-warp-go');
-        if (!go) return;
-        go.insertAdjacentHTML('beforebegin',
-          '<button type="button" class="dw-shop" id="baScGateBtn" onclick="baScOpen()" ' +
-          'style="display:none">🎴 คลังการ์ดวิญญาณ</button>');
-      } catch (e) { baSc11Err(e, 'gate'); }
-    }
-    /* renderWarp ถูก v4.9.2 ห่อไว้แล้วหนึ่งชั้น (dwPaintGate) — ห่อซ้ำอีกชั้น
-       เป็นแบบแผนปกติของไฟล์นี้ · เงื่อนไขโชว์/ซ่อนเดียวกับปุ่ม dwShop เป๊ะ */
-    if (typeof renderWarp === 'function') {
-      const _baSc11Warp = renderWarp;
-      renderWarp = function (kind) {
-        const r = _baSc11Warp.apply(this, arguments);
-        try {
-          baSc11Gate();
-          const btn = document.getElementById('baScGateBtn');
-          if (btn) btn.style.display = (kind === DW_PRE || kind === DW_POST) ? 'block' : 'none';
-        } catch (e) { baSc11Err(e, 'warp'); }
-        return r;
-      };
-    }
-
     // ── ทางเข้าที่ 4 · Console Fallback ───────────────────────────────
     /* ตามสเปกข้อ 3 — พิมพ์ ba.openSoulCardsModal() ใน Console แล้วต้องเด้ง
        ขึ้นมาได้ทันทีไม่ว่าจะยืนอยู่ตรงไหนของเกม (แค่ต้องล็อกอินแล้ว) */
@@ -42287,11 +42260,6 @@
             ver: '9.7.1',
             menuBtn: !!document.getElementById('baScMenuBtn'),
             shopBtn: !!document.getElementById('baScShopBtn'),
-            gateBtn: !!document.getElementById('baScGateBtn'),
-            gateVisible: (function () {
-              const b = document.getElementById('baScGateBtn');
-              return !!b && getComputedStyle(b).display !== 'none';
-            })(),
             tabs: !!document.getElementById('baScTabs'),
             tab: board ? (board.dataset.tab || 'album') : '',
             inlayBox: !!document.getElementById('baScInlayBox'),

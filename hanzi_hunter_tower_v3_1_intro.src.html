@@ -41706,6 +41706,198 @@
       try { baT4Style(); } catch (e) { baT4Err(e, 'install'); }
     })();
 
+    /* ═══════════════════════════════════════════════════════════════════
+       Patch v9.9 · DEDICATED WORDBANK SYNC (Full 329-Word Cross-Device Bridge)
+       ═══════════════════════════════════════════════════════════════════
+       อยู่ท้ายสุดของไฟล์ ต่อจาก baInstallT4() ของ v9.7 และก่อน baInstall()
+       · ไม่แก้โค้ดของ v4.0-v9.7 เลยแม้แต่บรรทัดเดียว — ห่อทับทั้งหมด
+       · ไม่แตะ CS_CFG / csCfgSave / CS_ON / csGetRow / csCfgLoad หรือชื่อ
+       ที่ขึ้นต้นด้วย cs ตัวไหนของ v5.2 เลยแม้แต่ตัวเดียว (แก้จาก Patch v9.8
+       เดิมที่เผลอเปิด CS_CFG ให้เองผ่าน wsSeed() — ละเมิดกติกาปิดสนิทโดย
+       ค่าเริ่มต้นของ v5.2 ที่ test_cloud_sync.js ยึด CS_ON===false ไว้แน่น)
+
+       อาการที่แพตช์นี้แก้: นักเรียนล็อกอินบนเครื่องใหม่แล้ว "คำที่พิชิตแล้ว"
+       (cxCount ที่อ่านจาก wordStats ของ v4.4) หล่นกลับไปเกือบศูนย์ — โหนด
+       /students ของ v5.3/v5.4 ที่เปิดอยู่โดยอัตโนมัติ (asSeed ของ v5.4)
+       ส่งแค่ก้อนแบนสรุป (fbPayload) ไม่มี wordStats เต็ม 329 คำเลย
+
+       ทางแก้: เกาะโครงสร้าง v5.3/v5.4 (fbOn/fbFetch/FB_CFG) ที่เปิดอยู่แล้ว
+       ตรง ๆ แต่ยิงลง **โหนดคลาวด์ใหม่แยกต่างหาก** (WB_NODE = 'wordbank')
+       คนละโหนดกับ /students เดิม จึงไม่ปนกับ payload สรุปของ v5.3 และไม่
+       ต้องพึ่ง/แตะ v5.2 เลยสักบรรทัด — URL ฐานใช้ FB_CFG.url ตัวเดียวกับที่
+       v5.3/v5.4 ตั้งไว้แล้ว (เปลี่ยนแค่ชื่อโหนดท้าย path)
+
+       1) wbPush(user) — ยิง wordStats เต็มก้อน + ตัวนับสะสมทางเดียวขึ้น
+          /wordbank/<user> ตอนออกจากเกม (exitGame) เท่านั้น ไม่มีนาฬิกา
+          คาบใหม่ให้ต้องดูแล (เกาะจังหวะเดิมของ v4.0 · v5.3/v5.4 มีหัวใจ
+          คาบของตัวเองอยู่แล้วสำหรับ /students ซึ่งเป็นคนละก้อนกัน)
+          · payload ไม่มีคีย์ระดับบนสุดชื่อ `u` เลย (เจตนา — ตัวสกัด PUT ของ
+          v5.8 · caIsRowPut ตรวจหาคีย์ `u` เป็นสตริงเพื่อผนึกแฮชรหัสผ่านให้
+          เฉพาะแถวของ /students เท่านั้น payload ของโหนดนี้จึงต้องไม่มีคีย์
+          ชื่อนั้นเด็ดขาด กันไม่ให้ปนไปกับกลไกนั้นโดยไม่ตั้งใจ)
+
+       2) wbRestore(user) ห่อ startGame เป็นชั้นนอกสุด ดึง /wordbank/<user>
+          มาเสริมทุกครั้งที่ล็อกอินสำเร็จ แล้ว "ผสานแบบทางเดียว" (Math.max
+          ต่อคำ) เข้า wordStats ที่มีอยู่ — ปลอดภัยเพราะ seen/wrong เป็น
+          ตัวนับสะสมตลอดชีพที่ไม่มีวันลดลง (ดู cxHas/cxCount ของ v4.4 —
+          อ่านแค่สองฟิลด์นี้) การเอาค่าที่สูงกว่ามาเก็บจึงถูกต้องเสมอไม่ว่า
+          ฝั่งไหนจะ "ใหม่กว่า" ตามนาฬิกาจริง ๆ ไม่ต้องพึ่งประตูไทม์สแตมป์เลย
+          · ครอบตัวนับสะสมทางเดียวอื่น (maxFloor · bossClears · towerClears
+          · correct · wrong · totalGoldEarned · fastAnswers · titles) ด้วย
+          กฎเดียวกัน · ไม่แตะ gold/items/floor/hp/mp/level/exp ซึ่งไม่ใช่
+          ตัวนับสะสมทางเดียว — แตะแล้วจะเปิดช่องให้ปั๊มของข้ามเครื่องได้ทันที
+          · ผสานสำเร็จแล้วยิง wbPush(user) กลับทันทีด้วย (ไม่ต้องรอ exitGame)
+          กันเคสปิดแท็บ/ปิดเบราว์เซอร์กะทันหันโดยไม่ได้กด "ออกจากเกม"
+
+       ทั้งสองฟังก์ชันเช็ก fbOn() ของ v5.3 อย่างเดียวเป็นเงื่อนไขเปิด/ปิด
+       (ไม่เช็ก FB_CFG.pub — pub คือ "เครื่องนี้ส่งข้อมูล *ของตัวเอง*
+       ขึ้น /students ไหม" คนละความหมายกับการสำรอง/กู้คลังคำศัพท์ที่ทุก
+       เครื่องควรทำได้เสมอไม่ว่าจะติ๊ก pub ไว้หรือไม่) — provider ว่าง/
+       ปิดสวิตช์ = ทั้งชั้นนี้เงียบสนิท ไม่มีคำขอออกเน็ตแม้แต่ครั้งเดียว
+       (กติกาเดียวกับที่ v5.3/v5.4 ยึดไว้)
+
+       ⚠️ lastSeen/at เป็นเวลามิลลิวินาที (Date.now()) ห้ามใช้ `|0` เด็ดขาด
+       จะถูกตัดเหลือ 32 บิตแล้วเพี้ยนทันที (กติกาเดียวกับ mn.at ของ v8.0)
+       ใช้ `|| 0` ล้วนทั้งฟังก์ชันผสานแทน
+
+       ไม่เพิ่มฟิลด์ในบัญชีเลย (wordStats/maxFloor/… เป็นฟิลด์เดิมของ v4.0
+       ทั้งหมด) ไม่มีตรารุ่น ไม่เพิ่ม DOM/CSS/toast/gate สักอย่าง ไม่เพิ่ม
+       ภาพหรือเสียงสักไบต์ · ไม่มีนาฬิกาคาบใหม่สักตัว */
+
+    const WB_VER  = 'v9.9';
+    const WB_NODE = 'wordbank';   /* คนละโหนดกับ /students ของ v5.3/v5.4 เสมอ — ไม่แตะ CS_CFG ของ v5.2 */
+
+    function wbErr(e, w) {
+      try { if (typeof gcErrPush === 'function') gcErrPush('wordbank', (w || '') + ': ' + ((e && e.message) || e), WB_VER, e && e.stack); } catch (x) {}
+    }
+
+    /* มิเรอร์ fbUrl() ของ v5.3 ตรง ๆ ต่างกันแค่ชื่อโหนดท้าย path — ใช้
+       FB_CFG.url/FB_CFG.auth ตัวเดียวกับที่ v5.3/v5.4 ตั้งไว้แล้วเสมอ */
+    function wbUrl(p, q) {
+      const qs = [];
+      if (FB_CFG.auth) qs.push('auth=' + encodeURIComponent(FB_CFG.auth));
+      if (q) qs.push(q);
+      return FB_CFG.url + '/' + encodeURIComponent(WB_NODE) + (p || '') + '.json' +
+             (qs.length ? '?' + qs.join('&') : '');
+    }
+
+    /* ผสานคำ 329 คำแบบทางเดียว — Math.max ต่อคำต่อฟิลด์ ปลอดภัยเสมอเพราะ
+       seen/wrong เป็นตัวนับสะสมตลอดชีพ (recordWord ของ v4.0 บวกอย่างเดียว
+       ไม่เคยลด) การเอาค่าสูงกว่ามาเก็บจึงถูกต้องไม่ว่าฝั่งไหนใหม่กว่าจริง */
+    function wbMergeWordStats(dst, src) {
+      if (!dst || !src || typeof src !== 'object') return 0;
+      let n = 0;
+      Object.keys(src).forEach(function (id) {
+        const s = src[id];
+        if (!s || typeof s !== 'object') return;
+        const sSeen = s.seen || 0, sWrong = s.wrong || 0;
+        if (!sSeen && !sWrong) return;
+        let d = dst[id];
+        if (!d) { dst[id] = d = { seen: 0, wrong: 0, totalMs: 0, lastSeen: 0, recent: [] }; }
+        if (sSeen > (d.seen || 0))   { d.seen  = sSeen;  n++; }
+        if (sWrong > (d.wrong || 0)) { d.wrong = sWrong; n++; }
+        if ((s.fastStreak || 0) > (d.fastStreak || 0)) d.fastStreak = s.fastStreak || 0;
+        if ((s.lastSeen || 0) > (d.lastSeen || 0)) d.lastSeen = s.lastSeen || 0;
+      });
+      return n;
+    }
+
+    /* ตัวนับสะสมทางเดียวอื่นที่ปลอดภัยจะ Math.max ได้ด้วยกติกาเดียวกัน —
+       ไม่รวม gold/items/floor/hp/mp/level/exp ซึ่งไม่ใช่ตัวนับสะสมทางเดียว */
+    const WB_MONO_KEYS = ['maxFloor', 'bossClears', 'towerClears', 'correct', 'wrong', 'totalGoldEarned', 'fastAnswers'];
+    function wbMergeMono(dst, src) {
+      let n = 0;
+      WB_MONO_KEYS.forEach(function (k) {
+        const sv = src[k]; if (typeof sv !== 'number' || !isFinite(sv)) return;
+        if (sv > (dst[k] || 0)) { dst[k] = sv; n++; }
+      });
+      if (Array.isArray(src.titles)) {
+        if (!Array.isArray(dst.titles)) dst.titles = [];
+        src.titles.forEach(function (t) { if (dst.titles.indexOf(t) === -1) { dst.titles.push(t); n++; } });
+      }
+      return n;
+    }
+
+    let WB_BUSY = {};   /* กันยิงซ้อนต่อผู้ใช้ — ของรอบการเปิดหน้า ไม่ต้องเซฟ */
+
+    /* ก้อนที่ส่งขึ้น /wordbank/<user> — จงใจไม่มีคีย์ระดับบนสุดชื่อ `u`
+       เพื่อไม่ให้ชนกับ caIsRowPut()/caSealBody() ของ v5.8 ซึ่งผนึกแฮช
+       รหัสผ่านให้เฉพาะ PUT ที่มีคีย์ `u` เป็นสตริง (สำหรับ /students เท่านั้น) */
+    function wbPayload(g) {
+      return {
+        wordStats: g.wordStats || {},
+        maxFloor: g.maxFloor || 0, bossClears: g.bossClears || 0,
+        towerClears: g.towerClears || 0, correct: g.correct || 0, wrong: g.wrong || 0,
+        totalGoldEarned: g.totalGoldEarned || 0, fastAnswers: g.fastAnswers || 0,
+        titles: Array.isArray(g.titles) ? g.titles : [],
+        at: Date.now() || 0, ver: WB_VER
+      };
+    }
+
+    /* ยิงคลังคำศัพท์เต็มก้อนขึ้นคลาวด์ — fire-and-forget ไม่มี retry/backoff
+       ของตัวเอง (v5.3/v5.4 มีหัวใจคาบของมันเองสำหรับ /students อยู่แล้ว
+       ซึ่งเป็นคนละก้อนกัน) เรียกจาก exitGame และจาก wbRestore หลังผสานสำเร็จ */
+    function wbPush(user) {
+      try {
+        if (!user || !fbOn()) return false;
+        if (typeof G === 'undefined' || !G) return false;
+        fbFetch(wbUrl('/' + encodeURIComponent(user)), {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(wbPayload(G))
+        }).catch(function (e) { wbErr(e, 'push'); });
+        return true;
+      } catch (e) { wbErr(e, 'push'); return false; }
+    }
+
+    /* ดึง /wordbank/<user> มาเสริมเสมอ ไม่สนไทม์สแตมป์เลย เพราะการผสาน
+       เป็นแบบทางเดียวที่ปลอดภัยอยู่แล้ว (Math.max ต่อฟิลด์ ดูเอกสารด้านบน) */
+    async function wbRestore(user) {
+      try {
+        if (!user || !fbOn()) return;
+        if (WB_BUSY[user]) return;
+        WB_BUSY[user] = true;
+        let doc = null;
+        try { doc = await fbFetch(wbUrl('/' + encodeURIComponent(user))); } catch (e) { wbErr(e, 'fetch'); }
+        WB_BUSY[user] = false;
+        if (!doc || typeof doc !== 'object') return;
+        if (typeof CURRENT_USER !== 'undefined' && CURRENT_USER !== user) return;   /* ออกไปแล้วระหว่างรอเน็ต */
+        if (typeof G === 'undefined' || !G) return;
+        let changed = 0;
+        if (!G.wordStats) G.wordStats = {};
+        if (doc.wordStats) changed += wbMergeWordStats(G.wordStats, doc.wordStats);
+        changed += wbMergeMono(G, doc);
+        if (changed > 0) {
+          try { if (typeof saveProgress === 'function') saveProgress(); } catch (e) { wbErr(e, 'save'); }
+          try { if (typeof cxSyncMilestone === 'function') cxSyncMilestone(true); } catch (e) { wbErr(e, 'cx'); }
+          try { if (typeof recalcStats === 'function') recalcStats(); } catch (e) {}
+          try { if (typeof renderStats === 'function') renderStats(); } catch (e) {}
+          try { wbPush(user); } catch (e) { wbErr(e, 'pushback'); }   /* กันปิดแท็บกะทันหันก่อนถึง exitGame */
+        }
+      } catch (e) { wbErr(e, 'restore'); }
+    }
+
+    if (typeof startGame === 'function') {
+      const _wbStartGame = startGame;
+      startGame = function (username) {
+        const r = _wbStartGame.apply(this, arguments);
+        try { wbRestore(username); } catch (e) { wbErr(e, 'startGame'); }
+        return r;
+      };
+    }
+
+    /* exitGame ของ v4.0 ล้าง CURRENT_USER ไปแล้วตอนคืนค่า — ต้องจดชื่อไว้
+       ก่อนเรียกของเดิมเสมอ (กับดักข้อ 38) แล้วยิงหลังของเดิมทำงานจบ เพราะ
+       saveProgress() ทั้งหมดในสายของมันต้องเขียนจบก่อน G จะยังถูกต้อง */
+    if (typeof exitGame === 'function') {
+      const _wbExitGame = exitGame;
+      exitGame = function () {
+        const u = (typeof CURRENT_USER !== 'undefined') ? CURRENT_USER : null;
+        const r = _wbExitGame.apply(this, arguments);
+        try { if (u) wbPush(u); } catch (e) { wbErr(e, 'exitGame'); }
+        return r;
+      };
+    }
+
     (function baInstall() {
       try {
         /* .g-monster-area อยู่ใน HTML แบบสแตติกอยู่แล้ว จึงสร้างได้ตั้งแต่โหลดหน้า

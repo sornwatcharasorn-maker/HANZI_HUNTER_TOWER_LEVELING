@@ -42164,6 +42164,504 @@
       };
     }
 
+    /* ══════════════════════════════════════════════════════════════════════
+       Patch · PROGRESSION GATES & GOLD TRIAL UI (namespace: gat)
+       ไม่แก้โค้ดของชั้นก่อนหน้าเลยแม้แต่บรรทัดเดียว — ห่อทับทั้งหมด
+       เพิ่มค่าเปลี่ยนสายอาชีพ + ค่าล้างค่าพลัง ให้แผงโปรไฟล์ของ v8.5 (#baPlBoard)
+       พร้อมทางลัดฟรีถ้าผ่านภารกิจทดลอง (Gold Trial) แทนการจ่าย 🪙+💎
+
+       บั๊คที่พบระหว่างเขียน: BA_PL_SW_COST ถูกล็อกไว้ที่ 0 ถาวรแล้ว (ดูคอมเมนต์
+       "Critical Bug Fix" เหนือค่าคงที่นั้น) เปลี่ยนสายอาชีพจึงฟรีทุกครั้งอยู่แล้ว
+       โดยไม่มีการ์ดควบคุมเลย — ชั้นนี้จึงต้องสร้างระบบเกตทั้งชุดขึ้นใหม่ที่ wrapper
+       ของ baPlSwitch เอง ไม่ใช่แค่ปรับตัวเลขของค่าคงที่เดิม ══════════════════ */
+
+    const BA_GAT_CFG = {
+      SW_GOLD: 35000, SW_DIA: 380, SW_TRIAL_CAP: 2,      /* เปลี่ยนสาย: F20 2x/วัน */
+      SW_MISS_CAP: 2, SW_COMBO_NEED: 20,
+      RS_GOLD: 50000, RS_DIA: 750, RS_TRIAL_CAP: 1,       /* ล้างค่าพลัง: บอส#25 1x/วัน */
+      RS_LIMIT_MS: 75000
+    };
+    let GAT_READY = false;
+    let GAT_SW_MISS = 0;        /* พลาดสะสมระหว่างยืนอยู่ชั้น 20 (ล้างตอนเข้า/ออกชั้น 20) */
+    let GAT_SW_MAXCOMBO = 0;    /* คอมโบสูงสุดที่ทำได้ระหว่างยืนอยู่ชั้น 20 */
+    let GAT_RS_START = 0;       /* เวลาที่เริ่มดวลทัพเงาตัวที่ 25 — 0 = ไม่ได้ดวลอยู่ */
+    let GAT_RS_ITEM = false;    /* ใช้ไอเทมไปแล้วระหว่างดวลตัวที่ 25 รอบนี้ไหม */
+    const GAT_N = { swPaid: 0, swTrial: 0, swEarn: 0, rsPaid: 0, rsTrial: 0, rsEarn: 0 };
+
+    function gatErr(e, where) { try { baErr(e, 'gat:' + where); } catch (x) {} }
+    function gatG() { try { return (typeof baG === 'function') ? baG() : null; } catch (e) { return null; } }
+    function gatOf(g) { return (g && g.gat && typeof g.gat === 'object') ? g.gat : null; }
+
+    function gatRollDay(o) {
+      const k = qDayKey(new Date());
+      if (o.day !== k) { o.day = k; o.swEarned = 0; o.rsEarned = 0; }
+    }
+
+    function gatEnsure(a) {
+      if (!a) return;
+      if (!a.gat || typeof a.gat !== 'object') {
+        a.gat = { day: qDayKey(new Date()), swToken: 0, swEarned: 0, rsToken: 0, rsEarned: 0 };
+      }
+      const o = a.gat;
+      if (typeof o.day !== 'string') o.day = qDayKey(new Date());
+      if (typeof o.swToken !== 'number' || !(o.swToken >= 0) || !isFinite(o.swToken)) o.swToken = 0;
+      if (typeof o.rsToken !== 'number' || !(o.rsToken >= 0) || !isFinite(o.rsToken)) o.rsToken = 0;
+      if (typeof o.swEarned !== 'number' || !(o.swEarned >= 0) || !isFinite(o.swEarned)) o.swEarned = 0;
+      if (typeof o.rsEarned !== 'number' || !(o.rsEarned >= 0) || !isFinite(o.rsEarned)) o.rsEarned = 0;
+      gatRollDay(o);
+    }
+
+    function gatSave() {
+      if (!GAT_READY || typeof CURRENT_USER === 'undefined' || !CURRENT_USER) return;
+      const g = gatG();
+      if (!g || !g.gat) return;
+      try {
+        const s = loadStore(), a = s[CURRENT_USER];
+        if (!a) return;
+        gatEnsure(a);
+        a.gat.day = g.gat.day;
+        a.gat.swToken = Math.max(0, Math.floor(g.gat.swToken || 0));
+        a.gat.rsToken = Math.max(0, Math.floor(g.gat.rsToken || 0));
+        a.gat.swEarned = Math.max(0, Math.floor(g.gat.swEarned || 0));
+        a.gat.rsEarned = Math.max(0, Math.floor(g.gat.rsEarned || 0));
+        saveStore(s);
+      } catch (e) { gatErr(e, 'save'); }
+    }
+
+    /* ── ตัวนับความคืบหน้าภารกิจทดลอง — ห่อจุดที่มีอยู่แล้ว ไม่ตั้งนาฬิกาใหม่ ── */
+
+    if (typeof resolveAnswer === 'function') {
+      const _gatResolveAnswer = resolveAnswer;
+      resolveAnswer = function (choice, btn, timedOut) {
+        const g = gatG();
+        const onF20 = !!(g && !g.practiceMode && g.floor === FLOOR_MAX);
+        const wrongBefore = onF20 ? (g.wrong || 0) : 0;
+        const r = _gatResolveAnswer.apply(this, arguments);
+        try {
+          if (onF20 && g) {
+            if ((g.wrong || 0) > wrongBefore) GAT_SW_MISS++;
+            if ((g.streak || 0) > GAT_SW_MAXCOMBO) GAT_SW_MAXCOMBO = g.streak;
+          }
+        } catch (e) { gatErr(e, 'resolveAnswer'); }
+        return r;
+      };
+    }
+
+    if (typeof clearFloor === 'function') {
+      const _gatClearFloor = clearFloor;
+      clearFloor = function (boss) {
+        const g = gatG();
+        const beforeFloor = g ? g.floor : 0;      /* ต้องจดไว้ก่อน — ของเดิมดัน G.floor ไปแล้วตอนจบ */
+        const r = _gatClearFloor.apply(this, arguments);
+        try {
+          if (g) {
+            if (!boss && beforeFloor === FLOOR_MAX - 1) {   /* เพิ่งก้าวเข้าชั้น 20 */
+              GAT_SW_MISS = 0; GAT_SW_MAXCOMBO = 0;
+            }
+            if (boss && beforeFloor === FLOOR_MAX && !g.practiceMode) {   /* เพิ่งปราบบอสยอดหอคอย */
+              if (GAT_SW_MISS <= BA_GAT_CFG.SW_MISS_CAP && GAT_SW_MAXCOMBO >= BA_GAT_CFG.SW_COMBO_NEED) {
+                const o = gatOf(g);
+                if (o) {
+                  gatRollDay(o);
+                  if (o.swEarned < BA_GAT_CFG.SW_TRIAL_CAP) {
+                    o.swEarned++;
+                    o.swToken = (o.swToken || 0) + 1;
+                    GAT_N.swEarn++;
+                    gatSave();
+                    try {
+                      baBannerText('🎁 ปลดล็อกสิทธิ์เปลี่ยนสายฟรี!',
+                        'พิชิตยอดหอคอยแบบพลาด ≤' + BA_GAT_CFG.SW_MISS_CAP + ' ครั้ง คอมโบ ≥' + BA_GAT_CFG.SW_COMBO_NEED);
+                    } catch (e2) {}
+                  }
+                }
+              }
+              GAT_SW_MISS = 0; GAT_SW_MAXCOMBO = 0;
+            }
+          }
+        } catch (e) { gatErr(e, 'clearFloor'); }
+        return r;
+      };
+    }
+
+    if (typeof baShAnnounce === 'function') {
+      const _gatShAnnounce = baShAnnounce;
+      baShAnnounce = function (e) {
+        try {
+          const isFoe25 = !!(e && typeof baOdMode === 'function' && baOdMode() &&
+                              typeof baOdIdx === 'function' && baOdIdx() === BA_OD_MAX);
+          GAT_RS_START = isFoe25 ? Date.now() : 0;
+          GAT_RS_ITEM = false;
+        } catch (err) { gatErr(err, 'shAnnounce'); }
+        return _gatShAnnounce.apply(this, arguments);
+      };
+    }
+
+    if (typeof useItem === 'function') {
+      const _gatUseItem = useItem;
+      useItem = function (kind) {
+        const g = gatG();
+        const before = (g && g.items) ? Object.assign({}, g.items) : null;
+        const r = _gatUseItem.apply(this, arguments);
+        try {
+          if (GAT_RS_START > 0 && g && g.items && before) {
+            let used = false;
+            Object.keys(before).forEach(function (k) {
+              if ((g.items[k] || 0) < (before[k] || 0)) used = true;
+            });
+            if (used) GAT_RS_ITEM = true;
+          }
+        } catch (e) { gatErr(e, 'useItem'); }
+        return r;
+      };
+    }
+
+    if (typeof baOdWin === 'function') {
+      const _gatOdWin = baOdWin;
+      baOdWin = function (idx, perfect) {
+        const g = gatG();
+        const wasFoe25 = (idx === BA_OD_MAX) && GAT_RS_START > 0;   /* จดก่อนของเดิมดัน idx ไป */
+        const elapsed = wasFoe25 ? (Date.now() - GAT_RS_START) : Infinity;
+        const itemUsed = GAT_RS_ITEM;
+        const r = _gatOdWin.apply(this, arguments);
+        try {
+          if (wasFoe25 && !itemUsed && elapsed <= BA_GAT_CFG.RS_LIMIT_MS && g) {
+            const o = gatOf(g);
+            if (o) {
+              gatRollDay(o);
+              if (o.rsEarned < BA_GAT_CFG.RS_TRIAL_CAP) {
+                o.rsEarned++;
+                o.rsToken = (o.rsToken || 0) + 1;
+                GAT_N.rsEarn++;
+                gatSave();
+                try {
+                  baBannerText('🎁 ปลดล็อกสิทธิ์ล้างค่าพลังฟรี!',
+                    'ปราบทัพเงาตัวที่ ' + BA_OD_MAX + ' ภายใน ' + Math.floor(BA_GAT_CFG.RS_LIMIT_MS / 1000) +
+                    ' วิ โดยไม่ใช้ไอเทม');
+                } catch (e2) {}
+              }
+            }
+          }
+        } catch (e) { gatErr(e, 'odWin'); }
+        GAT_RS_START = 0;
+        GAT_RS_ITEM = false;
+        return r;
+      };
+    }
+
+    /* ── เกตค่าเปลี่ยนสายอาชีพ — ห่อ baPlSwitch ของ v8.5 ทั้งก้อน ──────────────
+       BA_PL_SW_COST คืน 0 เสมอ (ดูหมายเหตุบั๊คด้านบน) ของเดิมจึงไม่มีการ์ดใด ๆ
+       เกตทั้งหมดต้องทำที่นี่ก่อนปล่อยให้ของเดิมทำงาน แล้วเขียนทับข้อความสำเร็จ
+       ของมันอีกที (baPlMsg เป็น textContent setter ล้วน เรียกซ้ำได้อย่างปลอดภัย) */
+    if (typeof baPlSwitch === 'function') {
+      const _gatSwitch = baPlSwitch;
+      baPlSwitch = function (id) {
+        const g = gatG();
+        if (!g || typeof BA_PL_BY_ID === 'undefined' || !BA_PL_BY_ID[id]) return _gatSwitch.apply(this, arguments);
+        if (g.classId === id) return _gatSwitch.apply(this, arguments);   /* ให้ของเดิมโชว์ "เป็นสายนี้อยู่แล้ว" */
+
+        const o = gatOf(g);
+        if (o) gatRollDay(o);
+        const gCost = BA_GAT_CFG.SW_GOLD, dCost = BA_GAT_CFG.SW_DIA;
+        const usedTrial = !!(o && o.swToken > 0);
+
+        if (!usedTrial) {
+          if ((g.gold || 0) < gCost) {
+            baPlMsg('🪙 ทองไม่พอ — ต้องใช้ ' + baNum(gCost) + ' มีอยู่ ' + baNum(g.gold || 0));
+            return false;
+          }
+          if (baPlShards() < dCost) {
+            baPlMsg('💎 ไม่พอ — ต้องใช้ ' + baNum(dCost) + ' มีอยู่ ' + baNum(baPlShards()) +
+              ' (หรือพิชิตยอดหอคอยพลาด ≤' + BA_GAT_CFG.SW_MISS_CAP + ' ครั้ง คอมโบ ≥' + BA_GAT_CFG.SW_COMBO_NEED +
+              ' เพื่อรับสิทธิ์ฟรี)');
+            return false;
+          }
+        }
+
+        let paidGold = 0, paidDia = 0;
+        if (usedTrial) {
+          o.swToken--;
+          GAT_N.swTrial++;
+        } else {
+          g.gold -= gCost; paidGold = gCost;
+          if (!baPlSpend(dCost)) { g.gold += gCost; baPlMsg('💎 ไม่พอ'); return false; }
+          paidDia = dCost;
+          GAT_N.swPaid++;
+        }
+
+        const r = _gatSwitch.apply(this, arguments);
+        if (!r) {
+          /* rollback — ของเดิมปฏิเสธด้วยเหตุผลอื่น (id ไม่มีจริง ฯลฯ) */
+          if (usedTrial) { if (o) o.swToken++; }
+          else {
+            g.gold += paidGold;
+            if (paidDia) {
+              const b = (typeof abOf === 'function') ? abOf(g) : null;
+              if (b) { b.shards = (b.shards | 0) + paidDia; try { if (typeof abSave === 'function') abSave(); } catch (e2) {} }
+            }
+          }
+          return r;
+        }
+
+        try { gatSave(); } catch (e) {}
+        try {
+          baPlMsg(usedTrial
+            ? '✅ เปลี่ยนสายอาชีพแล้ว (ใช้สิทธิ์ทดลองฟรีจากภารกิจยอดหอคอย)'
+            : '✅ เปลี่ยนสายอาชีพแล้ว (จ่าย 🪙 ' + baNum(paidGold) + ' + 💎 ' + baNum(paidDia) + ')');
+        } catch (e) {}
+        return r;
+      };
+    }
+
+    /* ── ค่าล้างค่าพลัง — ฟีเจอร์ใหม่ทั้งหมด ไม่มีของเดิมให้ห่อ ─────────────── */
+
+    function gatDoReset(g) {
+      g.freeAlloc = { str: 0, vit: 0, agi: 0, int: 0, luk: 0 };
+      try { recalcStats(); } catch (e) { gatErr(e, 'recalc'); }
+    }
+
+    function gatReset() {
+      const g = gatG();
+      if (!g) return false;
+      const fa = g.freeAlloc || {};
+      let allocated = 0;
+      ['str', 'vit', 'agi', 'int', 'luk'].forEach(function (k) { allocated += (fa[k] | 0); });
+      if (allocated <= 0) { baPlMsg('ยังไม่มีแต้มที่จัดสรรไปให้ล้าง'); return false; }
+
+      const o = gatOf(g);
+      if (o) gatRollDay(o);
+      const gCost = BA_GAT_CFG.RS_GOLD, dCost = BA_GAT_CFG.RS_DIA;
+      const usedTrial = !!(o && o.rsToken > 0);
+
+      if (!usedTrial) {
+        if ((g.gold || 0) < gCost) { baPlMsg('🪙 ทองไม่พอ — ต้องใช้ ' + baNum(gCost)); return false; }
+        if (baPlShards() < dCost) {
+          baPlMsg('💎 ไม่พอ — ต้องใช้ ' + baNum(dCost) +
+            ' (หรือปราบทัพเงาตัวที่ ' + BA_OD_MAX + ' ภายใน ' + Math.floor(BA_GAT_CFG.RS_LIMIT_MS / 1000) +
+            ' วิ โดยไม่ใช้ไอเทม เพื่อรับสิทธิ์ฟรี)');
+          return false;
+        }
+      }
+
+      if (usedTrial) { o.rsToken--; GAT_N.rsTrial++; }
+      else {
+        g.gold -= gCost;
+        if (!baPlSpend(dCost)) { g.gold += gCost; baPlMsg('💎 ไม่พอ'); return false; }
+        GAT_N.rsPaid++;
+      }
+
+      try {
+        gatDoReset(g);
+        try { renderStats(); } catch (e) {}
+        try { baPlSave(); } catch (e) {}
+        try { gatSave(); } catch (e) {}
+        baPlMsg(usedTrial
+          ? '✅ ล้างค่าพลังที่จัดสรรแล้ว (ใช้สิทธิ์ทดลองฟรีจากภารกิจปราบทัพเงาตัวที่ ' + BA_OD_MAX + ')'
+          : '✅ ล้างค่าพลังที่จัดสรรแล้ว (จ่าย 🪙 ' + baNum(gCost) + ' + 💎 ' + baNum(dCost) + ')');
+        try { baPlRender(); } catch (e) {}
+        return true;
+      } catch (e) { gatErr(e, 'reset'); return false; }
+    }
+
+    /* ── UI — วาดต่อท้าย #baPlBody ของ v8.5 ทุกครั้งที่ baPlRender() วาดใหม่ ── */
+
+    function gatReqGE(cur, need, label) {
+      const ok = cur >= need;
+      return '<div class="ba-trial-requirement-item' + (ok ? ' on' : '') + '"><span>' +
+        (ok ? '✅' : '⏳') + ' ' + label + '</span><b>' + baNum(cur) + ' / ' + baNum(need) + '</b></div>';
+    }
+    function gatReqLE(cur, cap, label) {
+      const ok = cur <= cap;
+      return '<div class="ba-trial-requirement-item' + (ok ? ' on' : '') + '"><span>' +
+        (ok ? '✅' : '⚠️') + ' ' + label + '</span><b>' + baNum(cur) + ' / ' + baNum(cap) + '</b></div>';
+    }
+
+    function gatSwCardHtml(g, o) {
+      const gCost = BA_GAT_CFG.SW_GOLD, dCost = BA_GAT_CFG.SW_DIA;
+      const tokBadge = (o.swToken > 0) ? '<span class="ba-gold-trial-badge">🎁 มีสิทธิ์ฟรี ×' + o.swToken + '</span>' : '';
+      const onF20 = !!(g && g.floor === FLOOR_MAX);
+      const missShow = onF20 ? GAT_SW_MISS : 0;
+      const comboShow = onF20 ? GAT_SW_MAXCOMBO : 0;
+      return '<div class="ba-gold-trial-card">' +
+        '<div class="ba-gtc-hd">🔀 ค่าเปลี่ยนสายอาชีพ ' + tokBadge + '</div>' +
+        '<div class="ba-gtc-cost">🪙 ' + baNum(gCost) + ' + 💎 ' + baNum(dCost) + '</div>' +
+        '<div class="ba-gtc-or">หรือผ่านภารกิจทดลองฟรี (วันละสูงสุด ' + BA_GAT_CFG.SW_TRIAL_CAP +
+          ' ครั้ง — วันนี้ได้ไปแล้ว ' + (o.swEarned || 0) + '/' + BA_GAT_CFG.SW_TRIAL_CAP + ')</div>' +
+        '<div class="ba-trial-req-list">' +
+          gatReqGE(onF20 ? 1 : 0, 1, 'ขึ้นถึงชั้น ' + FLOOR_MAX + ' (ยอดหอคอย)') +
+          gatReqLE(missShow, BA_GAT_CFG.SW_MISS_CAP, 'พลาดสะสมบนชั้นนี้') +
+          gatReqGE(comboShow, BA_GAT_CFG.SW_COMBO_NEED, 'คอมโบสูงสุดบนชั้นนี้') +
+        '</div></div>';
+    }
+
+    function gatRsCardHtml(g, o) {
+      const gCost = BA_GAT_CFG.RS_GOLD, dCost = BA_GAT_CFG.RS_DIA;
+      const tokBadge = (o.rsToken > 0) ? '<span class="ba-gold-trial-badge">🎁 มีสิทธิ์ฟรี ×' + o.rsToken + '</span>' : '';
+      const inFight = GAT_RS_START > 0;
+      const elapsed = inFight ? Math.floor((Date.now() - GAT_RS_START) / 1000) : 0;
+      const cap = Math.floor(BA_GAT_CFG.RS_LIMIT_MS / 1000);
+      return '<div class="ba-gold-trial-card">' +
+        '<div class="ba-gtc-hd">🔄 ค่าล้างค่าพลัง ' + tokBadge + '</div>' +
+        '<div class="ba-gtc-cost">🪙 ' + baNum(gCost) + ' + 💎 ' + baNum(dCost) + '</div>' +
+        '<div class="ba-gtc-or">หรือผ่านภารกิจทดลองฟรี (วันละสูงสุด ' + BA_GAT_CFG.RS_TRIAL_CAP +
+          ' ครั้ง — วันนี้ได้ไปแล้ว ' + (o.rsEarned || 0) + '/' + BA_GAT_CFG.RS_TRIAL_CAP + ')</div>' +
+        '<div class="ba-trial-req-list">' +
+          gatReqGE(inFight ? 1 : 0, 1, 'กำลังดวลทัพเงาตัวที่ ' + (typeof BA_OD_MAX !== 'undefined' ? BA_OD_MAX : 25) + ' (โหมดเหวลึก)') +
+          gatReqLE(inFight ? elapsed : 0, cap, 'เวลาที่ใช้ไป (วินาที)') +
+          gatReqLE(inFight ? (GAT_RS_ITEM ? 1 : 0) : 0, 0, 'ไม่ใช้ไอเทมเลยระหว่างดวล') +
+        '</div>' +
+        '<button type="button" class="g-btn next ba-gat-rsbtn" onclick="gatReset()">🔄 ล้างค่าพลัง</button>' +
+        '</div>';
+    }
+
+    function gatPatchClassButtons(box) {
+      try {
+        const g = gatG();
+        const o = gatOf(g);
+        if (!g || !o) return;
+        const btns = box.querySelectorAll('.ba-pl-cs .ba-pl-cc');
+        if (!btns || !btns.length) return;
+        btns.forEach(function (b) {
+          if (b.classList.contains('on')) return;   /* สายปัจจุบัน — ไม่ต้องบอกราคา */
+          const iEl = b.querySelector('i');
+          if (!iEl) return;
+          iEl.textContent = '🪙 ' + baNum(BA_GAT_CFG.SW_GOLD) + ' + 💎 ' + baNum(BA_GAT_CFG.SW_DIA);
+          if (o.swToken > 0) {
+            const bd = document.createElement('span');
+            bd.className = 'ba-gold-trial-badge';
+            bd.textContent = '🎁 ฟรี';
+            b.appendChild(bd);
+          }
+        });
+      } catch (e) { gatErr(e, 'patchBtns'); }
+    }
+
+    function gatDecorate() {
+      try {
+        const g = gatG();
+        const box = document.getElementById('baPlBody');
+        if (!g || !box) return;
+        const o = gatOf(g);
+        if (!o) return;
+        gatRollDay(o);
+        gatPatchClassButtons(box);
+        box.insertAdjacentHTML('beforeend', gatSwCardHtml(g, o) + gatRsCardHtml(g, o));
+        /* ประกายฉาบผิวการ์ด — อนิเมชันครั้งเดียวจบต่อการวาด ไม่ใช้ animation:infinite
+           (บังคับรีสตาร์ตด้วย reflow ท่าเดียวกับ baBannerText ของ v6.0) */
+        const cards = box.querySelectorAll('.ba-gold-trial-card');
+        cards.forEach(function (c) {
+          c.classList.remove('gat-shine');
+          void c.offsetWidth;
+          c.classList.add('gat-shine');
+        });
+      } catch (e) { gatErr(e, 'decorate'); }
+    }
+
+    if (typeof baPlRender === 'function') {
+      const _gatPlRender = baPlRender;
+      baPlRender = function () {
+        const r = _gatPlRender.apply(this, arguments);
+        gatDecorate();
+        return r;
+      };
+    }
+
+    function gatStyle() {
+      if (document.getElementById('gatStyle')) return;
+      const st = document.createElement('style');
+      st.id = 'gatStyle';
+      const B = '#baPlBoard ';
+      st.textContent =
+        B + '.ba-gold-trial-card{position:relative;overflow:hidden;background:linear-gradient(135deg,rgba(255,209,102,.08),rgba(255,255,255,.03));border:1px solid rgba(255,209,102,.35);border-radius:10px;padding:10px 12px;margin-top:10px}' +
+        B + '.ba-gold-trial-card::before{content:"";position:absolute;top:0;left:0;width:40%;height:100%;background:linear-gradient(90deg,transparent,rgba(255,255,255,.16),transparent);transform:translateX(-150%);opacity:0;pointer-events:none}' +
+        B + '.ba-gold-trial-card.gat-shine::before{animation:gatShimmer .9s ease-out}' +
+        '@keyframes gatShimmer{0%{transform:translateX(-150%);opacity:0}15%{opacity:1}100%{transform:translateX(350%);opacity:0}}' +
+        B + '.ba-gtc-hd{font-weight:700;font-size:13px;color:#ffd166;display:flex;align-items:center;gap:6px;flex-wrap:wrap}' +
+        B + '.ba-gtc-cost{font-size:13px;margin-top:4px;color:#fff}' +
+        B + '.ba-gtc-or{font-size:11px;opacity:.75;margin-top:2px}' +
+        B + '.ba-trial-req-list{margin-top:8px;display:flex;flex-direction:column;gap:4px}' +
+        B + '.ba-trial-requirement-item{display:flex;justify-content:space-between;align-items:center;font-size:11.5px;padding:4px 8px;border-radius:6px;background:rgba(255,255,255,.05);opacity:.72}' +
+        B + '.ba-trial-requirement-item.on{opacity:1;background:rgba(16,185,129,.16);color:#6ee7b7}' +
+        B + '.ba-gold-trial-badge{display:inline-block;font-size:10.5px;padding:2px 7px;border-radius:20px;background:rgba(16,185,129,.22);color:#6ee7b7;border:1px solid rgba(16,185,129,.4)}' +
+        B + '.ba-gat-rsbtn{margin-top:10px;width:100%}';
+      document.head.appendChild(st);
+    }
+    try { gatStyle(); } catch (e) { gatErr(e, 'style'); }
+
+    /* ── วงจรบัญชี — เหมือนแบบของ bd (v9.10) ทุกประการ ───────────────────── */
+
+    if (typeof migrateAccount === 'function') {
+      const _gatMigrateAccount = migrateAccount;
+      migrateAccount = function (a) {
+        const r = _gatMigrateAccount.apply(this, arguments);
+        if (r && typeof r === 'object') gatEnsure(r);
+        return r;
+      };
+    }
+
+    if (typeof startGame === 'function') {
+      const _gatStartGame = startGame;
+      startGame = function (user) {
+        GAT_READY = false;
+        const r = _gatStartGame.apply(this, arguments);
+        try {
+          const uName = (typeof CURRENT_USER !== 'undefined' && CURRENT_USER) ? CURRENT_USER
+                        : (typeof user === 'string' ? user : null);
+          const a = uName ? loadStore()[uName] : null;
+          const g = gatG();
+          if (g) {
+            const src = (a && a.gat) ? a.gat : null;
+            g.gat = src
+              ? { day: src.day, swToken: src.swToken, swEarned: src.swEarned, rsToken: src.rsToken, rsEarned: src.rsEarned }
+              : { day: qDayKey(new Date()), swToken: 0, swEarned: 0, rsToken: 0, rsEarned: 0 };
+            gatEnsure(g);
+            GAT_READY = true;
+          }
+          GAT_SW_MISS = 0; GAT_SW_MAXCOMBO = 0;
+          GAT_RS_START = 0; GAT_RS_ITEM = false;
+        } catch (e) { gatErr(e, 'startGame'); }
+        return r;
+      };
+    }
+
+    if (typeof saveProgress === 'function') {
+      const _gatSaveProgress = saveProgress;
+      saveProgress = function () {
+        const r = _gatSaveProgress.apply(this, arguments);
+        try { gatSave(); } catch (e) { gatErr(e, 'saveProgress'); }
+        return r;
+      };
+    }
+
+    if (typeof exitGame === 'function') {
+      const _gatExitGame = exitGame;
+      exitGame = function () {
+        try { gatSave(); } catch (e) { gatErr(e, 'exitGame'); }
+        const r = _gatExitGame.apply(this, arguments);
+        GAT_READY = false;
+        return r;
+      };
+    }
+
+    if (typeof baBattleAudit === 'function') {
+      const _gatAudit = baBattleAudit;
+      baBattleAudit = function () {
+        const r = _gatAudit.apply(this, arguments) || {};
+        try {
+          const g = gatG(), o = gatOf(g);
+          r.progressionGates = {
+            ver: 'gat-1', ready: GAT_READY,
+            cfg: BA_GAT_CFG,
+            swToken: o ? o.swToken : 0, swEarned: o ? o.swEarned : 0,
+            rsToken: o ? o.rsToken : 0, rsEarned: o ? o.rsEarned : 0,
+            swMiss: GAT_SW_MISS, swMaxCombo: GAT_SW_MAXCOMBO,
+            rsFight: GAT_RS_START > 0, rsItemUsed: GAT_RS_ITEM,
+            n: Object.assign({}, GAT_N)
+          };
+        } catch (e) { gatErr(e, 'audit'); }
+        return r;
+      };
+    }
+
     (function baInstall() {
       try {
         /* .g-monster-area อยู่ใน HTML แบบสแตติกอยู่แล้ว จึงสร้างได้ตั้งแต่โหลดหน้า

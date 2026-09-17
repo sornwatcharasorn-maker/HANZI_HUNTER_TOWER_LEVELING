@@ -42662,6 +42662,135 @@
       };
     }
 
+    /* ══════════════════════════════════════════════════════════════════════
+       Patch · SWITCH CONFIRM MODAL & GM DIAMOND SPAWN (namespace: swc / gcd)
+       ไม่แก้โค้ดของชั้นก่อนหน้าเลยแม้แต่บรรทัดเดียว — ห่อทับทั้งหมด
+
+       1) ห่อ baPlSwitch(id) อีกชั้นนอกสุด (ทับ binding ปัจจุบันซึ่งคือ wrapper
+          ของชั้น gat v9.11 ที่หักทอง/เพชร/สิทธิ์ทดลองไปแล้ว) — ต้องแทรก "ก่อน"
+          การหักทุกครั้ง ผู้เล่นจึงต้องเห็นหน้าต่างยืนยัน (ชื่อสายเป้าหมาย + ราคา
+          หรือ "มีสิทธิ์ทดลองฟรี") ก่อนเสมอ กด "ยืนยัน" ถึงจะเรียก _swcSwitch
+          (= baPlSwitch เดิมของ gat ซึ่งหักของจริง) กด "ยกเลิก" (ปุ่มสแตติกของ
+          #gmModal เรียก gmModalClose() ตรง ๆ ไม่มี callback เลย) = ไม่มีอะไร
+          เกิดขึ้นเลย · ใช้ gmConfirm/#gmModal ของ v4.0 ที่มีอยู่แล้ว (z-index:820
+          ลอยเหนือ .g-modal ของ #baPlBoard ที่ z:200) จึงไม่ต้องเพิ่ม DOM/CSS
+          ใหม่สักบรรทัด (CLS=0) · baPlTier(g) ขึ้นกับเลเวลอย่างเดียว ไม่ขึ้นกับ
+          classId จึงใช้บอกชื่อร่าง C1/C2 ของสายเป้าหมายได้ตรง ๆ โดยไม่ต้อง
+          คำนวณซ้ำ · baPlSwitch มีผู้เรียกทางเดียวคือ inline onclick ในปุ่ม
+          ซึ่งไม่อ่านค่าที่คืนกลับมาเลย จึงคืน true ทันทีได้อย่างปลอดภัยโดยให้
+          ผลจริงตัดสินทีหลังในโมดัล
+
+       2) เติมปุ่ม "💎 +500" และช่องกรอกจำนวนเองในหัวแผง GM (.gm-head-btns)
+          สำหรับครูเสกเพชรให้บัญชีที่กำลังทดสอบอยู่ (CURRENT_USER/G) ตรงที่
+          g.ab.shards (หนีบแค่เพดานตลอดชีพ AB_SHARD_CAP) โดยไม่ผ่าน cdShards()/
+          baAddDiamonds() ซึ่งถูกชั้น bd (v9.10) ครอบเพดานรายวันไว้แล้ว — เป็น
+          direct-grant ที่ตั้งใจข้ามเพดานนั้นสำหรับงานทดสอบของครูโดยเฉพาะ
+          แล้ว saveProgress() (ตามที่งานสั่ง แม้ตัวมันเองไม่รู้จักฟิลด์ ab เลย)
+          + abSave() (ตัวที่เขียน .ab ลง store จริง) + baPlRender() ให้แผง
+          โปรไฟล์อัปเดตทันที
+       ══════════════════════════════════════════════════════════════════════ */
+
+    function swcErr(e, where) { try { baErr(e, 'swc:' + where); } catch (x) {} }
+
+    /* ── 1) หน้าต่างยืนยันก่อนเปลี่ยนสายอาชีพ — ห่อ baPlSwitch ทับ gat อีกชั้น ── */
+    if (typeof baPlSwitch === 'function') {
+      const _swcSwitch = baPlSwitch;
+      baPlSwitch = function (id) {
+        try {
+          const g = (typeof baG === 'function') ? baG() : null;
+          const target = (typeof BA_PL_BY_ID !== 'undefined') ? BA_PL_BY_ID[id] : null;
+          if (!g || !target || g.classId === id ||
+              typeof gmConfirm !== 'function' || !document.getElementById('gmModal')) {
+            return _swcSwitch.apply(this, arguments);   /* ไม่มีอะไรให้ยืนยัน / ไม่มีโมดัลให้ใช้ */
+          }
+
+          const tier = (typeof baPlTier === 'function') ? baPlTier(g) : 'c1';
+          const t = target[tier] || target.c1;
+          const label = target.icon + ' ' + t.th + ' · ' + t.en;
+          const o = (typeof gatOf === 'function') ? gatOf(g) : null;
+          const hasTrial = !!(o && o.swToken > 0);
+          const gCost = (typeof BA_GAT_CFG !== 'undefined') ? BA_GAT_CFG.SW_GOLD : 0;
+          const dCost = (typeof BA_GAT_CFG !== 'undefined') ? BA_GAT_CFG.SW_DIA : 0;
+          const costText = hasTrial
+            ? '🎟️ ใช้สิทธิ์เปลี่ยนสายฟรีจากภารกิจยอดหอคอย (เหลือ ' + o.swToken + ' สิทธิ์)'
+            : '🪙 ' + baNum(gCost) + ' + 💎 ' + baNum(dCost);
+
+          gmConfirm('🔀 ยืนยันเปลี่ยนสายอาชีพ',
+            '[ระบบ] เปลี่ยนเป็น ' + label + ' — ราคา: ' + costText + ' — ยืนยันหรือไม่?',
+            function () { try { _swcSwitch(id); } catch (e) { swcErr(e, 'confirmCall'); } });
+          return true;
+        } catch (e) {
+          swcErr(e, 'switch');
+          return _swcSwitch.apply(this, arguments);
+        }
+      };
+    }
+
+    /* ── 2) GM Custom Diamond Spawn — direct-grant ข้ามเพดานรายวันของชั้น bd ── */
+    function gcdGrant(nRaw) {
+      try {
+        const g = (typeof baG === 'function') ? baG() : null;
+        if (!g) { try { gcTip('⚠️ ยังไม่ได้ล็อกอิน — ไม่มีบัญชีให้เติม'); } catch (e) {} return false; }
+        const n = Math.max(0, Math.round(Number(nRaw) || 0));
+        if (n <= 0) return false;
+        const b = (typeof abOf === 'function') ? abOf(g) : null;
+        if (!b) { try { gcTip('⚠️ บัญชีนี้ยังไม่มี .ab — ลองล็อกอินใหม่'); } catch (e) {} return false; }
+        const cap = (typeof AB_SHARD_CAP === 'number') ? AB_SHARD_CAP : 99999;
+        /* เขียนตรงที่ shards — ไม่ผ่าน cdShards()/baAddDiamonds() ของชั้น bd (v9.10)
+           ซึ่งครอบเพดานรายวันไว้ ตั้งใจให้ direct-grant นี้ข้ามเพดานนั้นสำหรับครู */
+        b.shards = Math.min(cap, (b.shards | 0) + n);
+        try { saveProgress(); } catch (e) { swcErr(e, 'saveProgress'); }
+        try { if (typeof abSave === 'function') abSave(); } catch (e) { swcErr(e, 'abSave'); }
+        try { if (typeof baPlRender === 'function') baPlRender(); } catch (e) { swcErr(e, 'plRender'); }
+        try {
+          gcTip('💎 เสกเพชรให้ ' + (g.name || (typeof CURRENT_USER !== 'undefined' ? CURRENT_USER : '') || 'บัญชีนี้') +
+            ' +' + baNum(n) + ' สำเร็จ (ยอดรวม ' + baNum(b.shards) + ')');
+        } catch (e) {}
+        return true;
+      } catch (e) { swcErr(e, 'grant'); return false; }
+    }
+
+    function gcdPrompt() {
+      try {
+        if (typeof gmPrompt !== 'function' || !document.getElementById('gmModal')) return;
+        gmPrompt('💎 เสกเพชรให้บัญชีที่กำลังทดสอบ', 'ใส่จำนวนเพชรที่ต้องการเติม (ตรงที่ shards ข้ามเพดานรายวัน)',
+          'เช่น 1000', '', function (v) {
+            const n = parseInt(v, 10);
+            if (!(n > 0)) { try { gcTip('⚠️ กรอกจำนวนเต็มบวกเท่านั้น'); } catch (e) {} return; }
+            gcdGrant(n);
+          });
+      } catch (e) { swcErr(e, 'prompt'); }
+    }
+
+    (function gcdInstall() {
+      try {
+        /* ปุ่มชุดใหม่บนหัวแผง GM — แทรกครั้งเดียว (กับดักข้อ 2) */
+        const headBtns = document.querySelector('#gmPanel .gm-head-btns');
+        if (headBtns && !document.getElementById('gcdBtn500')) {
+          headBtns.insertAdjacentHTML('beforeend',
+            '<button class="gm-btn" id="gcdBtn500" onclick="gcdGrant(500)" ' +
+              'title="เสก 💎 500 ให้บัญชีที่กำลังทดสอบอยู่ (ข้ามเพดานรายวัน)">💎 +500</button>' +
+            '<button class="gm-btn" id="gcdBtnCustom" onclick="gcdPrompt()" ' +
+              'title="เสกเพชรจำนวนเองให้บัญชีที่กำลังทดสอบอยู่ (ข้ามเพดานรายวัน)">💎 กำหนดเอง</button>');
+        }
+      } catch (e) { swcErr(e, 'install'); }
+    })();
+
+    if (typeof baBattleAudit === 'function') {
+      const _swcAudit = baBattleAudit;
+      baBattleAudit = function () {
+        const r = _swcAudit.apply(this, arguments) || {};
+        try {
+          r.switchConfirm = { ver: 'swc-1', wired: typeof baPlSwitch === 'function' };
+          r.diamondSpawn = {
+            ver: 'gcd-1',
+            btns: !!(document.getElementById('gcdBtn500') && document.getElementById('gcdBtnCustom'))
+          };
+        } catch (e) { swcErr(e, 'audit'); }
+        return r;
+      };
+    }
+
     (function baInstall() {
       try {
         /* .g-monster-area อยู่ใน HTML แบบสแตติกอยู่แล้ว จึงสร้างได้ตั้งแต่โหลดหน้า

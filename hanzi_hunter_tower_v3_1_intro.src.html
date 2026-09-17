@@ -41898,6 +41898,272 @@
       };
     }
 
+    /* ══════════════════════════════════════════════════════════════════
+       Patch v9.10 · DIAMOND ECONOMY GOVERNOR (เพดานรายวัน 450 💎 + ตัวรวมทางไหลเข้า)
+       ══════════════════════════════════════════════════════════════════
+       อยู่ในเนมสเปซ `bd` ใหม่ (ตรวจแล้ว grep "\bBD_\|\bbd[A-Z]\|account\.bd\b"
+       ว่างสนิทก่อนตั้งชื่อ — กับดักข้อ 36) วางท้ายสุดของไฟล์ ต่อจาก Patch v9.9 ·
+       DEDICATED WORDBANK SYNC และก่อน baInstall() สุดท้ายของ v6.0
+       ไม่แก้โค้ดของ v4.0-v9.9 เลยแม้แต่บรรทัดเดียว — ห่อทับ binding ทั้งหมด
+
+       ปัญหาที่แก้: 💎 เศษคริสตัลไหลเข้าบัญชีผ่านสามระบบที่ไม่ประสานงบกันเลย —
+       Daily Quest (Micro-Patch) · Ultimate Abyss Overhaul (v8.1) · Dedicated Abyss
+       Engine (v8.3) ทั้งสามเรียก baQdGem() ซึ่งเรียก cdShards() (v4.7) ต่ออีกที
+       ส่วนการทลายผนึก (abSealBroken ของ v4.6) กับโบนัสต่อข้อของ v4.6 เองยิงเข้า
+       b.shards ตรง ๆ โดยไม่ผ่านฟังก์ชันกลางสักจุด วัดจริงแล้วรอบเหวลึกเฉพาะกิจ
+       (Dedicated Abyss · 25 ตัว) รอบเดียวให้ได้ถึง ~300-570+ 💎 ซึ่งมากกว่าเพดาน
+       450 💎/วันที่ควรมีไปแล้วรอบเดียว — นี่คือช่องโหว่ปั๊มบอทตัวจริงที่ต้องปิด
+
+       สามจุดสกัด (ห่อทับ binding ทั้งหมด ไม่แก้โค้ดของชั้นก่อนหน้าสักบรรทัด):
+       1) cdShards(n) — ทางผ่านหลักของทั้งสามระบบเหวลึก หักลดจำนวนล่วงหน้าให้พอดี
+          เพดานที่เหลือก่อนส่งต่อของเดิม การห่อฟังก์ชันไม่สนจังหวะเวลาของผู้เรียก
+          จึงครอบทั้งทางซิงโครนัสและทางที่มาช้าผ่าน scheduleTurn(...,1100) ให้เอง
+       2) abSealBroken() — ทลายผนึกยิง b.shards += AB_SEAL_SHARD (12) ตรง ๆ ไม่มี
+          พารามิเตอร์ให้หักลดล่วงหน้า จึงวัดส่วนต่างก่อน/หลังเรียกของเดิม (มันยิง
+          แบบซิงโครนัสอยู่แล้ว วัดรอบตัวมันตัวเดียวปลอดภัย) แล้วเรียกคืนส่วนเกิน
+          ออกจาก b.shards ทันที — กติกาเดียวกับที่ hdApplyCap ของ v4.8 คืน HP ส่วนเกิน
+          หลังทุกชั้นตัดสินผลไปแล้ว
+       3) resolveAnswer(...) — ห่อชั้นนอกสุด (แพตช์นี้โหลดทีหลังสุดในไฟล์ จึงทับ
+          binding ล่าสุดของทุกชั้นก่อนหน้า) วัดส่วนต่าง b.shards รอบการตัดสินข้อ
+          ทั้งข้อ แล้วหักลบด้วย BD_ROUTED (ยอดที่ทางที่ 1/2 ข้างบนจัดการไปแล้วใน
+          ทิกเดียวกัน) เหลือเฉพาะ "ส่วนที่ไม่มีใครดักไว้เลย" ซึ่งคือโบนัสต่อข้อดิบ
+          ของ v4.6 — แล้วหักคืนส่วนเกินออกเช่นเดียวกัน
+
+       ทั้งสามทางไม่แตะ AB_SHARD_CAP (99999) ของ v4.6 เลย — เพดานรายวันนี้คุมคนละ
+       เรื่อง (รายวัน vs ตลอดชีพ) ใช้ Math.min ร่วมกันได้โดยไม่ชนกัน
+
+       account.bd = { day, got } — ไม่มีตรารุ่นเพราะไม่มีอะไรให้ backfill (กติกา
+       เดียวกับ account.ab/ax/dq) · BD_READY เป็นสวิตช์แบบเดียวกับ AB_READY/CD_READY
+       (กับดักข้อ 16) · qDayKey() ยืมของ v4.2 มาใช้ตัวเดียวกับทุกรอบวันในเกม
+       ไม่สร้างนาฬิกาชุดที่สอง (กับดักข้อ 35)
+
+       BA_DIAMOND_CFG / baAddDiamonds(n, reason) ตามที่งานสั่งมาตรง ๆ — เป็นทางเข้า
+       สาธารณะสำหรับโค้ดใหม่ในอนาคตให้เรียกโดยตรง (ผ่านเพดานเดียวกับสามจุดสกัด
+       ข้างบนโดยอัตโนมัติ) ไม่ได้ถูกเรียกจากโค้ดเดิมที่มีอยู่แล้วสักจุด — ของเดิม
+       ทั้งหมดถูกดักที่ทางผ่านของมันเอง ไม่ใช่ที่ตัวมันเอง
+
+       ไม่เพิ่ม toast/gate ใบใหม่นอกจากแจ้งเตือน 80%/เต็มเพดานของวันนี้ (toast ล้วน
+       ไม่มี gate — ยิงตอนนาฬิกาต่อข้ออาจเดินอยู่ กับดักข้อ 18) · ไม่แตะ Math.random
+       เลยสักครั้ง (กับดักข้อ 32) · ไม่เพิ่ม DOM/ปุ่ม/คอลัมน์ตารางสักจุด */
+
+    const BA_DIAMOND_CFG = { CAP: 450, WARN_PCT: 0.8 };
+
+    let BD_READY    = false;  /* อ่านค่าจาก store เข้า G.bd ครบแล้วหรือยัง (กับดักข้อ 16) */
+    let BD_ROUTED   = 0;      /* ยอดที่ cdShards()/abSealBroken() จัดการไปแล้วในทิกนี้ — ของรอบ resolveAnswer ปัจจุบัน ไม่ต้องเซฟ */
+    let BD_WARNED   = false;  /* เตือนถึง 80% ของวันนี้ไปแล้วหรือยัง */
+    let BD_HIT_TOLD = false;  /* แจ้งเต็มเพดานของวันนี้ไปแล้วหรือยัง */
+
+    function bdErr(e, where) { try { baErr(e, 'bd:' + where); } catch (x) {} }
+
+    function bdG() {
+      try { return (typeof baG === 'function') ? baG() : ((typeof cdG === 'function') ? cdG() : null); }
+      catch (e) { return null; }
+    }
+
+    /* read-only เท่านั้น คืน null ถ้ายังไม่มี — ห้ามสร้างก้อนเปล่าให้เอง (กับดักข้อ 16) */
+    function bdOf(g) { return (g && g.bd && typeof g.bd === 'object') ? g.bd : null; }
+
+    function bdRollDay(b) {
+      const k = qDayKey(new Date());
+      if (b.day !== k) {
+        b.day = k;
+        b.got = 0;
+        BD_WARNED = false;
+        BD_HIT_TOLD = false;
+      }
+    }
+
+    /* ต้อง idempotent เพราะถูกเรียกทุกครั้งที่อ่าน store ผ่าน migrateAccount (กับดักข้อ 8) */
+    function bdEnsure(a) {
+      if (!a) return;
+      if (!a.bd || typeof a.bd !== 'object') a.bd = { day: qDayKey(new Date()), got: 0 };
+      if (typeof a.bd.got !== 'number' || !(a.bd.got >= 0) || !isFinite(a.bd.got)) a.bd.got = 0;
+      if (typeof a.bd.day !== 'string') a.bd.day = qDayKey(new Date());
+      bdRollDay(a.bd);
+    }
+
+    /* saveProgress ของ v4.0 ไม่รู้จักฟิลด์ bd — เขียนเองต่อท้ายเหมือนที่ v4.5 ทำกับ trFloors */
+    function bdSave() {
+      if (!BD_READY || typeof CURRENT_USER === 'undefined' || !CURRENT_USER) return;
+      const g = bdG();
+      if (!g || !g.bd) return;
+      try {
+        const s = loadStore(), a = s[CURRENT_USER];
+        if (!a) return;
+        bdEnsure(a);
+        a.bd.day = g.bd.day;
+        a.bd.got = Math.max(0, Math.floor(g.bd.got || 0));
+        saveStore(s);
+      } catch (e) { bdErr(e, 'save'); }
+    }
+
+    function bdMaybeWarn(g, b) {
+      try {
+        const cap = BA_DIAMOND_CFG.CAP;
+        if (b.got >= cap) {
+          if (!BD_HIT_TOLD) {
+            BD_HIT_TOLD = true;
+            snShowToast({ tag: 'DIAMOND', tone: 'danger' }, '💎 ถึงเพดานเศษคริสตัลของวันนี้แล้ว',
+              'วันนี้ได้ครบ ' + cap + ' 💎 แล้ว — เศษคริสตัลใหม่จะเริ่มไหลอีกครั้งตอนเที่ยงคืน');
+          }
+        } else if (b.got >= Math.floor(cap * BA_DIAMOND_CFG.WARN_PCT)) {
+          if (!BD_WARNED) {
+            BD_WARNED = true;
+            snShowToast({ tag: 'DIAMOND', tone: 'warn' }, '💎 ใกล้เพดานเศษคริสตัลของวันนี้แล้ว',
+              'วันนี้ได้ไปแล้ว ' + b.got + ' / ' + cap + ' 💎');
+          }
+        }
+      } catch (e) { bdErr(e, 'warn'); }
+    }
+
+    function bdRoom(b) { return Math.max(0, BA_DIAMOND_CFG.CAP - b.got); }
+
+    /* จองโควตารายวันจริง — คืน "จำนวนที่อนุญาตให้ผ่าน" (0..want) แล้วบวกเข้า b.got/BD_ROUTED
+       เอง ให้ผู้เรียกใช้ค่าที่คืนมาต่อ (ไม่ใช่ตัดสินใจเองว่าจะให้เท่าไร) */
+    function bdReserve(g, want) {
+      const b = bdOf(g);
+      if (!b) return Math.max(0, Math.round(want || 0));  /* ยังไม่พร้อม — ปล่อยผ่าน อย่าบล็อกฟรี */
+      bdRollDay(b);
+      const w = Math.max(0, Math.round(want || 0));
+      const allow = Math.min(w, bdRoom(b));
+      if (allow > 0) {
+        b.got += allow;
+        BD_ROUTED += allow;
+        bdSave();
+      }
+      bdMaybeWarn(g, b);
+      return allow;
+    }
+
+    /* ทางเข้าสาธารณะตามที่งานสั่งมาตรง ๆ — โค้ดใหม่ในอนาคตเรียกตัวนี้แทนการยิง
+       cdShards()/b.shards ตรง ๆ จะได้ผ่านเพดานรายวันเดียวกับสามจุดสกัดข้างล่างเอง */
+    function baAddDiamonds(n, reason) {
+      try {
+        const g = bdG();
+        if (!g) return 0;
+        const allow = bdReserve(g, n);
+        if (allow <= 0) return 0;
+        if (typeof cdShards === 'function') return cdShards(allow);
+        return 0;
+      } catch (e) { bdErr(e, 'add:' + (reason || '')); return 0; }
+    }
+
+    if (typeof cdShards === 'function') {
+      const _bdCdShards = cdShards;
+      cdShards = function (n) {
+        try {
+          const g = bdG();
+          if (g && typeof n === 'number' && n > 0) {
+            const allow = bdReserve(g, n);
+            if (allow <= 0) return 0;
+            return _bdCdShards.call(this, allow);
+          }
+        } catch (e) { bdErr(e, 'cdShards'); }
+        return _bdCdShards.apply(this, arguments);
+      };
+    }
+
+    if (typeof abSealBroken === 'function') {
+      const _bdSealBroken = abSealBroken;
+      abSealBroken = function () {
+        const g = bdG();
+        const bBefore = g ? bdOf(g) : null;
+        const before = bBefore ? bBefore.shards : null;
+        const r = _bdSealBroken.apply(this, arguments);
+        try {
+          if (g && bBefore && before !== null && typeof bBefore.shards === 'number') {
+            const delta = bBefore.shards - before;
+            if (delta > 0) {
+              const allow = bdReserve(g, delta);
+              if (allow < delta) {
+                bBefore.shards = Math.max(before, bBefore.shards - (delta - allow));
+                try { if (typeof renderMonsterHp === 'function') renderMonsterHp(); } catch (e2) {}
+              }
+            }
+          }
+        } catch (e) { bdErr(e, 'sealBroken'); }
+        return r;
+      };
+    }
+
+    if (typeof resolveAnswer === 'function') {
+      const _bdResolveAnswer = resolveAnswer;
+      resolveAnswer = function () {
+        const g = bdG();
+        const b = g ? bdOf(g) : null;
+        const before = b ? b.shards : null;
+        BD_ROUTED = 0;
+        const r = _bdResolveAnswer.apply(this, arguments);
+        try {
+          if (g && b && before !== null && typeof b.shards === 'number') {
+            const rawDelta = b.shards - before;
+            const unrouted = rawDelta - BD_ROUTED;
+            if (unrouted > 0) {
+              const allow = bdReserve(g, unrouted);
+              if (allow < unrouted) {
+                b.shards = Math.max(before, b.shards - (unrouted - allow));
+                try { if (typeof renderStats === 'function') renderStats(); } catch (e2) {}
+              }
+            }
+          }
+        } catch (e) { bdErr(e, 'resolveAnswer'); }
+        BD_ROUTED = 0;
+        return r;
+      };
+    }
+
+    if (typeof migrateAccount === 'function') {
+      const _bdMigrateAccount = migrateAccount;
+      migrateAccount = function (a) {
+        const r = _bdMigrateAccount.apply(this, arguments);
+        if (r && typeof r === 'object') bdEnsure(r);
+        return r;
+      };
+    }
+
+    if (typeof startGame === 'function') {
+      const _bdStartGame = startGame;
+      startGame = function (user) {
+        BD_READY = false;   /* ปิดสวิตช์ตลอดช่วงที่ชั้นล่างกำลังตั้งค่า G ใหม่ (กับดักข้อ 16) */
+        const r = _bdStartGame.apply(this, arguments);
+        try {
+          const uName = (typeof CURRENT_USER !== 'undefined' && CURRENT_USER) ? CURRENT_USER
+                        : (typeof user === 'string' ? user : null);
+          const a = uName ? loadStore()[uName] : null;
+          const g = bdG();
+          if (g) {
+            const src = (a && a.bd) ? a.bd : null;
+            g.bd = { day: src ? src.day : qDayKey(new Date()), got: src ? src.got : 0 };
+            bdEnsure(g);
+            BD_READY = true;
+          }
+          BD_ROUTED = 0;
+          BD_WARNED = false;
+          BD_HIT_TOLD = false;
+        } catch (e) { bdErr(e, 'startGame'); }
+        return r;
+      };
+    }
+
+    if (typeof saveProgress === 'function') {
+      const _bdSaveProgress = saveProgress;
+      saveProgress = function () {
+        const r = _bdSaveProgress.apply(this, arguments);
+        try { bdSave(); } catch (e) { bdErr(e, 'saveProgress'); }
+        return r;
+      };
+    }
+
+    if (typeof exitGame === 'function') {
+      const _bdExitGame = exitGame;
+      exitGame = function () {
+        try { bdSave(); } catch (e) { bdErr(e, 'exitGame'); }
+        const r = _bdExitGame.apply(this, arguments);
+        BD_READY = false;
+        return r;
+      };
+    }
+
     (function baInstall() {
       try {
         /* .g-monster-area อยู่ใน HTML แบบสแตติกอยู่แล้ว จึงสร้างได้ตั้งแต่โหลดหน้า

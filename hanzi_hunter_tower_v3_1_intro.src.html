@@ -42681,20 +42681,36 @@
           ผลจริงตัดสินทีหลังในโมดัล
 
        2) ปุ่ม "💎 มอบเพชร" เดียวในหัวแผง GM (.gm-head-btns) — เสกเพชรให้บัญชี
-          ที่ "ระบุชื่อ" เท่านั้น ไม่ใช่บัญชีที่กำลังทดสอบอยู่ (CURRENT_USER/G)
-          โดยอัตโนมัติอีกต่อไป: ถามชื่อบัญชีก่อนเสมอ (ว่าง/ไม่กรอก = ยกเลิกทันที
-          ไม่มีการ fallback ไปที่บัญชีที่ล็อกอินอยู่) แล้วตรวจว่าชื่อนั้นมีจริงใน
-          ทะเบียน (loadStore()) ถึงจะถามจำนวนเพชรต่อ · เขียนตรงที่ target.ab.shards
-          (หนีบแค่เพดานตลอดชีพ AB_SHARD_CAP) ผ่าน withStudent() — ตัวกลางมาตรฐาน
-          ของ repo นี้สำหรับแก้บัญชีที่ระบุชื่อ (loadStore → mutate → saveStore →
-          gmRender → syncFromStore ถ้าบังเอิญเป็นบัญชีที่กำลังเล่นอยู่) — โดยไม่ผ่าน
-          cdShards()/baAddDiamonds() ซึ่งถูกชั้น bd (v9.10) ครอบเพดานรายวันไว้แล้ว
-          เป็น direct-grant ที่ตั้งใจข้ามเพดานนั้นสำหรับงานให้รางวัลของครูโดยเฉพาะ
-          · syncFromStore()/gcLive() ของ v4.3 ไม่ดัน .ab เข้า G ที่มีชีวิตเลยสักฟิลด์
-          (ดู abOf() ด้านบน) จึงต้องซิงก์ G.ab.shards เองเพิ่มอีกทีตรงนี้ เฉพาะกรณี
-          ที่เป้าหมายบังเอิญเป็นบัญชีที่กำลังเล่นอยู่บนเครื่องนี้พอดี ไม่งั้น autosave
-          รอบถัดไปของ session สดจะเขียนค่าเก่าทับของที่เพิ่งเสกไปทันที ปิดท้ายด้วย
-          baPlRender() ให้แผงโปรไฟล์อัปเดต และ alert() ยืนยันผล
+          ที่ "เลือกจากรายชื่อ" เท่านั้น ไม่ใช่บัญชีที่กำลังทดสอบอยู่ (CURRENT_USER/G)
+          โดยอัตโนมัติ และไม่ใช่การพิมพ์ชื่อเองอีกต่อไป (v2 เคยเป็นแบบนั้น กันพิมพ์ผิด/
+          พิมพ์ชื่อไม่มีจริงไม่ได้จนกว่าจะกดยืนยัน) — ตอนนี้ยิง #gmModal เองตรง ๆ
+          โดย "ไม่ผ่าน" gmPrompt() เลย (เพราะต้องมี input สองแบบพร้อมกันในโมดัลเดียว
+          ซึ่ง gmPrompt ออกแบบไว้สำหรับ text input ทีละช่องเท่านั้น — ฟังก์ชันนั้นมี
+          ผู้เรียกอื่นอีกกว่า 15 จุดในไฟล์ ห้ามแก้เด็ดขาด) · gcdRoster() อ่าน
+          loadStore() คืนรายชื่อทุกบัญชีที่มีจริง เรียงตาม user (localeCompare 'th')
+          · gcdDom() แทรก <select id="gcdSelUser"> + <input type="number"
+          id="gcdInpAmt"> ต่อจาก #gmModalInput ครั้งเดียว (กันแทรกซ้ำแบบกับดักข้อ 2
+          ของ repo นี้) แล้วซ่อน #gmModalInput ไว้ตลอด (ไม่ได้ลบ ปุ่มอื่นยังใช้มันอยู่)
+          · ปุ่ม "✅ ยืนยัน" ถูก clone แล้วผูก onclick ใหม่เอง (ท่าเดียวกับที่ gmPrompt
+          ทำกับตัวมันเอง กันตัวฟังของรอบก่อนค้าง) อ่านค่าจาก select+input โดยตรง
+          ไม่มี fallback ไปบัญชีที่ล็อกอินอยู่เลย (dropdown บังคับให้ทุกครั้งเป็นการ
+          เลือกที่ตั้งใจ ไม่มีทางเว้นว่างเหมือนตอนพิมพ์เอง) · gmModalClose() ถูกห่อ
+          (ไม่ใช่แก้) ให้ล้าง/ซ่อน select+input คืนสภาพ #gmModalInput ทุกครั้งที่ปิด
+          ไม่ว่าจะปิดจากปุ่ม "ยกเลิก" (onclick สแตติกในหน้า HTML แก้ไม่ได้) หรือจาก
+          เครื่องมือ GM ตัวอื่นที่ใช้ #gmModal ร่วมกันอยู่ — กันไม่ให้ select/input
+          ของชั้นนี้หลงเหลือทับซ้อนกับเครื่องมืออื่น (กับดักข้อ "state leak ข้ามชั้น")
+          · เขียนตรงที่ target.ab.shards (หนีบแค่เพดานตลอดชีพ AB_SHARD_CAP) ผ่าน
+          withStudent() — ตัวกลางมาตรฐานของ repo นี้สำหรับแก้บัญชีที่ระบุชื่อ
+          (loadStore → mutate → saveStore → gmRender → syncFromStore ถ้าบังเอิญเป็น
+          บัญชีที่กำลังเล่นอยู่) — โดยไม่ผ่าน cdShards()/baAddDiamonds() ซึ่งถูกชั้น
+          bd (v9.10) ครอบเพดานรายวันไว้แล้ว เป็น direct-grant ที่ตั้งใจข้ามเพดานนั้น
+          สำหรับงานให้รางวัลของครูโดยเฉพาะ · syncFromStore()/gcLive() ของ v4.3
+          ไม่ดัน .ab เข้า G ที่มีชีวิตเลยสักฟิลด์ (ดู abOf() ด้านบน) จึงต้องซิงก์
+          G.ab.shards เองเพิ่มอีกทีตรงนี้ เฉพาะกรณีที่เป้าหมายบังเอิญเป็นบัญชีที่
+          กำลังเล่นอยู่บนเครื่องนี้พอดี ไม่งั้น autosave รอบถัดไปของ session สดจะ
+          เขียนค่าเก่าทับของที่เพิ่งเสกไปทันที ปิดท้ายด้วย baPlRender() ให้แผงโปรไฟล์
+          อัปเดต และ alert() ยืนยันผล — gcdGrant() ตัวคำนวณ/ตรวจ/บันทึกเดิมไม่ถูก
+          แตะเลยสักบรรทัดในรอบนี้ (v3) เปลี่ยนแค่ "วิธีเก็บ input" จากพิมพ์เป็นเลือก
        ══════════════════════════════════════════════════════════════════════ */
 
     function swcErr(e, where) { try { baErr(e, 'swc:' + where); } catch (x) {} }
@@ -42774,22 +42790,86 @@
       } catch (e) { swcErr(e, 'grant'); return false; }
     }
 
+    /* คืนรายชื่อทุกบัญชีที่มีจริงในทะเบียน เรียงตาม user (localeCompare 'th') —
+       ใช้เติม <select> ของ gcdDom() แหล่งเดียว ไม่มีสารบัญคู่ขนาน */
+    function gcdRoster() {
+      try {
+        const store = loadStore() || {};
+        return Object.keys(store).sort((a, b) => a.localeCompare(b, 'th')).map(function (u) {
+          const a = store[u] || {};
+          return { user: u, label: u + (a.name && a.name !== u ? ' · ' + a.name : '') +
+            ' (Lv.' + (a.level || 1) + ')' };
+        });
+      } catch (e) { swcErr(e, 'roster'); return []; }
+    }
+
+    /* แทรก select+number ต่อจาก #gmModalInput ครั้งเดียว (กันแทรกซ้ำ) แล้วคืน
+       node ทั้งสอง — #gmModalInput ยังอยู่ในหน้า HTML เดิม ไม่ได้ลบ แค่ซ่อนไว้ */
+    function gcdDom() {
+      const inp = document.getElementById('gmModalInput');
+      if (!inp) return null;
+      let sel = document.getElementById('gcdSelUser');
+      let amt = document.getElementById('gcdInpAmt');
+      if (!sel) {
+        inp.insertAdjacentHTML('afterend',
+          '<select class="gm-input" id="gcdSelUser" style="width:100%;display:none;margin-bottom:8px"></select>' +
+          '<input type="number" class="gm-input" id="gcdInpAmt" min="1" step="1" placeholder="จำนวนเพชร เช่น 1000" style="width:100%;display:none">');
+        sel = document.getElementById('gcdSelUser');
+        amt = document.getElementById('gcdInpAmt');
+      }
+      return { sel: sel, amt: amt };
+    }
+
     function gcdPrompt() {
       try {
-        if (typeof gmPrompt !== 'function' || !document.getElementById('gmModal')) return;
-        gmPrompt('💎 มอบเพชรให้บัญชี', 'พิมพ์ชื่อบัญชีฮันเตอร์เป้าหมาย (ต้องมีอยู่จริงในทะเบียน — ไม่ fallback ไปบัญชีที่กำลังทดสอบอยู่)',
-          'เช่น a1', '', function (uRaw) {
-            const uid = (uRaw || '').trim();
-            if (!uid) { try { alert('⚠️ ต้องระบุชื่อบัญชีเป้าหมาย — ยกเลิกการเสกเพชร'); } catch (e) {} return; }
-            if (!loadStore()[uid]) { try { alert('⚠️ ไม่พบบัญชี "' + uid + '" ในทะเบียน — ยกเลิกการเสกเพชร'); } catch (e) {} return; }
-            gmPrompt('💎 มอบเพชรให้ ' + uid, 'ใส่จำนวนเพชรที่ต้องการเติม (ตรงที่ shards ข้ามเพดานรายวัน)',
-              'เช่น 1000', '', function (v) {
-                const n = parseInt(v, 10);
-                if (!(n > 0)) { try { alert('⚠️ กรอกจำนวนเต็มบวกเท่านั้น'); } catch (e) {} return; }
-                gcdGrant(uid, n);
-              });
-          });
+        if (!document.getElementById('gmModal')) return;
+        const dom = gcdDom();
+        if (!dom) return;
+        const roster = gcdRoster();
+        if (!roster.length) { try { alert('⚠️ ยังไม่มีบัญชีในทะเบียนเลย — ไม่มีเป้าหมายให้เลือก'); } catch (e) {} return; }
+
+        document.getElementById('gmModalTitle').textContent = '💎 มอบเพชรให้บัญชี';
+        document.getElementById('gmModalMsg').textContent = 'เลือกบัญชีเป้าหมาย แล้วกรอกจำนวนเพชร (ข้ามเพดานรายวัน)';
+        document.getElementById('gmModalInput').style.display = 'none';
+        dom.sel.innerHTML = roster.map(r => '<option value="' + esc(r.user) + '">' + esc(r.label) + '</option>').join('');
+        dom.sel.style.display = 'block';
+        dom.amt.value = '';
+        dom.amt.style.display = 'block';
+        document.getElementById('gmModal').classList.add('active');
+        setTimeout(() => { try { dom.amt.focus(); } catch (e) {} }, 50);
+
+        const ok = document.getElementById('gmModalOk');
+        const fresh = ok.cloneNode(true);
+        ok.parentNode.replaceChild(fresh, ok);
+        fresh.onclick = function () {
+          const uid = dom.sel.value;
+          const n = parseInt(dom.amt.value, 10);
+          if (!uid) { try { alert('⚠️ ต้องเลือกบัญชีเป้าหมาย — ยกเลิกการเสกเพชร'); } catch (e) {} return; }
+          if (!(n > 0)) { try { alert('⚠️ กรอกจำนวนเต็มบวกเท่านั้น'); } catch (e) {} return; }
+          gmModalClose();
+          gcdGrant(uid, n);
+        };
       } catch (e) { swcErr(e, 'prompt'); }
+    }
+
+    /* ห่อ gmModalClose() (ไม่แก้ในที่) เพื่อล้าง select/number ของชั้นนี้ทุกครั้งที่
+       ปิดโมดัล ไม่ว่าจะปิดจากปุ่ม "ยกเลิก" สแตติกในหน้า HTML หรือจากเครื่องมือ GM
+       ตัวอื่นที่ยืม #gmModal ร่วมกันอยู่ — กันสถานะของปุ่มนี้หลงเหลือทับซ้อนกับ
+       เครื่องมืออื่น (#gmModalInput ต้องกลับมาโชว์เสมอ เพราะเป็นช่องมาตรฐานของ
+       gmPrompt ที่เครื่องมืออื่นทุกตัวใช้อยู่) */
+    if (typeof gmModalClose === 'function') {
+      const _gcdModalClose = gmModalClose;
+      gmModalClose = function () {
+        try {
+          const sel = document.getElementById('gcdSelUser');
+          const amt = document.getElementById('gcdInpAmt');
+          const inp = document.getElementById('gmModalInput');
+          if (sel) sel.style.display = 'none';
+          if (amt) amt.style.display = 'none';
+          if (inp) inp.style.display = 'block';
+        } catch (e) { swcErr(e, 'modalCloseCleanup'); }
+        return _gcdModalClose.apply(this, arguments);
+      };
     }
 
     (function gcdInstall() {
@@ -42799,7 +42879,7 @@
         if (headBtns && !document.getElementById('gcdBtnTarget')) {
           headBtns.insertAdjacentHTML('beforeend',
             '<button class="gm-btn" id="gcdBtnTarget" onclick="gcdPrompt()" ' +
-              'title="มอบเพชรให้บัญชีที่ระบุชื่อ (ต้องพิมพ์ชื่อบัญชีที่มีอยู่จริง — ข้ามเพดานรายวัน)">💎 มอบเพชร</button>');
+              'title="มอบเพชรให้บัญชี — เลือกชื่อจากรายการแล้วกรอกจำนวน (ข้ามเพดานรายวัน)">💎 มอบเพชร</button>');
         }
       } catch (e) { swcErr(e, 'install'); }
     })();
@@ -42811,8 +42891,9 @@
         try {
           r.switchConfirm = { ver: 'swc-1', wired: typeof baPlSwitch === 'function' };
           r.diamondSpawn = {
-            ver: 'gcd-2',
-            btns: !!document.getElementById('gcdBtnTarget')
+            ver: 'gcd-3',
+            btns: !!document.getElementById('gcdBtnTarget'),
+            dom: !!(document.getElementById('gcdSelUser') && document.getElementById('gcdInpAmt'))
           };
         } catch (e) { swcErr(e, 'audit'); }
         return r;

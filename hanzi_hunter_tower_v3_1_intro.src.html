@@ -42680,14 +42680,21 @@
           ซึ่งไม่อ่านค่าที่คืนกลับมาเลย จึงคืน true ทันทีได้อย่างปลอดภัยโดยให้
           ผลจริงตัดสินทีหลังในโมดัล
 
-       2) เติมปุ่ม "💎 +500" และช่องกรอกจำนวนเองในหัวแผง GM (.gm-head-btns)
-          สำหรับครูเสกเพชรให้บัญชีที่กำลังทดสอบอยู่ (CURRENT_USER/G) ตรงที่
-          g.ab.shards (หนีบแค่เพดานตลอดชีพ AB_SHARD_CAP) โดยไม่ผ่าน cdShards()/
-          baAddDiamonds() ซึ่งถูกชั้น bd (v9.10) ครอบเพดานรายวันไว้แล้ว — เป็น
-          direct-grant ที่ตั้งใจข้ามเพดานนั้นสำหรับงานทดสอบของครูโดยเฉพาะ
-          แล้ว saveProgress() (ตามที่งานสั่ง แม้ตัวมันเองไม่รู้จักฟิลด์ ab เลย)
-          + abSave() (ตัวที่เขียน .ab ลง store จริง) + baPlRender() ให้แผง
-          โปรไฟล์อัปเดตทันที
+       2) ปุ่ม "💎 มอบเพชร" เดียวในหัวแผง GM (.gm-head-btns) — เสกเพชรให้บัญชี
+          ที่ "ระบุชื่อ" เท่านั้น ไม่ใช่บัญชีที่กำลังทดสอบอยู่ (CURRENT_USER/G)
+          โดยอัตโนมัติอีกต่อไป: ถามชื่อบัญชีก่อนเสมอ (ว่าง/ไม่กรอก = ยกเลิกทันที
+          ไม่มีการ fallback ไปที่บัญชีที่ล็อกอินอยู่) แล้วตรวจว่าชื่อนั้นมีจริงใน
+          ทะเบียน (loadStore()) ถึงจะถามจำนวนเพชรต่อ · เขียนตรงที่ target.ab.shards
+          (หนีบแค่เพดานตลอดชีพ AB_SHARD_CAP) ผ่าน withStudent() — ตัวกลางมาตรฐาน
+          ของ repo นี้สำหรับแก้บัญชีที่ระบุชื่อ (loadStore → mutate → saveStore →
+          gmRender → syncFromStore ถ้าบังเอิญเป็นบัญชีที่กำลังเล่นอยู่) — โดยไม่ผ่าน
+          cdShards()/baAddDiamonds() ซึ่งถูกชั้น bd (v9.10) ครอบเพดานรายวันไว้แล้ว
+          เป็น direct-grant ที่ตั้งใจข้ามเพดานนั้นสำหรับงานให้รางวัลของครูโดยเฉพาะ
+          · syncFromStore()/gcLive() ของ v4.3 ไม่ดัน .ab เข้า G ที่มีชีวิตเลยสักฟิลด์
+          (ดู abOf() ด้านบน) จึงต้องซิงก์ G.ab.shards เองเพิ่มอีกทีตรงนี้ เฉพาะกรณี
+          ที่เป้าหมายบังเอิญเป็นบัญชีที่กำลังเล่นอยู่บนเครื่องนี้พอดี ไม่งั้น autosave
+          รอบถัดไปของ session สดจะเขียนค่าเก่าทับของที่เพิ่งเสกไปทันที ปิดท้ายด้วย
+          baPlRender() ให้แผงโปรไฟล์อัปเดต และ alert() ยืนยันผล
        ══════════════════════════════════════════════════════════════════════ */
 
     function swcErr(e, where) { try { baErr(e, 'swc:' + where); } catch (x) {} }
@@ -42726,26 +42733,43 @@
       };
     }
 
-    /* ── 2) GM Custom Diamond Spawn — direct-grant ข้ามเพดานรายวันของชั้น bd ── */
-    function gcdGrant(nRaw) {
+    /* ── 2) GM Targeted Diamond Grant — เสกเพชรให้บัญชีที่ระบุชื่อ ข้ามเพดานรายวันของชั้น bd ── */
+    function gcdGrant(user, nRaw) {
       try {
-        const g = (typeof baG === 'function') ? baG() : null;
-        if (!g) { try { gcTip('⚠️ ยังไม่ได้ล็อกอิน — ไม่มีบัญชีให้เติม'); } catch (e) {} return false; }
-        const n = Math.max(0, Math.round(Number(nRaw) || 0));
-        if (n <= 0) return false;
-        const b = (typeof abOf === 'function') ? abOf(g) : null;
-        if (!b) { try { gcTip('⚠️ บัญชีนี้ยังไม่มี .ab — ลองล็อกอินใหม่'); } catch (e) {} return false; }
+        const uid = (typeof user === 'string') ? user.trim() : '';
+        if (!uid) { try { alert('⚠️ ต้องระบุชื่อบัญชีเป้าหมาย — ยกเลิกการเสกเพชร'); } catch (e) {} return false; }
+        const n = Math.max(0, Math.floor(Number(nRaw) || 0));
+        if (n <= 0) { try { alert('⚠️ กรอกจำนวนเต็มบวกเท่านั้น'); } catch (e) {} return false; }
+        if (!loadStore()[uid]) { try { alert('⚠️ ไม่พบบัญชี "' + uid + '" ในทะเบียน — ยกเลิกการเสกเพชร'); } catch (e) {} return false; }
         const cap = (typeof AB_SHARD_CAP === 'number') ? AB_SHARD_CAP : 99999;
-        /* เขียนตรงที่ shards — ไม่ผ่าน cdShards()/baAddDiamonds() ของชั้น bd (v9.10)
-           ซึ่งครอบเพดานรายวันไว้ ตั้งใจให้ direct-grant นี้ข้ามเพดานนั้นสำหรับครู */
-        b.shards = Math.min(cap, (b.shards | 0) + n);
-        try { saveProgress(); } catch (e) { swcErr(e, 'saveProgress'); }
-        try { if (typeof abSave === 'function') abSave(); } catch (e) { swcErr(e, 'abSave'); }
+        let total = 0;
+        /* withStudent = ตัวกลางมาตรฐานของ repo นี้สำหรับแก้บัญชีเป้าหมายที่ระบุชื่อ
+           (loadStore → mutate → saveStore → gmRender → syncFromStore ถ้าเป็นบัญชี
+           ที่กำลังเล่นอยู่บนเครื่องนี้พอดี) — ไม่ใช่ saveProgress()/abSave() ของเดิม
+           ซึ่งผูกกับ CURRENT_USER/G ตัวเดียวเท่านั้น */
+        withStudent(uid, function (a) {
+          abEnsure(a);
+          /* เขียนตรงที่ shards — ไม่ผ่าน cdShards()/baAddDiamonds() ของชั้น bd (v9.10)
+             ซึ่งครอบเพดานรายวันไว้ ตั้งใจให้ direct-grant นี้ข้ามเพดานนั้นสำหรับครู */
+          a.ab.shards = Math.min(cap, Math.floor(a.ab.shards) + n);
+          total = a.ab.shards;
+        });
+        /* syncFromStore()/gcLive() ของ v4.3 ไม่ดัน .ab เข้า G ที่มีชีวิตเลยสักฟิลด์ —
+           ถ้าเป้าหมายบังเอิญเป็นบัญชีที่กำลังเล่นอยู่บนเครื่องนี้พอดี ต้องซิงก์
+           G.ab.shards เองตรงนี้ ไม่งั้น autosave รอบถัดไปของ session สดจะเขียน
+           ค่าเก่าทับของที่เพิ่งเสกไปทันที */
+        if (typeof CURRENT_USER !== 'undefined' && CURRENT_USER === uid) {
+          try {
+            const g = (typeof baG === 'function') ? baG() : null;
+            if (g) {
+              abEnsure(g);
+              g.ab.shards = total;
+              if (typeof renderStats === 'function') renderStats();
+            }
+          } catch (e) { swcErr(e, 'liveSync'); }
+        }
         try { if (typeof baPlRender === 'function') baPlRender(); } catch (e) { swcErr(e, 'plRender'); }
-        try {
-          gcTip('💎 เสกเพชรให้ ' + (g.name || (typeof CURRENT_USER !== 'undefined' ? CURRENT_USER : '') || 'บัญชีนี้') +
-            ' +' + baNum(n) + ' สำเร็จ (ยอดรวม ' + baNum(b.shards) + ')');
-        } catch (e) {}
+        try { alert('💎 มอบเพชรให้ ' + uid + ' +' + baNum(n) + ' สำเร็จ (ยอดรวม ' + baNum(total) + ')'); } catch (e) {}
         return true;
       } catch (e) { swcErr(e, 'grant'); return false; }
     }
@@ -42753,25 +42777,29 @@
     function gcdPrompt() {
       try {
         if (typeof gmPrompt !== 'function' || !document.getElementById('gmModal')) return;
-        gmPrompt('💎 เสกเพชรให้บัญชีที่กำลังทดสอบ', 'ใส่จำนวนเพชรที่ต้องการเติม (ตรงที่ shards ข้ามเพดานรายวัน)',
-          'เช่น 1000', '', function (v) {
-            const n = parseInt(v, 10);
-            if (!(n > 0)) { try { gcTip('⚠️ กรอกจำนวนเต็มบวกเท่านั้น'); } catch (e) {} return; }
-            gcdGrant(n);
+        gmPrompt('💎 มอบเพชรให้บัญชี', 'พิมพ์ชื่อบัญชีฮันเตอร์เป้าหมาย (ต้องมีอยู่จริงในทะเบียน — ไม่ fallback ไปบัญชีที่กำลังทดสอบอยู่)',
+          'เช่น a1', '', function (uRaw) {
+            const uid = (uRaw || '').trim();
+            if (!uid) { try { alert('⚠️ ต้องระบุชื่อบัญชีเป้าหมาย — ยกเลิกการเสกเพชร'); } catch (e) {} return; }
+            if (!loadStore()[uid]) { try { alert('⚠️ ไม่พบบัญชี "' + uid + '" ในทะเบียน — ยกเลิกการเสกเพชร'); } catch (e) {} return; }
+            gmPrompt('💎 มอบเพชรให้ ' + uid, 'ใส่จำนวนเพชรที่ต้องการเติม (ตรงที่ shards ข้ามเพดานรายวัน)',
+              'เช่น 1000', '', function (v) {
+                const n = parseInt(v, 10);
+                if (!(n > 0)) { try { alert('⚠️ กรอกจำนวนเต็มบวกเท่านั้น'); } catch (e) {} return; }
+                gcdGrant(uid, n);
+              });
           });
       } catch (e) { swcErr(e, 'prompt'); }
     }
 
     (function gcdInstall() {
       try {
-        /* ปุ่มชุดใหม่บนหัวแผง GM — แทรกครั้งเดียว (กับดักข้อ 2) */
+        /* ปุ่มเดียวบนหัวแผง GM — แทรกครั้งเดียว (กับดักข้อ 2) */
         const headBtns = document.querySelector('#gmPanel .gm-head-btns');
-        if (headBtns && !document.getElementById('gcdBtn500')) {
+        if (headBtns && !document.getElementById('gcdBtnTarget')) {
           headBtns.insertAdjacentHTML('beforeend',
-            '<button class="gm-btn" id="gcdBtn500" onclick="gcdGrant(500)" ' +
-              'title="เสก 💎 500 ให้บัญชีที่กำลังทดสอบอยู่ (ข้ามเพดานรายวัน)">💎 +500</button>' +
-            '<button class="gm-btn" id="gcdBtnCustom" onclick="gcdPrompt()" ' +
-              'title="เสกเพชรจำนวนเองให้บัญชีที่กำลังทดสอบอยู่ (ข้ามเพดานรายวัน)">💎 กำหนดเอง</button>');
+            '<button class="gm-btn" id="gcdBtnTarget" onclick="gcdPrompt()" ' +
+              'title="มอบเพชรให้บัญชีที่ระบุชื่อ (ต้องพิมพ์ชื่อบัญชีที่มีอยู่จริง — ข้ามเพดานรายวัน)">💎 มอบเพชร</button>');
         }
       } catch (e) { swcErr(e, 'install'); }
     })();
@@ -42783,8 +42811,8 @@
         try {
           r.switchConfirm = { ver: 'swc-1', wired: typeof baPlSwitch === 'function' };
           r.diamondSpawn = {
-            ver: 'gcd-1',
-            btns: !!(document.getElementById('gcdBtn500') && document.getElementById('gcdBtnCustom'))
+            ver: 'gcd-2',
+            btns: !!document.getElementById('gcdBtnTarget')
           };
         } catch (e) { swcErr(e, 'audit'); }
         return r;

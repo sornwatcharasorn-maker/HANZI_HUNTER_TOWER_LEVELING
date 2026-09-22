@@ -42906,6 +42906,88 @@
       };
     }
 
+    /* Patch · GM DIAMOND RESOLUTION FIX (namespace: bdg)
+       ---------------------------------------------------------------------
+       อาการ: นักเรียนที่เล่นสดข้ามเครื่อง (ไม่เคยเปิดเกมบนเครื่องครูเลย) เห็น
+       ค่าอื่นครบในตาราง GM (ทอง · เลเวล · ชั้น · ความแม่นยำ) แต่ 💎 ขึ้น 0 เสมอ
+
+       ต้นเหตุสองจุดพร้อมกัน:
+       1) fbPayload() ของ v5.3 (สัญญาณสดที่ส่งขึ้นไปให้ครูเห็นแบบเรียลไทม์)
+          ไม่เคยใส่ฟิลด์ shards เลย — ทั้งที่ csAn() ของ v5.2 (payload สำรองเต็ม)
+          ใส่ไว้ให้แล้ว แต่ไม่มีใครอ่านมันมาเติมให้ payload ฝั่งสด
+       2) baUniRows() ของ v7.8 (ตัวสร้างแถวตารางรวม) อ่านเพชรจาก
+          loadStore()[u].ab.shards เท่านั้น ไม่เคยดูสัญญาณสด (live[u].shards)
+          เลยสักบรรทัด — ต่างจากฟิลด์พี่น้องอย่าง best ที่ยัง Math.max
+          ระหว่างสองแหล่งอยู่แล้ว
+
+       แก้ด้วยการห่อสองจุดนั้น (ไม่แตะโค้ดเดิมสักบรรทัด ตามกฎเหล็กของ repo):
+       - ห่อ fbPayload ให้แนบ shards เข้าไปในสัญญาณสดด้วย
+       - ห่อ baUniRows ให้ทับค่า shards ของแต่ละแถวด้วยตัวที่มากกว่าระหว่าง
+         ของเดิม (local) กับสัญญาณสด (live) — "สัญญาณต้องชนะทะเบียน" ตาม
+         กติกาเดิมของ baMsMerge (v7.7) แต่ยังกัน regression ด้วย Math.max
+
+       bdgShards(a, p) อ่านจากรูปทรงข้อมูลที่มีอยู่จริงในสคีมานี้เท่านั้น
+       (a.ab.shards ของบัญชีในเครื่อง · p.shards ของสัญญาณสด) — ไม่ได้เติม
+       เส้นทางสำรองแบบ u.diamonds / u.abShards / u.save?.ab?.shards /
+       u.data?.ab?.shards เพราะตรวจด้วย grep ทั้งไฟล์แล้วไม่มีรูปทรงนั้นอยู่จริง
+       ที่ไหนเลยในสคีม่าของเกมนี้ — การเติมเส้นทางที่ไม่มีวันถูกใช้จะเป็นโค้ด
+       ตายที่หลอกคนอ่านว่ามีที่มาที่ไป (กฎ "อย่า validate สิ่งที่เป็นไปไม่ได้")
+
+       ไม่เพิ่มฟิลด์ในบัญชี · ไม่เพิ่ม DOM · ไม่เพิ่ม toast/gate · ไม่เพิ่มปุ่ม
+       ไม่แทรกคอลัมน์ในตารางไหน — เขียนทับแค่ "ค่าเพชรที่วาด" ให้ถูกต้อง */
+    function bdgErr(e, w) { try { if (typeof baErr === 'function') baErr(e, 'bdg:' + w); } catch (e2) {} }
+
+    function bdgShards(a, p) {
+      const live = (p && typeof p.shards !== 'undefined') ? Math.round(+p.shards) : NaN;
+      if (live === live && live > 0) return live;                 /* สัญญาณสดชนะก่อนถ้ามีจริง */
+      const loc = (a && a.ab && typeof a.ab.shards !== 'undefined') ? Math.round(+a.ab.shards) : NaN;
+      return (loc === loc && loc > 0) ? loc : 0;
+    }
+
+    if (typeof fbPayload === 'function') {
+      const _bdgFbPayload = fbPayload;
+      fbPayload = function (user, a) {
+        const p = _bdgFbPayload.apply(this, arguments) || {};
+        try {
+          p.shards = Math.max(0, Math.round((a && a.ab && a.ab.shards) || 0));
+        } catch (e) { bdgErr(e, 'payload'); }
+        return p;
+      };
+    }
+
+    if (typeof baUniRows === 'function') {
+      const _bdgUniRows = baUniRows;
+      baUniRows = function () {
+        const rows = _bdgUniRows.apply(this, arguments) || [];
+        try {
+          let s = {}, live = {};
+          try { s = loadStore(); } catch (e) {}
+          try { live = (typeof baLiveMap === 'function') ? baLiveMap() : {}; } catch (e) {}
+          rows.forEach(function (row) {
+            if (!row || !row.u) return;
+            const fixed = bdgShards(s[row.u], live[row.u]);
+            row.shards = Math.max(row.shards || 0, fixed);
+          });
+        } catch (e) { bdgErr(e, 'rows'); }
+        return rows;
+      };
+    }
+
+    if (typeof baBattleAudit === 'function') {
+      const _bdgAudit = baBattleAudit;
+      baBattleAudit = function () {
+        const r = _bdgAudit.apply(this, arguments) || {};
+        try {
+          r.diamondResolve = {
+            ver: 'bdg-1',
+            payload: (typeof fbPayload === 'function'),
+            rows: (typeof baUniRows === 'function')
+          };
+        } catch (e) { bdgErr(e, 'audit'); }
+        return r;
+      };
+    }
+
     (function baInstall() {
       try {
         /* .g-monster-area อยู่ใน HTML แบบสแตติกอยู่แล้ว จึงสร้างได้ตั้งแต่โหลดหน้า

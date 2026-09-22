@@ -30443,10 +30443,11 @@
           try { weak = fbWeak(a) || []; } catch (e) { weak = []; }
         }
         out.push(Object.assign({}, r, {
-          best:  Math.max(baUniInt(p.best), baUniInt(a.best)),
-          title: p.title || a.equippedTitle || '',
-          weak:  weak.slice(0, BA_UNI_WEAK),
-          live:  !!live[u]
+          best:   Math.max(baUniInt(p.best), baUniInt(a.best)),
+          title:  p.title || a.equippedTitle || '',
+          weak:   weak.slice(0, BA_UNI_WEAK),
+          live:   !!live[u],
+          shards: baUniInt((a.ab && a.ab.shards) || 0)
         }));
       });
 
@@ -30522,9 +30523,13 @@
         /* 4 · EXP + ค่าพลัง — เรนเดอร์เสมอตามสเปก ไม่มีการยุบแถวทิ้ง */
         '<td class="c4">' + baFormatExp(r.exp, r.mexp) + pw + '</td>' +
 
-        /* 5 · ทอง (ไม่มีตัวคั่นหลักพัน) + THP ของ v7.2 */
+        /* 5 · ทอง (ไม่มีตัวคั่นหลักพัน) + THP ของ v7.2 + 💎 เศษคริสตัลปัจจุบัน
+           (เฉพาะยอดคงเหลือ ไม่ติดตามยอดที่ใช้ไป — อ่านจาก loadStore()[u].ab.shards
+           ผ่าน baUniRows() เท่านั้น เพราะทั้ง fbPayload ของ v5.3 และ baMsAcct ของ
+           v7.7 ไม่เคยส่งฟิลด์นี้มา บัญชีที่เห็นเฉพาะผ่านสัญญาณสดจึงโชว์ 0 ไปก่อน) */
         '<td class="c5">' + baFormatGold(r.gold) +
-          '<span class="gm-sub ba-uni-thp">🏆 ' + baThpOf(r) + '</span></td>' +
+          '<span class="gm-sub ba-uni-thp">🏆 ' + baThpOf(r) + '</span>' +
+          '<span class="gm-sub ba-uni-dia">💎 ' + baUniInt(r.shards) + '</span></td>' +
 
         /* 6 · ถูก/ผิด + แม่นยำ · สตรีคดีสุด + คำศัพท์สะสม */
         '<td class="c6"><b style="color:' + col + '">' + baUniInt(r.corr) + '</b> / ' +
@@ -30615,6 +30620,7 @@
         '.ba-uni-lv{display:block;color:#ffc845;font-size:15px;line-height:1.2}' +
         '.ba-uni-ti{color:#ffc845}.ba-uni-x{color:#ff6b7a}' +
         '.ba-uni-thp{color:#8fd8ff;font-weight:700}' +
+        '.ba-uni-dia{color:#c9a4ff;font-weight:700;display:block}' +
         '.ba-uni-w .fb-w{font-size:10.5px;margin:0 2px 2px 0}' +
         '.ba-uni-t .gm-row-btns{display:flex;flex-wrap:wrap;gap:2px;justify-content:center;margin-top:4px}' +
         '.ba-uni-t .gm-btn.sm{padding:2px 5px;font-size:11px}' +

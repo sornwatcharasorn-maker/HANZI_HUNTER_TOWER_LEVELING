@@ -43471,6 +43471,254 @@
       };
     }
 
+    /* ═══════════════════════════════════════════════════════════════════
+       Patch v9.13 · CROSS-DEVICE FULL-PROFILE SYNC
+       (Codex · เพชร · ทอง · กระเป๋า · สายอาชีพ · ชั้นหอคอย)
+
+       อยู่ในเนมสเปซ `wb` ของชั้น v9.9 เดิม ต่อยอดจาก v9.12 — ห่อ `wbPayload`
+       กับ `wbRestore` อีกชั้น ด้วยแบบแผนเดียวกับที่ v9.12 ห่อทับ v9.9 มาก่อน
+       เป๊ะทุกขั้นตอน · **ไม่แตะโค้ดของ v4.0-v9.12 เลยแม้แต่บรรทัดเดียว**
+       ไม่ได้ตั้งพรีฟิกซ์ใหม่ (`grep -c "V913\|v913\|BA_V913\|crossDeviceSync"`
+       ได้ 0 ก่อนตั้งชื่อ — กับดักข้อ 36)
+
+       ── อาการที่แพตช์นี้แก้ — "sync" ที่มีอยู่ 3 ชั้นไม่มีชั้นไหนครบ ──
+
+       | ชั้น | ส่งอะไรขึ้นคลาวด์ | เปิดใช้ตอนไหน |
+       |---|---|---|
+       | v5.2 `CS_*` | บัญชีทั้งก้อน (`csDoc`) | ต้องให้ครูตั้งคอนฟิกเองที่แผง GM — ในทางปฏิบัติแทบไม่มีใครเปิด |
+       | v5.3/v5.4 `FB_*` | สรุปแบนราบสำหรับจอครู ไม่มีรหัสผ่าน | เปิดอัตโนมัติทุกเครื่อง (`AS_URL` ฝังในซอร์ส) แต่เป็นแค่ "จอแสดงผล" ไม่ใช่ที่กู้คืนโปรไฟล์ |
+       | v9.9/v9.12 `wb*` | `wordStats` + ตัวนับสะสมทางเดียว + `account.skills` | เปิดอัตโนมัติ (ขี่ `FB_CFG` ของ v5.4) — **แต่ไม่แตะเพชร · ทอง · กระเป๋า · ชั้นที่ยืนอยู่ · สายที่เลือก · เลเวลเลยสักฟิลด์** |
+
+       นักเรียนที่สลับมือถือ↔คอมโดยไม่มีใครไปตั้งค่า `CS_*` เอง จึงเห็นคลังคำ
+       กับระดับสายอาชีพ (v9.12) ข้ามเครื่องได้ แต่ล็อกอินเครื่องใหม่แล้วเจอ
+       เพชร/ทอง/กระเป๋า/ชั้น/สายว่างเปล่าราวกับเพิ่งสมัคร ทั้งที่มีอยู่แล้ว
+       บนอีกเครื่อง — **นี่คือช่องว่างจริงที่แพตช์นี้ปิด ไม่ใช่ของที่ยังไม่มีคนทำ**
+
+       ⚠️ **Codex ถูกซิงก์ไปแล้วโดยอัตโนมัติ ไม่ต้องแตะ `account.codex` เพิ่ม**
+       `cxCount(g)` (ตัวเลขคลังอักขระที่โชว์บนจอ) นับจาก `wordStats` ล้วน
+       ซึ่ง v9.9 ผสานให้แล้ว ส่วน `g.codex.ms` (ขั้นสะสมล่าสุดที่เคยแจ้งไปแล้ว)
+       ถูก `cxSyncMilestone(true)` คำนวณใหม่จาก `cxReached(g)` ทุกครั้งที่
+       `wbRestore` เรียกมันอยู่แล้วหลัง merge สำเร็จ (โค้ดเดิมของ v9.9)
+       — เพิ่มการซิงก์ `codex.ms`/`codex.first` เองอีกชุดจะเป็นสารบัญคู่ขนาน
+       ที่ไม่จำเป็นและเสี่ยงเพี้ยนกับตัวจริง (กับดักข้อ 35)
+
+       ⚠️ **ชื่อฟิลด์ตามสเปกภายนอกไม่ตรงกับสคีมาจริงของ repo นี้** (ธรรมเนียม
+       เดิมที่ CLAUDE.md บันทึกไว้ซ้ำหลายครั้งว่าสเปกภายนอกมักเดาชื่อผิด)
+       แพตช์นี้ยึดชื่อจริงเท่านั้น: `learnedWords/wordMastery/lexicon` →
+       `wordStats` (v9.9 ทำไปแล้ว) · `diamonds` → `ab.shards` ·
+       `account.classSkills` → `account.skills` (v9.12 ทำไปแล้ว — **ไม่แตะซ้ำ**)
+
+       ── สองกลุ่มฟิลด์ สองกลยุทธ์ผสาน ──
+
+       **1) ทางเดียว (monotonic)** — ผสานด้วย `Math.max`/OR ได้เสมอไม่ว่า
+       อุปกรณ์ไหนใหม่กว่าจริง เพราะพิสูจน์ได้ว่ามีแต่ขึ้น ไม่มีทางลดหลัง:
+       `ab.core[key]` (ระดับแกนกลางระบบที่ซื้อแล้วคงอยู่ถาวร — เป็นของ
+       ประเภทเดียวกับ `account.skills` ของ v9.12 เป๊ะ คือ "จ่ายครั้งเดียว
+       แล้วติดตัวตลอด") และ `ab.seals[floor].broken/flawless`
+       (ผนึกที่ทลายแล้วทลายเลย เป็นสถิติความสำเร็จ ไม่มีทางถอยหลัง)
+
+       **2) ต้องอุปกรณ์ "สะอาด" เท่านั้นถึงจะรับมาทับ** (ไม่ใช่ทางเดียว
+       จึงเสี่ยงปั๊ม/ซ้ำได้ถ้าผสานมั่ว): `ab.shards` (เพชร — ใช้จ่ายได้จริง
+       ตั้งแต่ v4.6/v9.7/v9.10) · `gold` · `items` · `floor`/`floorProgress`
+       · `classId` · `level`/`exp`/`maxExp` (มีเครื่องมือรีเซ็ตกลับเป็นเลเวล 1
+       อยู่จริงในไฟล์ จึงไม่ใช่ค่าที่การันตีว่ามีแต่ขึ้นตลอดชีพบัญชี)
+       "สะอาด" = ตรงกับค่าเริ่มต้นของ `blankAccount()` ทุกตัว (level=1,
+       exp=0, gold=0, floor=1, maxFloor=1, correct=0, wrong=0, ไม่มีของใน
+       กระเป๋า) คือกรณี "เพิ่งสมัคร/เพิ่งเปิดเครื่องใหม่" ตรงตามที่สเปกเขียน
+       ไว้เองว่า "over **clean-device** empty defaults" — ไม่ใช่ "ทับทุกครั้ง
+       ไม่ว่าฝั่งไหนคืบหน้าไปแล้ว" เพราะถ้าทับแบบหลังจะเกิดเคสเล่นพร้อมกัน
+       สองเครื่องแล้วเครื่องที่ล็อกอินทีหลังเอาก้อนเก่ากว่าทับก้อนที่กำลัง
+       เล่นอยู่ทิ้ง ซึ่งขัดกับกฎ "Zero data loss" ของสเปกเองตรง ๆ
+
+       ⚠️ **ทำไมไม่ล็อก `saveStore` ทั้งกระดานระหว่างล็อกอิน** (สเปกขอไว้ว่า
+       "Strictly block saveStore/local saves during login until cloud fetch
+       resolves") — เพราะ (1) JS เป็น single-threaded ช่วงเสี่ยงจริงมีแค่
+       ตอน `await` ข้างใน `wbRestore` เท่านั้น (2) แบบแผนเดิมของ v9.9/v9.12
+       ตรวจ `CURRENT_USER === user` ซ้ำหลัง await แล้ว merge-แล้ว-save ทับ
+       เป็นขั้นสุดท้ายเสมออยู่แล้ว ซึ่งเอาชนะ save ที่แทรกมาระหว่างทางได้เอง
+       โดยธรรมชาติ (3) การล็อกทั้งกระดานเสี่ยงกลืน save ของเกมจริงที่กำลัง
+       เล่นคาบเรียนอยู่พอดี ซึ่งจะกลายเป็นการทำ "data loss" เสียเอง — เลือก
+       ท่าที่ปลอดภัยกว่าและตรงกับสิ่งที่ repo ทำมาตลอดแทนตามคำสั่งตัวอักษร
+
+       จุดดักมีสองจุดคือ `wbPayload` (แนบข้อมูลเพิ่ม) กับ `wbRestore`
+       (ผสานข้อมูลเพิ่ม) — ตามแบบเดียวกับที่ v9.12 ห่อสองฟังก์ชันนี้มาก่อน
+       เป๊ะ: ยิง `fetch` ของตัวเองซ้ำ (`fbFetch(wbUrl(...))`) → รอ chain เดิม
+       ทำงานจบก่อน (`await _v913WbRestore.apply(...)`) → ตรวจ `CURRENT_USER`
+       ซ้ำ → ผสาน → เซฟ/วาดใหม่ → ส่งกลับขึ้นคลาวด์ (`wbPush`)
+
+       **ไม่แตะ `CS_CFG` ของ v5.2 เด็ดขาด** (เคยมีแพตช์ "v9.8" พลาดไปแตะจุดนี้
+       มาแล้วครั้งหนึ่ง v9.9 เขียนแก้ไว้เองว่าให้ใช้โหนด `/wordbank` แยกต่างหาก
+       — แพตช์นี้ทำตามกติกาเดิมทุกประการ ไม่สร้างจุดชนกันซ้ำ)
+
+       เซฟกลับ store ผ่านฟังก์ชันเดิมของชั้นล่างเท่านั้น (`saveProgress` ของ
+       v4.0 · `abSave` ของ v4.6 · `baPlSave` ของ v8.5) ไม่เขียน `localStorage`
+       ตรง ๆ เอง — ปลอดภัยกว่าและตรงกับที่ทั้งสามฟังก์ชันคิดสูตร/หนีบเพดาน
+       ของตัวเองไว้ครบอยู่แล้ว (`AB_SHARD_CAP` · `AB_CORE_MAX` เป็นต้น)
+
+       **ไม่แตะ**: `hp`/`mp`/`shield` (สถานะการต่อสู้ชั่วคราว ไม่ใช่โปรไฟล์)
+       · `streak`/`recentTimes` (ของรอบการเล่นปัจจุบัน) · `wordStats` ·
+       `account.skills` (v9.9/v9.12 ทำไปแล้ว ไม่แตะซ้ำ) · `account.codex`
+       (ซิงก์อัตโนมัติผ่าน `wordStats` อยู่แล้วตามที่อธิบายข้างบน)
+    ═══════════════════════════════════════════════════════════════════ */
+
+    const BA_V913_VER = 'v9.13';
+
+    function baV913Err(e, w) { try { wbErr(e, 'v913:' + w); } catch (x) {} }
+
+    /* บัญชี "สะอาด" = ตรงกับค่าเริ่มต้นของ blankAccount() ทุกตัว — เกณฑ์
+       เดียวกับที่ใช้ตัดสินว่ารับโปรไฟล์เต็มจากคลาวด์มาทับได้ไหม (กลยุทธ์ที่ 2
+       ข้างบน) ต้องเรียก "ก่อน" ยิง fetch เสมอ ไม่งั้นความคืบหน้าที่เพิ่งเกิด
+       ระหว่างรอเน็ตจะถูกนับว่ายังสะอาดอยู่ผิด ๆ */
+    function baV913Clean(g) {
+      if (!g) return false;
+      const items = (g.items && typeof g.items === 'object') ? g.items : {};
+      const hasItem = Object.keys(items).some(function (k) { return (items[k] | 0) > 0; });
+      return (g.level || 1) === 1 && !(g.exp > 0) && !(g.gold > 0) &&
+             (g.floor || 1) === 1 && (g.maxFloor || 1) === 1 &&
+             !(g.correct > 0) && !(g.wrong > 0) && !hasItem;
+    }
+
+    if (typeof wbPayload === 'function') {
+      const _v913WbPayload = wbPayload;
+      wbPayload = function (g) {
+        const p = _v913WbPayload.apply(this, arguments);
+        try {
+          if (p && typeof p === 'object' && g) {
+            p.classId = g.classId || '';
+            p.gold = g.gold || 0;
+            p.floor = g.floor || 1;
+            p.floorProgress = g.floorProgress || 0;
+            p.level = g.level || 1;
+            p.exp = g.exp || 0;
+            p.maxExp = g.maxExp || 0;
+            p.items = Object.assign({}, g.items || {});
+            if (g.ab && typeof g.ab === 'object') {
+              p.ab = {
+                shards: g.ab.shards || 0,
+                core: Object.assign({}, g.ab.core || {}),
+                seals: JSON.parse(JSON.stringify(g.ab.seals || {})),
+                abyss: !!g.ab.abyss
+              };
+            }
+          }
+        } catch (e) { baV913Err(e, 'payload'); }
+        return p;
+      };
+    }
+
+    /* ผสานแกนกลางระบบ + ผนึก แบบทางเดียว — ปลอดภัยเสมอไม่ว่าฝั่งไหนใหม่กว่า
+       จริง (กติกาเดียวกับ baV912MergeSkills ของ v9.12 เป๊ะ) เรียกได้ทุกครั้ง
+       ไม่ต้องเช็กว่าอุปกรณ์สะอาดหรือเปล่า เพราะเป็นข้อมูลที่มีแต่ขึ้น */
+    function baV913MergeAbMono(dstG, srcAb) {
+      try {
+        if (!dstG || !srcAb || typeof srcAb !== 'object') return 0;
+        if (!dstG.ab || typeof dstG.ab !== 'object') dstG.ab = { shards: 0, core: {}, seals: {}, abyss: false };
+        let n = 0;
+        if (srcAb.core && typeof srcAb.core === 'object') {
+          if (!dstG.ab.core || typeof dstG.ab.core !== 'object') dstG.ab.core = {};
+          Object.keys(srcAb.core).forEach(function (k) {
+            const sv = srcAb.core[k] | 0, dv = dstG.ab.core[k] | 0;
+            if (sv > dv) { dstG.ab.core[k] = sv; n++; }
+          });
+        }
+        if (srcAb.seals && typeof srcAb.seals === 'object') {
+          if (!dstG.ab.seals || typeof dstG.ab.seals !== 'object') dstG.ab.seals = {};
+          Object.keys(srcAb.seals).forEach(function (f) {
+            const s = srcAb.seals[f]; if (!s) return;
+            if (!dstG.ab.seals[f]) dstG.ab.seals[f] = { broken: false, flawless: false };
+            const d = dstG.ab.seals[f];
+            if (s.broken && !d.broken)     { d.broken = true; n++; }
+            if (s.flawless && !d.flawless) { d.flawless = true; n++; }
+          });
+        }
+        return n;
+      } catch (e) { baV913Err(e, 'mergeAbMono'); return 0; }
+    }
+
+    /* รับโปรไฟล์เต็มจากคลาวด์มาทับ — ใช้ได้เฉพาะตอนอุปกรณ์นี้ยังสะอาดจริง
+       (กลยุทธ์ที่ 2 ข้างบน) แต่ละฟิลด์ยังเช็กซ้ำว่าฝั่งคลาวด์ "มีความคืบหน้า
+       จริง" ก่อนเขียนทับ กันเคสสองเครื่องสะอาดพร้อมกันเขียนทับกันเป็น 0/1 วน */
+    function baV913AdoptClean(dstG, doc) {
+      try {
+        if (!dstG || !doc) return 0;
+        let n = 0;
+        if (doc.classId && doc.classId !== dstG.classId) { dstG.classId = doc.classId; n++; }
+        if ((doc.gold || 0) > 0)           { dstG.gold = doc.gold; n++; }
+        if ((doc.floor || 1) > 1)          { dstG.floor = doc.floor; n++; }
+        if ((doc.floorProgress || 0) > 0)  { dstG.floorProgress = doc.floorProgress; n++; }
+        if ((doc.level || 1) > 1)          { dstG.level = doc.level; n++; }
+        if ((doc.exp || 0) > 0)            { dstG.exp = doc.exp; n++; }
+        if ((doc.maxExp || 0) > 0)         { dstG.maxExp = doc.maxExp; n++; }
+        if (doc.items && typeof doc.items === 'object' &&
+            Object.keys(doc.items).some(function (k) { return (doc.items[k] | 0) > 0; })) {
+          dstG.items = Object.assign({}, doc.items); n++;
+        }
+        if (doc.ab && typeof doc.ab === 'object') {
+          if (!dstG.ab || typeof dstG.ab !== 'object') dstG.ab = { shards: 0, core: {}, seals: {}, abyss: false };
+          if ((doc.ab.shards || 0) > 0) { dstG.ab.shards = doc.ab.shards; n++; }
+          if (doc.ab.abyss)             { dstG.ab.abyss = true; n++; }
+        }
+        return n;
+      } catch (e) { baV913Err(e, 'adoptClean'); return 0; }
+    }
+
+    if (typeof wbRestore === 'function') {
+      const _v913WbRestore = wbRestore;
+      wbRestore = async function (user) {
+        try {
+          if (!user || typeof fbOn !== 'function' || !fbOn()) return _v913WbRestore.apply(this, arguments);
+          const g0 = baG();
+          const wasClean = baV913Clean(g0);
+          let doc = null;
+          try { doc = await fbFetch(wbUrl('/' + encodeURIComponent(user))); } catch (e) {}
+          const r = await _v913WbRestore.apply(this, arguments);
+          try {
+            const g = baG();
+            if (doc && typeof doc === 'object' && g &&
+                typeof CURRENT_USER !== 'undefined' && CURRENT_USER === user) {
+              let n = baV913MergeAbMono(g, doc.ab);
+              if (wasClean) n += baV913AdoptClean(g, doc);
+              if (n > 0) {
+                try { if (typeof recalcStats === 'function') recalcStats(); } catch (e2) {}
+                try { if (typeof saveProgress === 'function') saveProgress(); } catch (e2) {}
+                try { if (typeof abSave === 'function') abSave(); } catch (e2) {}
+                try { if (typeof baPlSave === 'function') baPlSave(); } catch (e2) {}
+                try { if (typeof renderStats === 'function') renderStats(); } catch (e2) {}
+                try { if (typeof renderItems === 'function') renderItems(); } catch (e2) {}
+                try { if (typeof renderFloor === 'function') renderFloor(); } catch (e2) {}
+                try { if (typeof renderSkills === 'function') renderSkills(); } catch (e2) {}
+                try {
+                  if (document.getElementById('baPlBoard') && typeof baPlRender === 'function') baPlRender();
+                } catch (e2) {}
+                try {
+                  if (document.getElementById('cxBoard') && typeof cxRender === 'function') cxRender();
+                } catch (e2) {}
+                try { wbPush(user); } catch (e2) { baV913Err(e2, 'pushback'); }
+              }
+            }
+          } catch (e) { baV913Err(e, 'wbRestoreMerge'); }
+          return r;
+        } catch (e) { baV913Err(e, 'wbRestore'); return _v913WbRestore.apply(this, arguments); }
+      };
+    }
+
+    if (typeof baBattleAudit === 'function') {
+      const _v913Audit = baBattleAudit;
+      baBattleAudit = function () {
+        const r = _v913Audit.apply(this, arguments);
+        try {
+          const g = baG();
+          r.crossDeviceSync = {
+            ver: BA_V913_VER,
+            clean: g ? baV913Clean(g) : null,
+            cleanFields: ['classId', 'gold', 'floor', 'floorProgress', 'level', 'exp', 'maxExp', 'items', 'ab.shards', 'ab.abyss'],
+            monoFields: ['ab.core.*', 'ab.seals.*.broken', 'ab.seals.*.flawless']
+          };
+        } catch (e) { baV913Err(e, 'audit'); }
+        return r;
+      };
+    }
+
 
     (function baInstall() {
       try {

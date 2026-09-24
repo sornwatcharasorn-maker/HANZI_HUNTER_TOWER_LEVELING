@@ -44052,6 +44052,237 @@
     }
 
     (function baInstall() {
+
+    /* ============================================================
+       Patch v9.16 · RO ANGEL SPRITE — 5-SECOND LEVEL-UP OVERLAY
+       ============================================================
+       อยู่ในเนมสเปซ `ba` ของชั้น v6.0 เดิม **ไม่ได้ตั้งพรีฟิกซ์ใหม่** (กติกาเดียวกับ v6.1–v9.15)
+       วางท้ายสุดของไฟล์ ต่อจาก `baLvUpFx` ของ v9.15 (RO-STYLE LEVEL-UP ASCENSION FX)
+       และก่อน `baInstall()` จึงห่อทับทุกชั้นได้
+       · **ไม่แก้โค้ดของ v4.0-v9.15 เลยแม้แต่บรรทัดเดียว** — ที่เพิ่มคือฟังก์ชันใหม่ล้วน 3 ตัว
+       (`baV916Style` · `baV916ArenaFx` · `baV916FallbackFx`) บวกการ **เขียนทับ binding ของ
+       `baLvUpFx` ทั้งก้อน** (ของเดิมของ v9.15 ยังอยู่ครบ ถูกจับไว้เป็น `_v916LvUpFx` เพื่อใช้เป็น
+       ทางสำรองขั้นสุดท้ายเท่านั้น — precedent เดียวกับที่ v6.4 เขียนทับ `isBossFloor` ·
+       v9.1 เขียนทับ `baDsClick` · v9.5 เขียนทับ `openSkills` ทั้งก้อน) และห่อ `baBattleAudit`
+       อีกหนึ่งชั้นเพื่อเปิดทางเข้าให้ชุดเทสต์ **ไม่ได้แตะ `levelUpCheck` เพิ่มอีกสักบรรทัด**
+       (ดูเหตุผลในหัวข้อถัดไป — สำคัญที่สุดของทั้งแพตช์)
+
+       ## สามข้อที่สั่งมา — และสิ่งที่แพตช์นี้ทำจริง
+
+       | ข้อสั่งงาน | ทำจริงยังไง |
+       |---|---|
+       | 1. ฝังสไปรต์นางฟ้า Ragnarok (`level up effec JPG.jpg`) | ย่อจาก 1264×1264 เหลือ 128×128 · เข้ารหัส WebP lossy q85 · ฝังเป็น data URI เดียว |
+       | 2. เอฟเฟกต์เลเวลอัป 5.0 วิ (ครั้งเดียวจบ) | แทนที่ `baLvUpFx()` ของ v9.15 ทั้งก้อน — คงจังหวะ 0-0.5-4.0-5.0 วิ ตามที่สั่ง แต่ใช้ภาพจริงแทนปีก CSS |
+       | 3. ตรวจ+ส่งงาน | build < 2MB ✓ · `build_minify.js --check` ✓ · `test_cloud_sync.js` ✓ · `test_monarch.js` ✓ |
+
+       ## ทำไมเขียนทับ `baLvUpFx` ทั้งก้อน แทนที่จะห่อ `levelUpCheck` อีกชั้น
+
+       `levelUpCheck()` ของ v4.0 ถูกเรียกทุกครั้งที่ได้ EXP (แทบทุกข้อที่ตอบถูก) ไม่ใช่แค่ตอน
+       เลื่อนระดับจริง — v9.15 แก้กับดักนี้ไปแล้วครั้งเดียว (กับดักข้อ 44 ใน CLAUDE.md) ด้วยการ
+       เทียบ `g.level` ก่อน/หลังเรียกของเดิม แล้วยิง `baLvUpFx()` เฉพาะตอนขยับจริง
+       **การห่อ `levelUpCheck` อีกชั้นในแพตช์นี้จะทำให้เอฟเฟกต์ยิงซ้ำสองครั้งต่อการอัปเลเวลหนึ่งครั้ง**
+       (บั๊คตระกูลเดียวกับ MP หักซ้ำสองเด้งของ v9.1 — กับดักข้อ 43) ทางที่ปลอดภัยกว่าคือเขียนทับ
+       ตัว `baLvUpFx` เอง เพราะ v9.15 เรียกมันด้วย **ชื่อระดับบนสุดล้วน** (`baLvUpFx()` ไม่ใช่
+       closure ที่จับค่าไว้ตอนประกาศ) การ reassign จึงมีผลทันทีโดยไม่ต้องแตะ `levelUpCheck`
+       เลยสักบรรทัด (`mangle.toplevel:false` ของ build รับประกันว่าชื่อนี้รอดผ่านการย่อไฟล์)
+
+       ## ทะเบียนภาพ — WebP q85 128×128 (5,836 ไบต์ base64)
+
+       ต้นฉบับ `level up effec JPG.jpg` (1264×1264 · JPEG พื้นดำสนิท) ถูกย่อและเข้ารหัสใหม่ด้วย
+       Pillow/WebP **นอกสคริปต์ฝังภาพมาตรฐาน** (`embed_*.py` ทั้ง 12 ตัวเป็นของแคตตาล็อกที่มีอยู่
+       แล้วในเกม เช่น `BA_FOES`/`BA_DS_ART` — ภาพนี้เป็นเอฟเฟกต์ครั้งเดียวที่ไม่มีแคตตาล็อกให้ผูก
+       จึงเข้ารหัสตรงแล้วฝัง data URI ตรง ๆ) วัดจริงหลายระดับคุณภาพ/ขนาดก่อนเลือก — ที่ 128×128
+       q85 ให้ 4,376 ไบต์ดิบ (5,836 ไบต์ base64) ซึ่ง**เล็กกว่าที่คาดไว้มาก** เพราะพื้นหลังดำสนิท
+       ของภาพต้นฉบับบีบอัดด้วย WebP ได้แทบไม่เสียบิตเลย (พื้นที่เรียบกินบิตน้อย ตรงข้ามกับพิกเซล
+       อาร์ตที่มีขอบคมซึ่ง repo นี้เคยพบว่า lossless ชนะ lossy — ภาพนี้เป็นเงาไล่โทน/แสงฟุ้งจึงเป็น
+       เคสที่ lossy ชนะ) เหลือที่ว่างในไฟล์แจกไว้ให้แพตช์ถัดไปมากกว่าที่คาดไว้เดิมมาก
+       (ก่อนแพตช์นี้เหลือถึงเพดาน 15,731 ไบต์)
+
+       **พื้นหลังดำสนิทไม่ต้องคีย์ออกหรือทำโปร่งใสเลย** ตามที่โจทย์สั่ง — `mix-blend-mode:screen`
+       ทำให้ `screen(ดำ, X) = X` เสมอทางคณิตศาสตร์ (ดำ = 0 ในสูตร screen) พื้นหลังจึงหายไปเองที่
+       ขั้นตอนคอมโพสิต ไม่ต้องมีช่องอัลฟาในไฟล์ภาพเลย — เก็บเป็น RGB ล้วนจึงประหยัดกว่า RGBA
+
+       ## Screen Blend — สองบริบทที่ต้องพิสูจน์กันคนละแบบ
+
+       | บริบท | พื้นหลังที่ blend เข้าไป | ต้องมี `isolation:isolate` ไหม |
+       |---|---|---|
+       | ในสนามรบ (`.ba-angel-fx`) | ฉากหลังสนามรบ/ตัวละครที่มีอยู่จริง — งดงามโดยธรรมชาติ | ไม่ต้อง — `#baFx` ไม่มีพื้นทึบของตัวเอง blend จึงเข้ากับทุกอย่างที่อยู่ข้างใต้ในสแตกกิ้งคอนเท็กซ์เดียวกัน |
+       | fallback เต็มจอ (`#baAngelFlash`) | หน้าเพจจริง (เกทเข้าเกม/หน้าเกลานักเรียน/ฯลฯ) ซึ่งไม่รู้ว่าจะเป็นสีอะไร | **ต้อง** — ถ้าไม่ isolate ภาพจะ screen-blend กับพื้นหลังจริงของหน้าเว็บที่คาดเดาไม่ได้ (อาจเป็นขาว/สว่างจนภาพจางหายไปเลย) |
+
+       `#baAngelFlash{isolation:isolate;background:rgba(4,4,10,.6)}` สร้างสแตกกิ้งคอนเท็กซ์ใหม่
+       ที่มีพื้นหลังทึบแสงเป็นของตัวเอง — `<img>` ข้างในจึง screen-blend กับพื้นดำที่ควบคุมได้แทน
+       (ท่าเดียวกับที่ `baMnFlash()` ของ v8.0 ใช้สำหรับแสงพิธีเต็มจอ)
+
+       ## จังหวะเวลา 5.0 วิ — คีย์เฟรมเดียวใช้ซ้ำได้ทั้งสองเส้นทาง
+
+       | ช่วง | % ของ 5.0 วิ | สิ่งที่เกิด |
+       |---|---|---|
+       | 0.0–0.5 วิ | 0% → 10% | ลอยขึ้นจากใต้ + จาง-เข้า (`opacity 0→1` · `translate3d(0,26px,0)→(0,0,0)` · `scale(.72→1)`) |
+       | 0.5–4.0 วิ | 10% → 80% | ลอยนิ่งเหนือหัว (ขยับเบา ๆ `translate3d(0,0,0)→(0,-4px,0)` กันดูตายสนิท) |
+       | 4.0–5.0 วิ | 80% → 100% | ลอยขึ้นต่อ + จาง-ออก (`opacity 1→0` · `translate3d(0,-4px,0)→(0,-58px,0)` · `scale(1.02→1.08)`) |
+
+       `@keyframes baAngelRise` ตัวเดียวถูกใช้ทั้งใน `.ba-angel-fx` (สนามรบ — จัดตำแหน่งด้วย
+       `left`/`top` ที่ตั้งครั้งเดียวตอนสร้าง) และ `#baAngelFlash img` (fallback — จัดกึ่งกลาง
+       ด้วย `margin` คงที่) เพราะคีย์เฟรมมีแต่ `transform`/`opacity` ซึ่งเป็นค่าที่ไม่ขึ้นกับวิธี
+       จัดตำแหน่งฐานที่ต่างกัน — ไม่ต้องเขียนคีย์เฟรมสองชุดซ้ำกันเสียพื้นที่ไฟล์ฟรี
+
+       **ไม่มี `animation:infinite` สักตัว** (กับดักข้อ 31) ทุกคีย์เฟรมจบตัวเองที่ 5.0 วิ แล้ว
+       `baSpawn(html, 5000)` ของ v6.0 ลบโหนดในสนามรบทิ้งเองพอดีจังหวะ ส่วน fallback ใช้
+       `setTimeout(...,5000)` ถอดคลาส `.on` ให้เอง (ท่าเดียวกับ `baMnFlash()`/`baLvUpFallbackFx()`)
+
+       ## ตำแหน่งในสนามรบ — วัดสดด้วย `baSpot('baHero')` เสมอ ไม่ฮาร์ดโค้ดพิกัด
+
+       กรอบสนามกว้างไม่เท่ากันทุกจอ (264–448 CSS px ตามเอกสารของ v4.5) `baV916ArenaFx(spot)`
+       จึงวัดตำแหน่งฮีโร่จริงทุกครั้งที่ยิง แล้ว **หนีบขอบซ้าย-ขวาด้วย `spot.w`** (ความกว้างเต็มของ
+       กรอบสนาม) กันภาพขนาด 128px ล้นออกนอกจอบนมือถือจอแคบสุด — ท่าเดียวกับที่ `baFloat()`
+       ของ v6.0 หนีบตัวเลขดาเมจลอยไว้แล้ว (`Math.max(4, Math.min(spot.w - w - 4, spot.x - w/2))`)
+       · วางแนวตั้งให้ขอบล่างภาพลอยอยู่เหนือจุดกึ่งกลางฮีโร่ 10px (`spot.y - h - 10`) จึงลอยอยู่
+       เหนือหัวฮีโร่จริง ๆ ไม่ทับตัวสไปรต์
+
+       ## CLS = 0 — ทั้งสองเส้นทางเป็น absolute/fixed + transform/opacity ล้วน
+
+       `.ba-angel-fx` เป็น `position:absolute` ใน `#baFx` (ซึ่งอยู่ใน `#baArena` ที่
+       `overflow:hidden` อยู่แล้ว) · `#baAngelFlash` เป็น `position:fixed` เต็มจอ — ทั้งคู่
+       `pointer-events:none` และไม่มีกฎไหนแตะ `width`/`height`/`margin`/`padding` ของสิ่งที่มี
+       อยู่แล้วเลยสักบรรทัด (วัดจริงแล้วการ์ดโจทย์ยังคง 340.8px/354.8px เท่าเดิมทุกจอ — ยืนยันด้วย
+       `verify_arena.js` และ `test_monarch.js` บล็อก 8)
+
+       ## สิ่งที่แพตช์นี้ไม่ได้ทำ
+
+       **ไม่เพิ่มฟิลด์ในบัญชีเลย · ไม่เพิ่ม toast · ไม่เพิ่ม gate · ไม่เพิ่มปุ่มสักใบ · ไม่แทรกคอลัมน์
+       ในตารางไหน · ไม่เพิ่มเสียงสักไบต์** (v5.1 ยิง `SFX_LEVEL_UP` ให้ถูกจังหวะอยู่แล้ว — ห่อ
+       `levelUpCheck` ซ้ำจะทำให้เสียงดังซ้อนสองครั้งตามที่อธิบายไว้ข้างบน) **· ไม่แก้ CSS/JS ของ
+       v9.15 เลยสักบรรทัด** (คงไว้เป็น `_v916LvUpFx` ทางสำรองขั้นสุดท้าย) **· ไม่แตะ `Math.random`
+       สักครั้ง** (กับดักข้อ 32) ไม่มี `baV916Ensure()` ไม่มีตรารุ่นระดับบัญชี และไม่ได้ห่อ
+       `migrateAccount` · `BA_V916_N` เป็นสถานะของรอบการเล่นทั้งหมด (ตัวนับล้วน ไม่ต้องเซฟ)
+       · **ชื่อทั้งชุดยังไม่มีใครใช้ก่อนแพตช์นี้** (กับดักข้อ 36 —
+       `grep -c 'BA_V916\|baV916\|ba-angel\|baAngelFlash'` ได้ 0 ก่อนตั้งชื่อ)
+
+       **สวิตช์ `localStorage['yao_arena'] = 'off'` ไม่ได้ปิดภาพหรือการเลื่อนระดับ** — ปิดแค่
+       เส้นทางแสดงผลในสนามรบ แล้วตกไปใช้ fallback เต็มจอโดยอัตโนมัติ (จงใจ เพราะ `baCanPlay()`
+       คืนเท็จเมื่อ `BA_READY`/`baArena()` ไม่พร้อมอยู่แล้ว — กติกาเดียวกับที่ v9.15 วางไว้)
+
+       ## ทางเข้าสาธารณะสำหรับชุดเทสต์
+
+       `baBattleAudit().angelFx` — `ver` (`'v9.16'`) · `arena`/`fallback`/`legacy` (**สำเนา** ของ
+       ตัวนับ — คืน reference ไม่ได้ เพราะชุดเทสต์จับค่าก่อน/หลังไว้เทียบกัน แล้วจะได้ส่วนต่าง 0
+       ทุกครั้ง — บทเรียนของ v8.3) · `styled` (`#baV916Style` ถูกฉีดแล้วหรือยัง)
+       ============================================================ */
+    const BA_V916_ANGEL_SRC = 'data:image/webp;base64,' +
+      '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' +
+      'QxC33ZUZ/gQk83wXTKzNCeguPHwOIAAAAAA=';
+    let BA_V916_N = { arena: 0, fallback: 0, legacy: 0 };
+    function baV916Err(e, w) { try { baErr(e, 'v916:' + w); } catch (x) {} }
+
+    function baV916Style() {
+      if (document.getElementById('baV916Style')) return;
+      const css =
+        '.ba-angel-fx{position:absolute;width:128px;height:128px;pointer-events:none;' +
+          'mix-blend-mode:screen;will-change:transform,opacity;' +
+          'animation:baAngelRise 5s cubic-bezier(.22,.68,.32,1) forwards}' +
+        '@keyframes baAngelRise{' +
+          '0%{opacity:0;transform:translate3d(0,26px,0) scale(.72)}' +
+          '10%{opacity:1;transform:translate3d(0,0,0) scale(1)}' +
+          '80%{opacity:1;transform:translate3d(0,-4px,0) scale(1.02)}' +
+          '100%{opacity:0;transform:translate3d(0,-58px,0) scale(1.08)}}' +
+        '#baAngelFlash{position:fixed;inset:0;z-index:972;pointer-events:none;' +
+          'isolation:isolate;background:rgba(4,4,10,.6);opacity:0}' +
+        '#baAngelFlash.on{animation:baAngelBg 5s ease-out 1}' +
+        '@keyframes baAngelBg{0%{opacity:0}6%{opacity:1}84%{opacity:1}100%{opacity:0}}' +
+        '#baAngelFlash img{position:absolute;left:50%;top:50%;width:190px;height:190px;' +
+          'margin-left:-95px;margin-top:-95px;mix-blend-mode:screen;opacity:0;' +
+          'pointer-events:none;will-change:transform,opacity}' +
+        '#baAngelFlash.on img{animation:baAngelRise 5s cubic-bezier(.22,.68,.32,1) 1}';
+      const st = document.createElement('style');
+      st.id = 'baV916Style';
+      st.textContent = css;
+      document.head.appendChild(st);
+    }
+
+    function baV916ArenaFx(spot) {
+      const el = baSpawn('<img class="ba-angel-fx" src="' + BA_V916_ANGEL_SRC + '" alt="">', 5000);
+      if (!el) return false;
+      const w = 128, h = 128;
+      el.style.top = (spot.y - h - 10) + 'px';
+      el.style.left = Math.max(4, Math.min(spot.w - w - 4, spot.x - w / 2)) + 'px';
+      return true;
+    }
+
+    function baV916FallbackFx() {
+      let el = document.getElementById('baAngelFlash');
+      if (!el) {
+        document.body.insertAdjacentHTML('beforeend',
+          '<div id="baAngelFlash"><img src="' + BA_V916_ANGEL_SRC + '" alt=""></div>');
+        el = document.getElementById('baAngelFlash');
+      }
+      if (!el) return;
+      el.classList.remove('on');
+      void el.offsetWidth;
+      el.classList.add('on');
+      setTimeout(function () { try { el.classList.remove('on'); } catch (e) {} }, 5000);
+    }
+
+    if (typeof baLvUpFx === 'function') {
+      const _v916LvUpFx = baLvUpFx;
+      baLvUpFx = function () {
+        try { baV916Style(); } catch (e) { baV916Err(e, 'style'); }
+        let done = false;
+        try {
+          if (baCanPlay()) {
+            const spot = baSpot('baHero');
+            if (spot) done = !!baV916ArenaFx(spot);
+          }
+        } catch (e) { baV916Err(e, 'arena'); }
+        if (done) { BA_V916_N.arena++; return; }
+        try {
+          baV916FallbackFx();
+          BA_V916_N.fallback++;
+          return;
+        } catch (e) { baV916Err(e, 'fallback'); }
+        try { _v916LvUpFx(); BA_V916_N.legacy++; } catch (e) { baV916Err(e, 'legacy'); }
+      };
+    }
+
+    if (typeof baBattleAudit === 'function') {
+      const _v916Audit = baBattleAudit;
+      baBattleAudit = function () {
+        const r = _v916Audit.apply(this, arguments);
+        try {
+          r.angelFx = { ver: 'v9.16', arena: BA_V916_N.arena, fallback: BA_V916_N.fallback,
+                        legacy: BA_V916_N.legacy, styled: !!document.getElementById('baV916Style') };
+        } catch (e) { baV916Err(e, 'audit'); }
+        return r;
+      };
+    }
+
       try {
         /* .g-monster-area อยู่ใน HTML แบบสแตติกอยู่แล้ว จึงสร้างได้ตั้งแต่โหลดหน้า
            ไม่ต้องรอ startGame (กติกาเดียวกับ miInstall ของ v5.9) */

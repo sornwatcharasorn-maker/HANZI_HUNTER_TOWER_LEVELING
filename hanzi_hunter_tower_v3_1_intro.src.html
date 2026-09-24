@@ -43719,6 +43719,152 @@
       };
     }
 
+    /* ============================================================
+       Patch v9.14 · ABYSS TOGGLE RESYNC & DEDICATED-ABYSS CLOUD MERGE
+       ============================================================
+       อยู่ในเนมสเปซ `ba` ของชั้น v6.0 เดิม **ไม่ได้ตั้งพรีฟิกซ์ใหม่** วางท้ายสุดของไฟล์
+       ต่อจาก `baBattleAudit` wrap ของ v9.13 และก่อน `baInstall()`
+       · **ไม่แก้โค้ดของ v4.0-v9.13 เลยแม้แต่บรรทัดเดียว** ที่เพิ่มคือ wrapper 3 ตัว
+       (`abToggleAbyss` · `wbPayload` · `wbRestore`) บวก `baBattleAudit` อีกชั้น
+
+       ── อาการที่แพตช์นี้แก้: สลับสวิตช์เหวลึกเฉพาะกิจแล้วอสูร/ป้ายค้างจากโหมดก่อนหน้า ──
+       `baAxRunStart()` ของ v8.1 เรียก `nextMonster()` **เฉพาะตอนมีจุดเซฟค้างอยู่**
+       (`if (jump && ...)`) — กดเข้าโหมดเหวลึกเฉพาะกิจครั้งแรก (หรือกดตอนยืนอยู่ที่
+       จุดเซฟเดิมพอดี) จึงไม่มีการยิง `nextMonster()` เลย ในขณะที่ป้ายประกาศ
+       (ทั้งของ v8.1 เองและของ v8.3 ที่ห่อทับอีกชั้น) ขึ้นไปแล้วโดยไม่มีเงื่อนไข
+       → ผู้เล่นเห็นป้าย "เจอทัพเงาตัวที่ N" แต่อสูร/เลือด/ภาพยังเป็นของหอคอยปกติเดิม
+       ค้างอยู่จนกว่าจะตอบข้อถัดไปจบ · `baAxRunEnd()` แย่กว่านั้นคือ **ไม่เรียก
+       `nextMonster()` เลยในทุกกรณี** ปิดสวิตช์แล้วอสูรเหวลึกยังค้างอยู่บนจอเช่นกัน
+
+       ทางแก้: ห่อ `abToggleAbyss` เป็นชั้นนอกสุดอีกที (คำนวณ `baOdMode()` ก่อน/หลัง
+       เรียกของเดิม) แล้วบังคับ `nextMonster()` ทุกครั้งที่ **สถานะเปลี่ยนจริง** (ไม่ว่า
+       จะเปิดหรือปิด) โดยมีเงื่อนไขเดียวกับที่ `baAxRunStart()` ใช้เองอยู่แล้ว
+       (`!g.locked && !g.warpOpen`) — `nextMonster()` เรียก `renderMonster()` ซึ่ง
+       ชั้น v6.6 ห่อไว้ให้เดินสาย `baIncSync()` → `baShAnnounce()` ต่อเองครบทั้งหมด
+       (ตัวอ็อบเจกต์มอนสเตอร์ใหม่ที่ `getMonster()` สร้างทำให้ `baIncSync()` เห็นว่า
+       "ไฟต์เปลี่ยนจริง" แล้วป้ายก็ยิงใหม่ให้เองโดยอัตโนมัติ ไม่ต้องแก้ `baShAnnounce`
+       สักบรรทัด) · `baIncOn()` กันการเข้าใจผิดว่าเป็นผู้บุกรุกไว้แล้วด้วย
+       (`!(...abyssOn(g))`) ป้ายที่ขึ้นตอนอยู่ในโหมดเหวลึกเฉพาะกิจจึงเป็น
+       `💀 [MINI BOSS]`/`👁️ [MYTHIC BOSS]` เสมอ ไม่ใช่ `⚠️ [ABYSS INVADER]`
+
+       **ไม่ได้สร้าง `G.abyssFloor` แยกต่างหาก** — สารบัญเดียวของทั้งระบบคือ
+       `account.ax.idx` ของ v8.3 (`baOdIdx()`) ซึ่งทำงานถูกต้องครบทุกข้อของ Victory
+       Loop/Storage อยู่แล้ว (ตรวจสอบแล้วจากโค้ดของ `onMonsterDefeated`/
+       `onHunterDown`/`saveStore`/`migrateAccount`/`startGame`/`exitGame` wrap ของ
+       v8.3) การสร้างตัวแปรคู่ขนานจะเป็นสารบัญที่ต้องซิงก์กันเองสองชุด (กับดักข้อ 35)
+
+       ── ส่วนที่สอง: ปิดช่องว่างจริงของ Storage/Sync ──
+       `wbPayload`/`wbRestore` ของ v9.13 (Cross-Device Full-Profile Sync) ยังไม่ครอบ
+       `account.ax` เลย (`crossDeviceSync.cleanFields`/`monoFields` ไม่มีคำว่า `ax`
+       อยู่สักตัว) — ห่อ `wbPayload`/`wbRestore` อีกชั้นตามแบบแผนเดียวกับ v9.13 ทุกประการ
+
+       | ฟิลด์ | วิธีผสาน | เพราะอะไร |
+       |---|---|---|
+       | `idx` (ลำดับทัพเงา 1-25) | `Math.max` ไม่มีเงื่อนไข | ชนะ = ไต่ขึ้น · แพ้ = คงเดิม จึงไม่มีวันลดลง |
+       | `soul` (บิตแมสก์การ์ดวิญญาณ 25 บิต) | OR บิตต่อบิต | ปลดล็อกแล้วไม่มีวันถูกถอด |
+       | `runs`/`clears` (ตัวนับตลอดชีพ) | `Math.max` ไม่มีเงื่อนไข | เพิ่มขึ้นอย่างเดียว |
+       | `best` (สถิติ Speedrun · ms · 0=ยังไม่เคยจบรอบ) | `Math.min` เมื่อฝั่งที่มาเป็นบวกและน้อยกว่า | ยิ่งน้อยยิ่งดี — monotonic กลับทางที่ยังปลอดภัยแบบไม่มีเงื่อนไข |
+       | `keys`/`day` | **ไม่ผสาน** | ผูกกับโควตารายวันของเครื่อง/วันนั้น ผสานข้ามเครื่องจะได้กุญแจฟรี/เสียโควตาผิดวัน |
+       | `floor` (เลกาซีของ v8.1) | **ไม่ผสาน** | v8.3 บังคับให้เป็น 0 เสมอ (Decoupled invariant) |
+
+       ทุกตัวที่ผสาน "ไม่มีวันลดลง" (หรือกลับทางแบบ `best`) จึงผสานได้แบบไม่มีเงื่อนไข
+       เหมือน `ab.core.*`/`ab.seals.*` ของ v9.13 — ไม่ต้องเช็ก `baV913Clean()` ก่อน
+       (ต่างจากฟิลด์ "adopt-when-clean" อย่าง `gold`/`floor`/`level` ที่แก้ได้สองทาง)
+       จบแล้วเรียก `baAxSave()` + `baAxHud(true)` ให้ก้อนที่เซฟและชิป HUD ตรงกันทันที
+       ============================================================ */
+    let BA_V914_N = { toggle: 0, mergeAx: 0 };
+    function baV914Err(e, w) { try { baErr(e, 'v914:' + w); } catch (x) {} }
+
+    if (typeof abToggleAbyss === 'function') {
+      const _v914Toggle = abToggleAbyss;
+      abToggleAbyss = function () {
+        const was = (typeof baOdMode === 'function') ? baOdMode() : false;
+        const r = _v914Toggle.apply(this, arguments);
+        try {
+          const g = baG();
+          const now = (typeof baOdMode === 'function') ? baOdMode() : false;
+          if (g && was !== now && !g.locked && !g.warpOpen && typeof nextMonster === 'function') {
+            nextMonster();
+            BA_V914_N.toggle++;
+          }
+        } catch (e) { baV914Err(e, 'toggle'); }
+        return r;
+      };
+    }
+
+    function baV914MergeAx(dstG, srcAx) {
+      try {
+        if (!dstG || !srcAx || typeof srcAx !== 'object') return 0;
+        if (!dstG.ax || typeof dstG.ax !== 'object') return 0;
+        let n = 0;
+        const fix = (typeof baOdFix === 'function') ? baOdFix : function (v) { return Math.max(1, Math.round(v || 0) || 0); };
+        const sIdx = fix(srcAx.idx);
+        if (sIdx > (dstG.ax.idx || 1)) { dstG.ax.idx = sIdx; n++; }
+        const sSoul = srcAx.soul | 0;
+        if ((sSoul | (dstG.ax.soul | 0)) !== (dstG.ax.soul | 0)) { dstG.ax.soul = (dstG.ax.soul | 0) | sSoul; n++; }
+        const sRuns = Math.max(0, Math.round(srcAx.runs || 0) || 0);
+        if (sRuns > (dstG.ax.runs || 0)) { dstG.ax.runs = sRuns; n++; }
+        const sClears = Math.max(0, Math.round(srcAx.clears || 0) || 0);
+        if (sClears > (dstG.ax.clears || 0)) { dstG.ax.clears = sClears; n++; }
+        const sBest = Math.max(0, Math.round(srcAx.best || 0) || 0);
+        if (sBest > 0 && (!(dstG.ax.best > 0) || sBest < dstG.ax.best)) { dstG.ax.best = sBest; n++; }
+        return n;
+      } catch (e) { baV914Err(e, 'mergeAx'); return 0; }
+    }
+
+    if (typeof wbPayload === 'function') {
+      const _v914WbPayload = wbPayload;
+      wbPayload = function (g) {
+        const p = _v914WbPayload.apply(this, arguments);
+        try {
+          if (p && typeof p === 'object' && g && g.ax && typeof g.ax === 'object') {
+            p.ax = { idx: g.ax.idx || 1, soul: g.ax.soul | 0, runs: g.ax.runs || 0,
+                     clears: g.ax.clears || 0, best: g.ax.best || 0 };
+          }
+        } catch (e) { baV914Err(e, 'payload'); }
+        return p;
+      };
+    }
+
+    if (typeof wbRestore === 'function') {
+      const _v914WbRestore = wbRestore;
+      wbRestore = async function (user) {
+        try {
+          if (!user || typeof fbOn !== 'function' || !fbOn()) return _v914WbRestore.apply(this, arguments);
+          let doc = null;
+          try { doc = await fbFetch(wbUrl('/' + encodeURIComponent(user))); } catch (e) {}
+          const r = await _v914WbRestore.apply(this, arguments);
+          try {
+            const g = baG();
+            if (doc && typeof doc === 'object' && doc.ax && g &&
+                typeof CURRENT_USER !== 'undefined' && CURRENT_USER === user) {
+              const n = baV914MergeAx(g, doc.ax);
+              if (n > 0) {
+                BA_V914_N.mergeAx += n;
+                try { if (typeof baAxSave === 'function') baAxSave(); } catch (e2) {}
+                try { if (typeof baAxHud === 'function') baAxHud(true); } catch (e2) {}
+                try { wbPush(user); } catch (e2) { baV914Err(e2, 'pushback'); }
+              }
+            }
+          } catch (e) { baV914Err(e, 'wbRestoreMerge'); }
+          return r;
+        } catch (e) { baV914Err(e, 'wbRestore'); return _v914WbRestore.apply(this, arguments); }
+      };
+    }
+
+    if (typeof baBattleAudit === 'function') {
+      const _v914Audit = baBattleAudit;
+      baBattleAudit = function () {
+        const r = _v914Audit.apply(this, arguments);
+        try {
+          if (r.crossDeviceSync && typeof r.crossDeviceSync === 'object') {
+            r.crossDeviceSync.axMonoFields = ['ax.idx', 'ax.soul', 'ax.runs', 'ax.clears', 'ax.best'];
+          }
+          r.abyssToggleResync = { ver: 'v9.14', n: BA_V914_N.toggle, mergeAx: BA_V914_N.mergeAx };
+        } catch (e) { baV914Err(e, 'audit'); }
+        return r;
+      };
+    }
 
     (function baInstall() {
       try {

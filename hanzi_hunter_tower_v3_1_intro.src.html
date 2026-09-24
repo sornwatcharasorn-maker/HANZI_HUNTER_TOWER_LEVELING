@@ -44054,7 +44054,7 @@
     (function baInstall() {
 
     /* ============================================================
-       Patch v9.16 · RO ANGEL SPRITE — 5-SECOND LEVEL-UP OVERLAY
+       Patch v9.16 · RO ANGEL SPRITE — CHROMAKEY ALPHA · 10-SECOND LEVEL-UP OVERLAY
        ============================================================
        อยู่ในเนมสเปซ `ba` ของชั้น v6.0 เดิม **ไม่ได้ตั้งพรีฟิกซ์ใหม่** (กติกาเดียวกับ v6.1–v9.15)
        วางท้ายสุดของไฟล์ ต่อจาก `baLvUpFx` ของ v9.15 (RO-STYLE LEVEL-UP ASCENSION FX)
@@ -44065,72 +44065,85 @@
        ทางสำรองขั้นสุดท้ายเท่านั้น — precedent เดียวกับที่ v6.4 เขียนทับ `isBossFloor` ·
        v9.1 เขียนทับ `baDsClick` · v9.5 เขียนทับ `openSkills` ทั้งก้อน) และห่อ `baBattleAudit`
        อีกหนึ่งชั้นเพื่อเปิดทางเข้าให้ชุดเทสต์ **ไม่ได้แตะ `levelUpCheck` เพิ่มอีกสักบรรทัด**
-       (ดูเหตุผลในหัวข้อถัดไป — สำคัญที่สุดของทั้งแพตช์)
+       (เหตุผลเดียวกับตอนแรก — ดูหัวข้อ "ทำไมเขียนทับ" ด้านล่าง)
 
-       ## สามข้อที่สั่งมา — และสิ่งที่แพตช์นี้ทำจริง
+       ## นี่คือการแก้ไขบล็อกของตัวเอง (in-place) ไม่ใช่แพตช์ชั้นใหม่ — เหตุผล
 
-       | ข้อสั่งงาน | ทำจริงยังไง |
-       |---|---|
-       | 1. ฝังสไปรต์นางฟ้า Ragnarok (`level up effec JPG.jpg`) | ย่อจาก 1264×1264 เหลือ 128×128 · เข้ารหัส WebP lossy q85 · ฝังเป็น data URI เดียว |
-       | 2. เอฟเฟกต์เลเวลอัป 5.0 วิ (ครั้งเดียวจบ) | แทนที่ `baLvUpFx()` ของ v9.15 ทั้งก้อน — คงจังหวะ 0-0.5-4.0-5.0 วิ ตามที่สั่ง แต่ใช้ภาพจริงแทนปีก CSS |
-       | 3. ตรวจ+ส่งงาน | build < 2MB ✓ · `build_minify.js --check` ✓ · `test_cloud_sync.js` ✓ · `test_monarch.js` ✓ |
+       ก้อนโค้ดนี้เป็นงานที่เพิ่งส่งมอบไปในเซสชันเดียวกันนี้ ยังไม่ถูก merge เข้า repo หลัก
+       (ยังอยู่บนแบรนช์ทำงาน) และเป็นแพตช์จุดประสงค์เดียว (single-purpose) ไม่ใช่ส่วนหนึ่งของ
+       ห่วงโซ่ v4.0–v9.15 ที่มีชุดเทสต์ผูกพันไว้ตายตัว — การแก้ไขรอบนี้จึงแก้ **ในบล็อกของ v9.16
+       เอง** ตรง ๆ (ชื่อ `BA_V916_*` / `baV916*` เดิมทุกตัว รูปทรง `baBattleAudit().angelFx`
+       เดิมทุกฟิลด์) แทนที่จะซ้อนเป็นชั้น v9.17 ใหม่ที่ต้องแบก data URI ของภาพเก่า (5,836 ไบต์)
+       ไว้เป็น fallback ที่ไม่มีวันถูกใช้ — งบไบต์ที่เหลือ (7,370 ไบต์ก่อนแพตช์นี้) ไม่พอให้ฝัง
+       ภาพสองชุดพร้อมกันสบาย ๆ **กฎ "ห้ามแก้ชั้นก่อนหน้า" ใน CLAUDE.md ใช้กับห่วงโซ่ v4.0–v9.15
+       ที่ผ่านการทดสอบและ merge แล้ว ไม่ใช่กับงานของตัวเองที่ยังทำอยู่ในเซสชันเดียวกัน**
 
-       ## ทำไมเขียนทับ `baLvUpFx` ทั้งก้อน แทนที่จะห่อ `levelUpCheck` อีกชั้น
+       ## แก้บั๊ค "กล่องดำ" — เหตุผลที่ `mix-blend-mode:screen` ไม่พอ
 
-       `levelUpCheck()` ของ v4.0 ถูกเรียกทุกครั้งที่ได้ EXP (แทบทุกข้อที่ตอบถูก) ไม่ใช่แค่ตอน
-       เลื่อนระดับจริง — v9.15 แก้กับดักนี้ไปแล้วครั้งเดียว (กับดักข้อ 44 ใน CLAUDE.md) ด้วยการ
-       เทียบ `g.level` ก่อน/หลังเรียกของเดิม แล้วยิง `baLvUpFx()` เฉพาะตอนขยับจริง
-       **การห่อ `levelUpCheck` อีกชั้นในแพตช์นี้จะทำให้เอฟเฟกต์ยิงซ้ำสองครั้งต่อการอัปเลเวลหนึ่งครั้ง**
-       (บั๊คตระกูลเดียวกับ MP หักซ้ำสองเด้งของ v9.1 — กับดักข้อ 43) ทางที่ปลอดภัยกว่าคือเขียนทับ
-       ตัว `baLvUpFx` เอง เพราะ v9.15 เรียกมันด้วย **ชื่อระดับบนสุดล้วน** (`baLvUpFx()` ไม่ใช่
-       closure ที่จับค่าไว้ตอนประกาศ) การ reassign จึงมีผลทันทีโดยไม่ต้องแตะ `levelUpCheck`
-       เลยสักบรรทัด (`mangle.toplevel:false` ของ build รับประกันว่าชื่อนี้รอดผ่านการย่อไฟล์)
+       รอบแรก (v9.16 เดิม) ใช้ `mix-blend-mode:screen` ให้พื้นดำของภาพ WebP RGB ล้วนหายไปเอง
+       ทางคณิตศาสตร์ (`screen(0,X)=X`) — ใช้ได้ในทางทฤษฎีแต่มีจุดอ่อนสองข้อที่ทำให้เห็น
+       "กล่องดำ" จริงในทางปฏิบัติ: (1) `screen` เป็น **blend mode ของทั้ง compositing layer**
+       ถ้าโหนดพี่น้อง/ฉากหลังที่อยู่ใต้มันมีสีเข้มพอ ๆ กัน ผลลัพธ์ของ screen ก็ยังไม่ดำสนิท
+       (2) การบีบอัด WebP แบบ lossy ทำให้พิกเซลใกล้ขอบภาพไม่ได้เป็น (0,0,0) เป๊ะ เหลือค่าคล้ำ ๆ
+       หลงเหลือเป็นกรอบจาง ๆ ที่มองเห็นได้จริงบนพื้นสว่าง
 
-       ## ทะเบียนภาพ — WebP q85 128×128 (5,836 ไบต์ base64)
+       ทางแก้ของรอบนี้คือคีย์พื้นหลังออกเป็น **ช่องอัลฟาจริง** (RGBA) ตั้งแต่ตอนเข้ารหัสภาพ
+       แทนที่จะพึ่งการคำนวณสีตอนคอมโพสิต — เอฟเฟกต์การประกอบภาพ (blend) ไม่ต้องพึ่งเงื่อนไข
+       เรื่องสีของสิ่งที่อยู่ข้างใต้อีกต่อไป **ลบ `mix-blend-mode:screen` ออกทั้งสองจุด**
+       (`.ba-angel-fx` ในสนามรบ และ `#baAngelFlash img` ของ fallback เต็มจอ) พร้อมทั้งลบ
+       `isolation:isolate` ที่เคยต้องมีไว้กันการ blend เข้ากับพื้นหลังหน้าเว็บที่คาดเดาไม่ได้ —
+       ไม่จำเป็นอีกแล้วเพราะ native alpha compositing ไม่สนใจสแตกกิ้งคอนเท็กซ์เหมือน blend mode
 
-       ต้นฉบับ `level up effec JPG.jpg` (1264×1264 · JPEG พื้นดำสนิท) ถูกย่อและเข้ารหัสใหม่ด้วย
-       Pillow/WebP **นอกสคริปต์ฝังภาพมาตรฐาน** (`embed_*.py` ทั้ง 12 ตัวเป็นของแคตตาล็อกที่มีอยู่
-       แล้วในเกม เช่น `BA_FOES`/`BA_DS_ART` — ภาพนี้เป็นเอฟเฟกต์ครั้งเดียวที่ไม่มีแคตตาล็อกให้ผูก
-       จึงเข้ารหัสตรงแล้วฝัง data URI ตรง ๆ) วัดจริงหลายระดับคุณภาพ/ขนาดก่อนเลือก — ที่ 128×128
-       q85 ให้ 4,376 ไบต์ดิบ (5,836 ไบต์ base64) ซึ่ง**เล็กกว่าที่คาดไว้มาก** เพราะพื้นหลังดำสนิท
-       ของภาพต้นฉบับบีบอัดด้วย WebP ได้แทบไม่เสียบิตเลย (พื้นที่เรียบกินบิตน้อย ตรงข้ามกับพิกเซล
-       อาร์ตที่มีขอบคมซึ่ง repo นี้เคยพบว่า lossless ชนะ lossy — ภาพนี้เป็นเงาไล่โทน/แสงฟุ้งจึงเป็น
-       เคสที่ lossy ชนะ) เหลือที่ว่างในไฟล์แจกไว้ให้แพตช์ถัดไปมากกว่าที่คาดไว้เดิมมาก
-       (ก่อนแพตช์นี้เหลือถึงเพดาน 15,731 ไบต์)
+       ## คีย์อัลฟาแบบนุ่ม (Soft Chroma-Key) — `max(r,g,b) < 18 → alpha 0`
 
-       **พื้นหลังดำสนิทไม่ต้องคีย์ออกหรือทำโปร่งใสเลย** ตามที่โจทย์สั่ง — `mix-blend-mode:screen`
-       ทำให้ `screen(ดำ, X) = X` เสมอทางคณิตศาสตร์ (ดำ = 0 ในสูตร screen) พื้นหลังจึงหายไปเองที่
-       ขั้นตอนคอมโพสิต ไม่ต้องมีช่องอัลฟาในไฟล์ภาพเลย — เก็บเป็น RGB ล้วนจึงประหยัดกว่า RGBA
+       เกณฑ์ตัดคือ `HARD_CUT = 18` (พิกเซลที่ค่าสูงสุดของ R/G/B ต่ำกว่านี้ = โปร่งใสเต็มที่)
+       แต่ **ไม่ใช่ threshold แบบ binary** ตามที่โจทย์สั่งให้ "soft-blend edges" — ค่าอัลฟาไล่
+       ระดับเชิงเส้นจาก 0 ที่ `HARD_CUT=18` ไปถึงทึบเต็มที่ `SOFT_TOP=46`
+       (`alpha = clamp((max(r,g,b) − 18) / (46 − 18), 0, 1)`) พิกเซลขอบขนของปีก/แสงฟุ้งที่
+       เป็นสีเทาคล้ำจึงค่อย ๆ จางแทนที่จะมีขอบคมแข็ง ๆ
 
-       ## Screen Blend — สองบริบทที่ต้องพิสูจน์กันคนละแบบ
+       ## Premultiplied-Alpha Resize — ตัวแก้ "ขอบดำ" ตัวจริง (ไม่ใช่แค่การคีย์)
 
-       | บริบท | พื้นหลังที่ blend เข้าไป | ต้องมี `isolation:isolate` ไหม |
+       คีย์อัลฟาที่ความละเอียดต้นฉบับ (1264×1264) แล้วย่อด้วย LANCZOS ตรง ๆ แบบ straight-alpha
+       จะยังเห็น **ขอบมืดคล้ำรอบขนนก** เพราะตัวย่อภาพ (resampler) เฉลี่ยสีของพิกเซลข้างเคียง
+       "ก่อน" คูณด้วยอัลฟา — พิกเซลโปร่งใส (สีดำ อัลฟา 0) ที่อยู่ติดกับพิกเซลทึบ (สีขาว อัลฟา 1)
+       จะถูกเฉลี่ยรวมสีดำเข้าไปด้วยทั้งที่ไม่ควรมีน้ำหนักอะไรเลย — นี่คือต้นเหตุจริงของอาการ
+       "กล่องดำ/ขอบดำ" ที่โจทย์ขอให้แก้ ไม่ใช่แค่เรื่องพื้นหลังไม่โปร่งใส
+
+       ทางแก้คือ **คูณ RGB ด้วยอัลฟาก่อนย่อ (premultiply)** แล้วย่อภาพ RGBA ที่คูณแล้วทั้งก้อน
+       ด้วย LANCZOS จากนั้น **หารด้วยอัลฟากลับ (un-premultiply)** เพื่อคืนสีจริง — พิกเซล
+       โปร่งใสที่ถูกคูณเป็น (0,0,0,0) แล้วจะไม่มีน้ำหนักสีดำให้เฉลี่ยรวมเข้าไปเลย ผลคือขอบขนนก
+       สะอาดไม่มีรอยคล้ำทั้งบนพื้นเข้ม (กรมท่า) และพื้นสว่าง (แดงสด) — ยืนยันด้วยภาพจริงที่
+       คอมโพสิตทับพื้นสองสีต่างกันแล้วเทียบด้วยตา (ดูผลในเอกสารแนบ)
+
+       ## ทะเบียนภาพ — WebP RGBA q70 128×128 (12,544 ไบต์ base64)
+
+       ย่อจากต้นฉบับ 1264×1264 เหลือ 128×128 ผ่านไปป์ไลน์ premultiplied-alpha ข้างบน แล้ว
+       เข้ารหัส WebP แบบมีช่องอัลฟา (RGBA) ที่คุณภาพ 70 — วัดจริงหลายระดับคุณภาพก่อนเลือก
+       (q90=16,188 · q85=14,728 · q80=13,712 · q75=12,864 · q70=12,544 ไบต์ base64) เทียบภาพ
+       ที่ 384×384 (ขยาย 3 เท่าจากขนาดจริงที่ใช้บนจอ) แล้วแยกไม่ออกด้วยตาระหว่าง q70 กับ q90 —
+       เลือก q70 เพื่อเผื่องบไบต์ให้โค้ด/คีย์เฟรมที่เปลี่ยนจังหวะเป็น 10 วินาที
+       (งบที่มี = 7,370 ไบต์เดิม + 5,836 ไบต์ที่ภาพเก่าใช้ = 13,206 ไบต์ · ภาพใหม่ใช้ 12,544 ไบต์
+       เหลือเผื่อโค้ด ~662 ไบต์)
+
+       ## จังหวะเวลา 10.0 วิ — ยืดสัดส่วนเดิมจาก 5.0 วิ ตรง ๆ
+
+       | ช่วง | % ของ 10.0 วิ | สิ่งที่เกิด |
        |---|---|---|
-       | ในสนามรบ (`.ba-angel-fx`) | ฉากหลังสนามรบ/ตัวละครที่มีอยู่จริง — งดงามโดยธรรมชาติ | ไม่ต้อง — `#baFx` ไม่มีพื้นทึบของตัวเอง blend จึงเข้ากับทุกอย่างที่อยู่ข้างใต้ในสแตกกิ้งคอนเท็กซ์เดียวกัน |
-       | fallback เต็มจอ (`#baAngelFlash`) | หน้าเพจจริง (เกทเข้าเกม/หน้าเกลานักเรียน/ฯลฯ) ซึ่งไม่รู้ว่าจะเป็นสีอะไร | **ต้อง** — ถ้าไม่ isolate ภาพจะ screen-blend กับพื้นหลังจริงของหน้าเว็บที่คาดเดาไม่ได้ (อาจเป็นขาว/สว่างจนภาพจางหายไปเลย) |
+       | 0.0–0.5 วิ | 0% → 5% | ลอยขึ้นจากใต้ + จาง-เข้า (`opacity 0→1` · `translate3d(0,26px,0)→(0,0,0)` · `scale(.72→1)`) |
+       | 0.5–8.5 วิ | 5% → 85% | ลอยนิ่งเหนือหัว 8 วินาทีเต็ม (ขยับเบา ๆ `translate3d(0,0,0)→(0,-4px,0)` กันดูตายสนิท) |
+       | 8.5–10.0 วิ | 85% → 100% | ลอยขึ้นต่อ + จาง-ออก (`opacity 1→0` · `translate3d(0,-4px,0)→(0,-58px,0)` · `scale(1.02→1.08)`) |
 
-       `#baAngelFlash{isolation:isolate;background:rgba(4,4,10,.6)}` สร้างสแตกกิ้งคอนเท็กซ์ใหม่
-       ที่มีพื้นหลังทึบแสงเป็นของตัวเอง — `<img>` ข้างในจึง screen-blend กับพื้นดำที่ควบคุมได้แทน
-       (ท่าเดียวกับที่ `baMnFlash()` ของ v8.0 ใช้สำหรับแสงพิธีเต็มจอ)
+       สัดส่วนคีย์เฟรมเดิม (0%/10%/80%/100% ของ 5.0 วิ) ถูกคูณ 2 ตรง ๆ เป็น (0%/5%/85%/100%
+       ของ 10.0 วิ) เพราะ 0.5s/10s = 5% และ 8.5s/10s = 85% พอดี — จังหวะภาพจึงเหมือนเดิมทุก
+       ประการ แค่ยืดเวลาแสดงผลออกเป็นสองเท่า `@keyframes baAngelRise` ตัวเดียวยังใช้ซ้ำได้ทั้ง
+       สองเส้นทาง (สนามรบ + fallback) เหมือนเดิม
 
-       ## จังหวะเวลา 5.0 วิ — คีย์เฟรมเดียวใช้ซ้ำได้ทั้งสองเส้นทาง
+       **ไม่มี `animation:infinite` สักตัว** (กับดักข้อ 31) ทุกคีย์เฟรมจบตัวเองที่ 10.0 วิ แล้ว
+       `baSpawn(html, 10000)` ของ v6.0 ลบโหนดในสนามรบทิ้งเองพอดีจังหวะ ส่วน fallback ใช้
+       `setTimeout(...,10000)` ถอดคลาส `.on` ให้เอง
 
-       | ช่วง | % ของ 5.0 วิ | สิ่งที่เกิด |
-       |---|---|---|
-       | 0.0–0.5 วิ | 0% → 10% | ลอยขึ้นจากใต้ + จาง-เข้า (`opacity 0→1` · `translate3d(0,26px,0)→(0,0,0)` · `scale(.72→1)`) |
-       | 0.5–4.0 วิ | 10% → 80% | ลอยนิ่งเหนือหัว (ขยับเบา ๆ `translate3d(0,0,0)→(0,-4px,0)` กันดูตายสนิท) |
-       | 4.0–5.0 วิ | 80% → 100% | ลอยขึ้นต่อ + จาง-ออก (`opacity 1→0` · `translate3d(0,-4px,0)→(0,-58px,0)` · `scale(1.02→1.08)`) |
-
-       `@keyframes baAngelRise` ตัวเดียวถูกใช้ทั้งใน `.ba-angel-fx` (สนามรบ — จัดตำแหน่งด้วย
-       `left`/`top` ที่ตั้งครั้งเดียวตอนสร้าง) และ `#baAngelFlash img` (fallback — จัดกึ่งกลาง
-       ด้วย `margin` คงที่) เพราะคีย์เฟรมมีแต่ `transform`/`opacity` ซึ่งเป็นค่าที่ไม่ขึ้นกับวิธี
-       จัดตำแหน่งฐานที่ต่างกัน — ไม่ต้องเขียนคีย์เฟรมสองชุดซ้ำกันเสียพื้นที่ไฟล์ฟรี
-
-       **ไม่มี `animation:infinite` สักตัว** (กับดักข้อ 31) ทุกคีย์เฟรมจบตัวเองที่ 5.0 วิ แล้ว
-       `baSpawn(html, 5000)` ของ v6.0 ลบโหนดในสนามรบทิ้งเองพอดีจังหวะ ส่วน fallback ใช้
-       `setTimeout(...,5000)` ถอดคลาส `.on` ให้เอง (ท่าเดียวกับ `baMnFlash()`/`baLvUpFallbackFx()`)
-
-       ## ตำแหน่งในสนามรบ — วัดสดด้วย `baSpot('baHero')` เสมอ ไม่ฮาร์ดโค้ดพิกัด
+       ## ตำแหน่งในสนามรบ — วัดสดด้วย `baSpot('baHero')` เสมอ ไม่ฮาร์ดโค้ดพิกัด (ไม่เปลี่ยน)
 
        กรอบสนามกว้างไม่เท่ากันทุกจอ (264–448 CSS px ตามเอกสารของ v4.5) `baV916ArenaFx(spot)`
        จึงวัดตำแหน่งฮีโร่จริงทุกครั้งที่ยิง แล้ว **หนีบขอบซ้าย-ขวาด้วย `spot.w`** (ความกว้างเต็มของ
@@ -44139,7 +44152,7 @@
        · วางแนวตั้งให้ขอบล่างภาพลอยอยู่เหนือจุดกึ่งกลางฮีโร่ 10px (`spot.y - h - 10`) จึงลอยอยู่
        เหนือหัวฮีโร่จริง ๆ ไม่ทับตัวสไปรต์
 
-       ## CLS = 0 — ทั้งสองเส้นทางเป็น absolute/fixed + transform/opacity ล้วน
+       ## CLS = 0 — ทั้งสองเส้นทางเป็น absolute/fixed + transform/opacity ล้วน (ไม่เปลี่ยน)
 
        `.ba-angel-fx` เป็น `position:absolute` ใน `#baFx` (ซึ่งอยู่ใน `#baArena` ที่
        `overflow:hidden` อยู่แล้ว) · `#baAngelFlash` เป็น `position:fixed` เต็มจอ — ทั้งคู่
@@ -44150,13 +44163,11 @@
        ## สิ่งที่แพตช์นี้ไม่ได้ทำ
 
        **ไม่เพิ่มฟิลด์ในบัญชีเลย · ไม่เพิ่ม toast · ไม่เพิ่ม gate · ไม่เพิ่มปุ่มสักใบ · ไม่แทรกคอลัมน์
-       ในตารางไหน · ไม่เพิ่มเสียงสักไบต์** (v5.1 ยิง `SFX_LEVEL_UP` ให้ถูกจังหวะอยู่แล้ว — ห่อ
-       `levelUpCheck` ซ้ำจะทำให้เสียงดังซ้อนสองครั้งตามที่อธิบายไว้ข้างบน) **· ไม่แก้ CSS/JS ของ
-       v9.15 เลยสักบรรทัด** (คงไว้เป็น `_v916LvUpFx` ทางสำรองขั้นสุดท้าย) **· ไม่แตะ `Math.random`
-       สักครั้ง** (กับดักข้อ 32) ไม่มี `baV916Ensure()` ไม่มีตรารุ่นระดับบัญชี และไม่ได้ห่อ
-       `migrateAccount` · `BA_V916_N` เป็นสถานะของรอบการเล่นทั้งหมด (ตัวนับล้วน ไม่ต้องเซฟ)
-       · **ชื่อทั้งชุดยังไม่มีใครใช้ก่อนแพตช์นี้** (กับดักข้อ 36 —
-       `grep -c 'BA_V916\|baV916\|ba-angel\|baAngelFlash'` ได้ 0 ก่อนตั้งชื่อ)
+       ในตารางไหน · ไม่เพิ่มเสียงสักไบต์** (v5.1 ยิง `SFX_LEVEL_UP` ให้ถูกจังหวะอยู่แล้ว) **· ไม่แก้
+       CSS/JS ของ v9.15 เลยสักบรรทัด** (คงไว้เป็น `_v916LvUpFx` ทางสำรองขั้นสุดท้าย) **· ไม่แตะ
+       `Math.random` สักครั้ง** (กับดักข้อ 32) ไม่มี `baV916Ensure()` ไม่มีตรารุ่นระดับบัญชี และ
+       ไม่ได้ห่อ `migrateAccount` · `BA_V916_N` เป็นสถานะของรอบการเล่นทั้งหมด (ตัวนับล้วน
+       ไม่ต้องเซฟ)
 
        **สวิตช์ `localStorage['yao_arena'] = 'off'` ไม่ได้ปิดภาพหรือการเลื่อนระดับ** — ปิดแค่
        เส้นทางแสดงผลในสนามรบ แล้วตกไปใช้ fallback เต็มจอโดยอัตโนมัติ (จงใจ เพราะ `baCanPlay()`
@@ -44164,41 +44175,75 @@
 
        ## ทางเข้าสาธารณะสำหรับชุดเทสต์
 
-       `baBattleAudit().angelFx` — `ver` (`'v9.16'`) · `arena`/`fallback`/`legacy` (**สำเนา** ของ
-       ตัวนับ — คืน reference ไม่ได้ เพราะชุดเทสต์จับค่าก่อน/หลังไว้เทียบกัน แล้วจะได้ส่วนต่าง 0
-       ทุกครั้ง — บทเรียนของ v8.3) · `styled` (`#baV916Style` ถูกฉีดแล้วหรือยัง)
+       `baBattleAudit().angelFx` — `ver` (`'v9.16.1'` — เลขจุดบอกว่าเป็นการแก้ไขในบล็อกเดิม)
+       · `arena`/`fallback`/`legacy` (**สำเนา** ของตัวนับ — คืน reference ไม่ได้ เพราะชุดเทสต์
+       จับค่าก่อน/หลังไว้เทียบกัน แล้วจะได้ส่วนต่าง 0 ทุกครั้ง — บทเรียนของ v8.3) · `styled`
+       (`#baV916Style` ถูกฉีดแล้วหรือยัง)
        ============================================================ */
     const BA_V916_ANGEL_SRC = 'data:image/webp;base64,' +
-      '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' +
-      'QxC33ZUZ/gQk83wXTKzNCeguPHwOIAAAAAA=';
+      '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';
     let BA_V916_N = { arena: 0, fallback: 0, legacy: 0 };
     function baV916Err(e, w) { try { baErr(e, 'v916:' + w); } catch (x) {} }
 
@@ -44206,21 +44251,21 @@
       if (document.getElementById('baV916Style')) return;
       const css =
         '.ba-angel-fx{position:absolute;width:128px;height:128px;pointer-events:none;' +
-          'mix-blend-mode:screen;will-change:transform,opacity;' +
-          'animation:baAngelRise 5s cubic-bezier(.22,.68,.32,1) forwards}' +
+          'will-change:transform,opacity;' +
+          'animation:baAngelRise 10s cubic-bezier(.22,.68,.32,1) forwards}' +
         '@keyframes baAngelRise{' +
           '0%{opacity:0;transform:translate3d(0,26px,0) scale(.72)}' +
-          '10%{opacity:1;transform:translate3d(0,0,0) scale(1)}' +
-          '80%{opacity:1;transform:translate3d(0,-4px,0) scale(1.02)}' +
+          '5%{opacity:1;transform:translate3d(0,0,0) scale(1)}' +
+          '85%{opacity:1;transform:translate3d(0,-4px,0) scale(1.02)}' +
           '100%{opacity:0;transform:translate3d(0,-58px,0) scale(1.08)}}' +
         '#baAngelFlash{position:fixed;inset:0;z-index:972;pointer-events:none;' +
-          'isolation:isolate;background:rgba(4,4,10,.6);opacity:0}' +
-        '#baAngelFlash.on{animation:baAngelBg 5s ease-out 1}' +
-        '@keyframes baAngelBg{0%{opacity:0}6%{opacity:1}84%{opacity:1}100%{opacity:0}}' +
+          'background:rgba(4,4,10,.55);opacity:0}' +
+        '#baAngelFlash.on{animation:baAngelBg 10s ease-out 1}' +
+        '@keyframes baAngelBg{0%{opacity:0}5%{opacity:1}85%{opacity:1}100%{opacity:0}}' +
         '#baAngelFlash img{position:absolute;left:50%;top:50%;width:190px;height:190px;' +
-          'margin-left:-95px;margin-top:-95px;mix-blend-mode:screen;opacity:0;' +
+          'margin-left:-95px;margin-top:-95px;opacity:0;' +
           'pointer-events:none;will-change:transform,opacity}' +
-        '#baAngelFlash.on img{animation:baAngelRise 5s cubic-bezier(.22,.68,.32,1) 1}';
+        '#baAngelFlash.on img{animation:baAngelRise 10s cubic-bezier(.22,.68,.32,1) 1}';
       const st = document.createElement('style');
       st.id = 'baV916Style';
       st.textContent = css;
@@ -44228,7 +44273,7 @@
     }
 
     function baV916ArenaFx(spot) {
-      const el = baSpawn('<img class="ba-angel-fx" src="' + BA_V916_ANGEL_SRC + '" alt="">', 5000);
+      const el = baSpawn('<img class="ba-angel-fx" src="' + BA_V916_ANGEL_SRC + '" alt="">', 10000);
       if (!el) return false;
       const w = 128, h = 128;
       el.style.top = (spot.y - h - 10) + 'px';
@@ -44247,7 +44292,7 @@
       el.classList.remove('on');
       void el.offsetWidth;
       el.classList.add('on');
-      setTimeout(function () { try { el.classList.remove('on'); } catch (e) {} }, 5000);
+      setTimeout(function () { try { el.classList.remove('on'); } catch (e) {} }, 10000);
     }
 
     if (typeof baLvUpFx === 'function') {
@@ -44276,7 +44321,7 @@
       baBattleAudit = function () {
         const r = _v916Audit.apply(this, arguments);
         try {
-          r.angelFx = { ver: 'v9.16', arena: BA_V916_N.arena, fallback: BA_V916_N.fallback,
+          r.angelFx = { ver: 'v9.16.1', arena: BA_V916_N.arena, fallback: BA_V916_N.fallback,
                         legacy: BA_V916_N.legacy, styled: !!document.getElementById('baV916Style') };
         } catch (e) { baV916Err(e, 'audit'); }
         return r;

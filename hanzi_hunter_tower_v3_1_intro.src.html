@@ -44417,6 +44417,160 @@
       }
     })();
 
+    /* Patch v9.18 · 4-PILLAR SKILL INCENTIVE ENGINE
+       ห่อทับ hunterAtk · cdHitMonster · cdExecute · baPlCast · resolveAnswer ·
+       onMonsterDefeated · baDsBarHtml ของชั้นก่อนหน้าทั้งหมด ไม่แก้โค้ดเดิมสักบรรทัด
+       ดูรายละเอียดใน PATCH_SKILL_4PILLARS_INCENTIVE.md */
+    (function baInstallV918() {
+      let BA_SK4_CASTING = false;
+      let BA_SK4_PENDING = false;
+
+      function baV918Blk(delay) {
+        try {
+          const t = baSpot('baFoe');
+          baLater(function () { try { baFloat('🛡️ BLOCK', 'block', t); } catch (e) {} }, delay);
+        } catch (e) {}
+      }
+      function baV918Gate(g) {
+        try {
+          return typeof BA_BAR !== 'undefined' && BA_BAR && !BA_BAR.broken &&
+            BA_BAR.m === g.currentMonster && typeof baBarLeft === 'function' && baBarLeft() > 0;
+        } catch (e) { return false; }
+      }
+
+      /* Pillar 1a — คอมโบ >= 5 ให้ปุ่มช่อง 1/3 เรืองทองผ่าน inline style (ไม่สร้างคลาส CSS ใหม่) */
+      if (typeof baDsBarHtml === 'function') {
+        const _v918Bar = baDsBarHtml;
+        baDsBarHtml = function () {
+          let h = _v918Bar.apply(this, arguments);
+          try {
+            const g = baG();
+            if (g && (g.streak || 0) >= 5 && typeof h === 'string') {
+              const gl = ' style="filter:drop-shadow(0 0 6px gold)">';
+              h = h.replace('data-ds="0">', 'data-ds="0"' + gl).replace('data-ds="2">', 'data-ds="2"' + gl);
+            }
+          } catch (e) {}
+          return h;
+        };
+      }
+
+      /* Pillar 1b + Pillar 2 (ปกติ) — เฉพาะสกิลติดอาวุธ (ช่อง 1/3) ทะลุเกราะได้
+         และได้โบนัส +30% ดาเมจตอนคอมโบ >= 5 · ดาเมจนอกเวลาต่อสู้ไม่ถูกแตะ */
+      if (typeof hunterAtk === 'function') {
+        const _v918Atk = hunterAtk;
+        hunterAtk = function () {
+          let out = _v918Atk.apply(this, arguments);
+          try {
+            if (typeof BA_LIVE === 'undefined' || !BA_LIVE) return out;
+            const g = baG();
+            if (!g) return out;
+            const armed = typeof baV91Active === 'function' && (baV91Active(0) || baV91Active(2));
+            if (baV918Gate(g) && !armed) { baV918Blk(BA_IMPACT || 170); return 0; }
+            if (armed && (g.streak || 0) >= 5) out = Math.round(out * 1.3);
+          } catch (e) {}
+          return out;
+        };
+      }
+
+      /* Pillar 2 (การ์ดเวทมนตร์) — บล็อกดาเมจของการ์ดต่อเกราะเช่นกัน ยกเว้นระหว่างร่ายท่าไม้ตาย S4
+         เกราะแตกเองอัตโนมัติผ่าน baBarSync()→baBreakFx() ของ v6.4/v6.7 เมื่อ HP ทะลุฐาน */
+      if (typeof cdHitMonster === 'function') {
+        const _v918Hit = cdHitMonster;
+        cdHitMonster = function () {
+          const g = baG();
+          if (g && !BA_SK4_CASTING && baV918Gate(g)) { baV918Blk(0); return 0; }
+          const hpBefore = g ? (g.monsterHp || 0) : 0;
+          const dealt = _v918Hit.apply(this, arguments);
+          try { if (BA_SK4_CASTING && g && hpBefore > 0 && g.monsterHp <= 0) BA_SK4_PENDING = true; } catch (e) {}
+          return dealt;
+        };
+      }
+      if (typeof cdExecute === 'function') {
+        const _v918Exec = cdExecute;
+        cdExecute = function () {
+          const g = baG();
+          if (g && !BA_SK4_CASTING && baV918Gate(g)) { baV918Blk(0); return 0; }
+          const alive = g ? (g.monsterHp || 0) > 0 : false;
+          const gone = _v918Exec.apply(this, arguments);
+          try { if (BA_SK4_CASTING && alive) BA_SK4_PENDING = true; } catch (e) {}
+          return gone;
+        };
+      }
+
+      /* ธง "กำลังร่ายท่าไม้ตาย" ครอบทั้งสาย baPlCast ให้ cdHitMonster/cdExecute ทะลุเกราะได้ */
+      if (typeof baPlCast === 'function') {
+        const _v918Cast = baPlCast;
+        baPlCast = function () {
+          const was = BA_SK4_CASTING;
+          BA_SK4_CASTING = true;
+          try { return _v918Cast.apply(this, arguments); } finally { BA_SK4_CASTING = was; }
+        };
+      }
+
+      /* Pillar 1c (คืน MP 50%) + Pillar 3 (เกจไม้ตาย +2 + ลุ้นเศษคริสตัลลอย) +
+         จุดสังเกตการฟันจบด้วยสกิล S1/S3 สำหรับ Pillar 4 */
+      if (typeof resolveAnswer === 'function') {
+        const _v918Res = resolveAnswer;
+        resolveAnswer = function () {
+          let g = baG();
+          const slot = typeof baV91Active === 'function' ? (baV91Active(0) ? 0 : (baV91Active(2) ? 2 : -1)) : -1;
+          const c0 = g ? (g.correct || 0) : 0;
+          const h0 = g ? (g.monsterHp || 0) : 0;
+          const r = _v918Res.apply(this, arguments);
+          try {
+            g = baG();
+            if (g && slot >= 0 && (g.correct || 0) > c0) {
+              const cost = typeof baV91Cost === 'function' ? baV91Cost(slot) : 0;
+              if (cost > 0) {
+                const rf = Math.round(cost * 0.5);
+                const cap = typeof maxMpOf === 'function' ? maxMpOf(g) : (g.mp || 0) + rf;
+                g.mp = Math.min(cap, (g.mp || 0) + rf);
+                renderStats();
+              }
+              if (typeof baPlPips === 'function' && typeof baPlPipSet === 'function') baPlPipSet(g, baPlPips() + 2);
+              if (typeof baRand === 'function' && baRand(100) < 20) {
+                const t = baSpot('baHero');
+                if (t) baFloat('💎+1', 'heal', t);
+                if (typeof baQdGem === 'function') baQdGem(1);
+                else if (g.ab) g.ab.shards = Math.min(99999, (g.ab.shards || 0) + 1);
+              }
+              if (h0 > 0 && g.monsterHp <= 0) BA_SK4_PENDING = true;
+            }
+          } catch (e) {}
+          return r;
+        };
+      }
+
+      /* Pillar 4 — ฟันจบด้วยสกิลใด ๆ (S1/S3/S4) แจกโบนัส +25% ทอง/EXP + แบนเนอร์กลางจอ
+         วัดจากส่วนต่างจริงคร่อมทั้งสาย onMonsterDefeated เพราะ clearFloor() ที่จ่ายรางวัล
+         ทำงานซิงโครนัสในนั้น (แม้ตัว onMonsterDefeated เองถูกหน่วง 1100ms ผ่าน scheduleTurn) */
+      if (typeof onMonsterDefeated === 'function') {
+        const _v918Def = onMonsterDefeated;
+        onMonsterDefeated = function () {
+          const wasP = BA_SK4_PENDING;
+          BA_SK4_PENDING = false;
+          let g = baG();
+          const g0 = g ? (g.gold || 0) : 0, lv0 = g ? (g.level || 1) : 0, e0 = g ? (g.exp || 0) : 0, m0 = g ? (g.maxExp || 0) : 0;
+          const r = _v918Def.apply(this, arguments);
+          try {
+            g = baG();
+            if (wasP && g) {
+              const gg = Math.max(0, (g.gold || 0) - g0);
+              const ge = typeof dwExpGained === 'function' ? dwExpGained(g, lv0, e0, m0) : 0;
+              const gb = Math.round(gg * 0.25), eb = Math.round(ge * 0.25);
+              if (gb > 0) { g.gold = (g.gold || 0) + gb; g.totalGoldEarned = (g.totalGoldEarned || 0) + gb; }
+              if (eb > 0 && typeof baXpPay === 'function') baXpPay(eb);
+              if (gb > 0 || eb > 0) {
+                renderStats();
+                if (typeof baBannerText === 'function') baBannerText('💥 SKILL FINISHER! 💥', '+' + gb + '🪙 +' + eb + 'EXP');
+              }
+            }
+          } catch (e) {}
+          return r;
+        };
+      }
+    })();
+
       try {
         /* .g-monster-area อยู่ใน HTML แบบสแตติกอยู่แล้ว จึงสร้างได้ตั้งแต่โหลดหน้า
            ไม่ต้องรอ startGame (กติกาเดียวกับ miInstall ของ v5.9) */

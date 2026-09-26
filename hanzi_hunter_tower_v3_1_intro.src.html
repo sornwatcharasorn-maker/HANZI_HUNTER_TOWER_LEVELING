@@ -44571,6 +44571,214 @@
       }
     })();
 
+    (function baInstallWp() {
+      /* ============================================================
+         Patch · WEAKNESS PURIFY & ANTI-FARM
+         ============================================================
+         อยู่ในเนมสเปซ `ba` ของชั้น v6.0 เดิม ไม่ได้ตั้งพรีฟิกซ์ใหม่ (กติกาเดียวกับ v6.1–v9.18)
+         · ไม่แก้โค้ดของ v4.0-v9.18 เลยแม้แต่บรรทัดเดียว — ห่อทับทั้งหมด
+         · ไม่เพิ่ม DOM/CSS class ใหม่สักตัว — ใช้ baCbTip (.ba-cbtip ของ v6.9)
+           กับ baQdGem (ลอย +N💎 ของ Micro-Patch เควสประจำวัน) ที่มีอยู่แล้วทั้งคู่
+
+         โหมดฝึกจุดอ่อน (G.practiceMode) สุ่มคำถามจาก weakWordsOf(G,10) เท่านั้น
+         (ดู getMonster() — ตกกลับไปใช้ pool ปกติเฉพาะตอนลิสต์ว่าง) ทุกข้อที่ถูกถาม
+         ระหว่างโหมดนี้จึงเป็นหนึ่งใน 10 คำอ่อนสุดอยู่แล้วโดยไม่ต้องกรองซ้ำ
+
+         ตอบถูกติดกัน 2 ครั้งของคำเดียวกัน (นับเฉพาะระหว่างอยู่ในโหมดฝึก ตอบผิด/
+         หมดเวลาล้างตัวนับของคำนั้นทิ้งทันที) → ล้าง wordStats[id].wrong เป็น 0
+         คำนั้นจึงหลุดจาก weakWordsOf() ทันที (เงื่อนไข !w.wrong ของมันเอง)
+         แล้วให้เครดิตเศษคริสตัล 1 ก้อนผ่าน baQdGem() ซึ่งเป็นช่องทางเดียวของทั้งเกม
+         ที่ให้ 💎 (ก้อนเดียวกับ account.ab.shards ของ v4.6 — ไม่มีสกุลเงินใหม่)
+
+         จำกัดวันละ 5 ครั้ง (account.wp.n) กันฟาร์มโหมดฝึกเอาเศษคริสตัลไม่จำกัด
+         — เกินโควตาแล้วยังชำระล้างได้ตามปกติ (คำยังหลุดจากลิสต์) แค่ไม่ได้ 💎 เพิ่ม
+
+         ไม่แตะ G.streak / ทอง / EXP / HP / ความคืบหน้าหอคอยเลยสักบรรทัด — โหมดฝึก
+         ยังไม่มีความเสี่ยง/ไม่มีรางวัลปกติเหมือนเดิมทุกประการ (resolveAnswer ของ v4.0
+         เช็ก G.practiceMode ปิดกั้นทองกับ EXP ของตัวมันเองอยู่แล้ว)
+
+         ⚠️ ผลข้างเคียงที่ยอมรับไว้: การล้าง wrong เป็น 0 ทำให้ baSmNet()/baSmTier()
+         ของชั้น Subconscious Mastery (v9.6) ขยับขึ้นไปด้วย (คำอาจขยับขั้น Codex สูงขึ้น)
+         — ไม่ใช่บั๊ค เป็นผลตามมาที่ถูกต้องของการที่คำนั้นถูกพิชิตจริงด้วยการตอบถูกสองครั้ง
+         และ Codex Mastery เป็นระบบความสำเร็จข้างเคียง ไม่ใช่ "tower streak หรือ main
+         progression" ตามขอบเขตที่งานนี้กันไว้ */
+
+      const BA_WP_VER = '1.0';
+      const BA_WP_CAP = 5;        /* เพดานรางวัลเศษคริสตัลต่อวัน */
+
+      /* สถานะของรอบการเล่น ไม่ต้องเซฟ (กฎเดียวกับ AB_LIVE ของ v4.6) */
+      let BA_WP_READY = false;    /* กันเขียนทับตอน startGame (กับดักข้อ 16) */
+      let BA_WP_HITS  = {};       /* ตอบถูกติดกันกี่ครั้งต่อคำ ในรอบการเล่นนี้ */
+      let BA_WP_N     = { purify: 0, gem: 0, cap: 0 };
+
+      function baWpErr(e, where) { try { baErr(e, 'wp:' + where); } catch (x) {} }
+
+      /* ── ข้อมูลที่ชั้นนี้เพิ่ม — account.wp ──────────────────────────
+         ต้องเซฟจริง เพราะโควตารายวันต้องรอดข้ามการล็อกอิน */
+      function baWpBlank() {
+        return { day: (typeof qDayKey === 'function') ? qDayKey() : '', n: 0 };
+      }
+
+      /* read-only — คืน null ถ้ายังไม่มี **ห้ามสร้างก้อนเปล่าให้เอง** (กับดักข้อ 16) */
+      function baWpOf(src) {
+        const s = src || baG();
+        return (s && s.wp && typeof s.wp === 'object') ? s.wp : null;
+      }
+
+      /* ต้อง idempotent เพราะถูกเรียกทุกครั้งที่อ่าน store ผ่าน migrateAccount
+         และเป็นตัวรีเซ็ตรอบวันที่หมดอายุไปด้วยในตัว */
+      function baWpEnsure(a) {
+        if (!a || typeof a !== 'object') return null;
+        let d = a.wp;
+        if (!d || typeof d !== 'object') d = a.wp = baWpBlank();
+        const today = (typeof qDayKey === 'function') ? qDayKey() : '';
+        if (d.day !== today) { d.day = today; d.n = 0; }
+        d.n = (typeof d.n === 'number' && isFinite(d.n) && d.n > 0) ? Math.min(BA_WP_CAP, Math.floor(d.n)) : 0;
+        return d;
+      }
+
+      /* saveProgress ของ v4.0 ไม่รู้จักฟิลด์นี้ จึงต้องเขียนลง store เอง */
+      function baWpSave() {
+        if (!BA_WP_READY) return;
+        try {
+          const g = baG();
+          if (!g || !g.wp || typeof CURRENT_USER === 'undefined' || !CURRENT_USER) return;
+          const st = loadStore();
+          const a = st[CURRENT_USER];
+          if (!a) return;
+          a.wp = JSON.parse(JSON.stringify(g.wp));
+          saveStore(st);
+        } catch (e) { baWpErr(e, 'save'); }
+      }
+
+      /* ตัวลงมือจริง — ล้างสถิติผิดของคำ + แจกรางวัลตามโควตา */
+      function baWpPurify(g, wordId) {
+        try {
+          if (!g) return;
+          const ws = g.wordStats && g.wordStats[String(wordId)];
+          if (!ws || !ws.wrong) return;   /* ไม่มีอะไรให้ชำระล้าง = ไม่ต้องทำอะไร */
+          ws.wrong = 0;
+          BA_WP_N.purify++;
+          try {
+            if (typeof baCbTip === 'function' && typeof baSpot === 'function') {
+              baCbTip('✨ ชำระล้างสำเร็จ!', baSpot('baHero'));
+            }
+          } catch (e) { baWpErr(e, 'cue'); }
+          const d = baWpEnsure(g);
+          if (d && d.n < BA_WP_CAP) {
+            d.n++;
+            baWpSave();
+            if (typeof baQdGem === 'function') { baQdGem(1); BA_WP_N.gem++; }
+          } else {
+            BA_WP_N.cap++;
+          }
+        } catch (e) { baWpErr(e, 'purify'); }
+      }
+
+      // ══ ห่อของเดิม ═══════════════════════════════════════════════════
+
+      if (typeof resolveAnswer === 'function') {
+        const _baWpResolve = resolveAnswer;
+        resolveAnswer = function (choice, btn, timedOut) {
+          const g = baG();
+          const m0 = g ? g.currentMonster : null;
+          const wasPractice = !!(g && g.practiceMode);
+          const wordId = (wasPractice && m0) ? m0.id : null;
+          const wasCorrect = !!(wasPractice && m0 && !timedOut && choice === m0.answer);
+          const r = _baWpResolve.apply(this, arguments);
+          try {
+            if (wasPractice && wordId != null) {
+              const key = String(wordId);
+              if (wasCorrect) {
+                BA_WP_HITS[key] = (BA_WP_HITS[key] || 0) + 1;
+                if (BA_WP_HITS[key] >= 2) {
+                  delete BA_WP_HITS[key];
+                  baWpPurify(baG(), wordId);
+                }
+              } else {
+                delete BA_WP_HITS[key];
+              }
+            }
+          } catch (e) { baWpErr(e, 'resolve'); }
+          return r;
+        };
+      }
+
+      if (typeof migrateAccount === 'function') {
+        const _baWpMig = migrateAccount;
+        migrateAccount = function (a) {
+          const r = _baWpMig.apply(this, arguments);
+          try { if (r && typeof r === 'object') baWpEnsure(r); } catch (e) { baWpErr(e, 'mig'); }
+          return r;
+        };
+      }
+
+      if (typeof startGame === 'function') {
+        const _baWpStart = startGame;
+        startGame = function (username) {
+          BA_WP_READY = false;
+          const r = _baWpStart.apply(this, arguments);
+          try {
+            const g = baG();
+            /* ต้องดึง wp จาก store มาใส่ G เอง — startGame ของ v4.0 ปั้น G ขึ้นใหม่
+               จากฟิลด์ที่มันรู้จักเท่านั้น (กับดักข้อ 16 — ท่าเดียวกับ baQdStart) */
+            if (g) {
+              let saved = null;
+              try {
+                const acc = loadStore()[username || CURRENT_USER];
+                if (acc && acc.wp) saved = JSON.parse(JSON.stringify(acc.wp));
+              } catch (e) { saved = null; }
+              g.wp = saved;
+              baWpEnsure(g);
+            }
+            BA_WP_READY = true;
+            BA_WP_HITS = {};
+            baWpSave();
+          } catch (e) { baWpErr(e, 'start'); }
+          return r;
+        };
+      }
+
+      /* ลำดับสำคัญ — เซฟก่อน ปิดสวิตช์ แล้วค่อยให้ของเดิมทำงาน เพราะ exitGame
+         ของ v4.0 เรียก saveProgress() ต่อข้างใน (กับดักข้อ 16) */
+      if (typeof exitGame === 'function') {
+        const _baWpExit = exitGame;
+        exitGame = function () {
+          try { baWpSave(); } catch (e) { baWpErr(e, 'exit'); }
+          BA_WP_READY = false;
+          BA_WP_HITS = {};
+          return _baWpExit.apply(this, arguments);
+        };
+      }
+
+      if (typeof saveProgress === 'function') {
+        const _baWpSaveP = saveProgress;
+        saveProgress = function () {
+          const r = _baWpSaveP.apply(this, arguments);
+          try { baWpSave(); } catch (e) { baWpErr(e, 'saveP'); }
+          return r;
+        };
+      }
+
+      if (typeof baBattleAudit === 'function') {
+        const _baWpAudit = baBattleAudit;
+        baBattleAudit = function () {
+          const r = _baWpAudit.apply(this, arguments);
+          try {
+            const g = baG();
+            const d = baWpOf(g);
+            r.weaknessPurify = {
+              ver: BA_WP_VER, cap: BA_WP_CAP,
+              day: d ? d.day : '', n: d ? d.n : 0,
+              hits: Object.assign({}, BA_WP_HITS),
+              purify: BA_WP_N.purify, gem: BA_WP_N.gem, blockedByCap: BA_WP_N.cap
+            };
+          } catch (e) { baWpErr(e, 'audit'); }
+          return r;
+        };
+      }
+    })();
+
       try {
         /* .g-monster-area อยู่ใน HTML แบบสแตติกอยู่แล้ว จึงสร้างได้ตั้งแต่โหลดหน้า
            ไม่ต้องรอ startGame (กติกาเดียวกับ miInstall ของ v5.9) */

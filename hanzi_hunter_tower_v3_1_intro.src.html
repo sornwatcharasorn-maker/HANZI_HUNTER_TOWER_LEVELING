@@ -44892,6 +44892,152 @@
       }
     })();
 
+    /* Patch v9.19 · HIGH-IMPACT COMBO RESONANCE & SKILL CUE
+       ══════════════════════════════════════════════════════════════════
+       อยู่ในเนมสเปซ `ba` ของชั้น v6.0 เดิม ไม่ได้ตั้งพรีฟิกซ์ใหม่ (กติกาเดียวกับ v6.1–v9.18)
+       · ไม่แก้โค้ดของ v4.0-v9.18 เลยแม้แต่บรรทัดเดียว — ห่อทับทั้งหมด
+
+       สิ่งที่ทำ: ยกระดับเส้นขอบทองจาง ๆ ของ v9.18 (คอมโบ >= 5 บนช่อง 1/3 ผ่าน
+       inline style ใน baDsBarHtml) ให้เป็นออร่าทอง-ฟ้าไซยานที่เต้นชัดเจนขึ้น
+       พร้อมป้ายประกาศลอยกลางสนาม แล้วดับทันทีเมื่อคอมโบหลุดต่ำกว่าเกณฑ์
+       หรือเกิด error/หมดเวลาระหว่างตัดสินข้อ
+
+       ทำไมไม่แก้ที่ baDsBarHtml ตามที่ v9.18 ทำไว้ — baSyncCurrentClassSkills(force)
+       ข้ามการวาดใหม่เมื่อ BA_DS_SIG (role + ระดับช่อง + พิพ) ไม่เปลี่ยน ซึ่ง "ไม่รวม
+       g.streak" อยู่ในนั้นเลย — การเรืองแสงที่ผูกกับ baDsBarHtml จึงอาจไม่รีเฟรช
+       ทุกครั้งที่คอมโบขยับ (สืบทอดบั๊คเดิมของ v9.18 มาด้วย) ทางที่ปลอดภัยกว่าคือ
+       ผูกกับ CSS ล้วน (สลับคลาสที่ #gameScreen + attribute selector หา [data-ds])
+       ซึ่งไม่ขึ้นกับว่า baDsBarHtml เพิ่งวาดใหม่หรือยัง เพราะแอตทริบิวต์ data-ds
+       ติดอยู่กับปุ่มถาวรตั้งแต่วาดครั้งแรก
+
+       ใช้ `baPlS1` ตามที่คำสั่งระบุไม่ได้ในทางปฏิบัติ — ตรวจแล้ว `baPlS4` ไม่มีอยู่จริง
+       ในโค้ดเลย (มีแต่ baPlS1) และช่องนี้เป็นเอฟเฟกต์ภาพล้วนที่ตอบสนองต่อ "คอมโบ"
+       (G.streak — ตัวนับที่คำสั่งระบุไว้เป็นทางเลือกเดียวกัน) ไม่ได้คำนวณค่าพลังสกิล
+       จึงไม่จำเป็นต้องเรียกฟังก์ชันคำนวณค่าสกิลตัวไหนเลย
+
+       เกณฑ์ >= 5 ยืมค่าคงที่ BA_CB_W1 ของ v6.9 (Combo Milestone Passives) ตรง ๆ
+       ไม่ประกาศเลขซ้ำ — ถ้าวันหนึ่งบันไดคอมโบขั้น I ขยับ ป้ายนี้ขยับตามเอง
+
+       CLS = 0 — คลาส ba-resonance แตะแค่ box-shadow (ผ่าน @keyframes) และสี
+       border-color เท่านั้น ไม่แตะ padding/margin/width/height/display สักกฎ
+       ป้ายประกาศใช้ baBannerText() ของ v6.3 ซึ่งเป็นกลไกเดิมที่ไม่ขยับเลย์เอาต์อยู่แล้ว
+       (absolute + opacity เท่านั้น) ไม่ได้เพิ่ม DOM โหนดใหม่ในสนามรบสักตัว
+
+       resolveAnswer ถูกห่อด้วย try/finally (ต่างจากรูปแบบเรียกตรง ๆ ของชั้นอื่น
+       โดยตั้งใจ) เพื่อการันตีว่า baResSync() ทำงานเสมอแม้ของเดิมจะโยน error กลางทาง
+       หรือจบด้วยทางหมดเวลา (resolveAnswer(null,null,true)) — ออร่า/ป้ายจึงดับทันที
+       ไม่มีทางค้างอยู่ ตามข้อกำหนด "Instant Reset" ของคำสั่ง
+
+       exitGame/startGame ห่อเป็นตาข่ายกันพลาดชั้นที่สอง (ล้างคลาสทิ้งเผื่อกรณี
+       ออกจากเกม/ล็อกอินใหม่ระหว่างที่ยังติดคลาสค้างอยู่) ไม่ต้องพึ่งแค่ resolveAnswer
+
+       ไม่เพิ่มฟิลด์ในบัญชี · ไม่เพิ่ม toast/gate · ไม่เพิ่มปุ่ม/DOM โหนดใหม่ในสนาม
+       · ไม่เพิ่มภาพหรือเสียงสักไบต์ · ไม่แตะ Math.random สักครั้ง
+       · โหมดฝึกจุดอ่อนไม่ทริกเกอร์ (g.practiceMode) กติกาเดียวกับ Combo Milestone
+       Passives ของ v6.9 เพราะที่นั่นไม่มีความเสี่ยงจึงไม่มีรางวัลโบนัสทอง/EXP
+       ══════════════════════════════════════════════════════════════════ */
+    (function baInstallV919() {
+      const BA_RES_VER = 'v9.19';
+      const BA_RES_N = { on: 0, off: 0, banner: 0 };
+      function baResErr(e, where) { try { baErr(e, 'res:' + where); } catch (x) {} }
+
+      function baResStyle() {
+        if (document.getElementById('baResStyle')) return;
+        const css =
+          '@keyframes baResGlow{' +
+            '0%,100%{box-shadow:0 0 6px 1px rgba(255,209,102,.55),0 0 10px 2px rgba(127,232,255,.35)}' +
+            '50%{box-shadow:0 0 22px 6px rgba(255,209,102,.95),0 0 32px 11px rgba(127,232,255,.85)}' +
+          '}' +
+          '#gameScreen.ba-resonance #gSkills [data-ds="0"],' +
+          '#gameScreen.ba-resonance #gSkills [data-ds="2"]{' +
+            'animation:baResGlow 1.05s ease-in-out infinite;border-color:rgba(255,209,102,.9)' +
+          '}';
+        const st = document.createElement('style');
+        st.id = 'baResStyle';
+        st.textContent = css;
+        document.head.appendChild(st);
+      }
+
+      function baResSync(g) {
+        try {
+          const el = document.getElementById('gameScreen');
+          if (!el) return;
+          const streak = g ? (g.streak || 0) : 0;
+          const want = !!(g && !g.practiceMode && streak >= BA_CB_W1);
+          const was = el.classList.contains('ba-resonance');
+          if (want === was) return;
+          if (want) {
+            el.classList.add('ba-resonance');
+            BA_RES_N.on++;
+            if (typeof baBannerText === 'function') {
+              baBannerText('⚡ RESONANCE ACTIVE!', '🔥 คอมโบ ' + streak + ' ติดต่อกัน — โบนัสทอง · EXP พุ่งกระฉูด!');
+              BA_RES_N.banner++;
+            }
+          } else {
+            el.classList.remove('ba-resonance');
+            BA_RES_N.off++;
+          }
+        } catch (e) { baResErr(e, 'sync'); }
+      }
+
+      try { baResStyle(); } catch (e) { baResErr(e, 'style'); }
+
+      if (typeof resolveAnswer === 'function') {
+        const _resRa = resolveAnswer;
+        resolveAnswer = function () {
+          try {
+            return _resRa.apply(this, arguments);
+          } finally {
+            try { baResSync(baG()); } catch (e) { baResErr(e, 'resolve'); }
+          }
+        };
+      }
+
+      if (typeof exitGame === 'function') {
+        const _resExit = exitGame;
+        exitGame = function () {
+          const r = _resExit.apply(this, arguments);
+          try {
+            const el = document.getElementById('gameScreen');
+            if (el && el.classList.contains('ba-resonance')) { el.classList.remove('ba-resonance'); BA_RES_N.off++; }
+          } catch (e) { baResErr(e, 'exit'); }
+          return r;
+        };
+      }
+
+      if (typeof startGame === 'function') {
+        const _resStart = startGame;
+        startGame = function () {
+          const r = _resStart.apply(this, arguments);
+          try {
+            const el = document.getElementById('gameScreen');
+            if (el && el.classList.contains('ba-resonance')) { el.classList.remove('ba-resonance'); BA_RES_N.off++; }
+          } catch (e) { baResErr(e, 'start'); }
+          return r;
+        };
+      }
+
+      if (typeof baBattleAudit === 'function') {
+        const _resAudit = baBattleAudit;
+        baBattleAudit = function () {
+          const r = _resAudit.apply(this, arguments) || {};
+          try {
+            const g = baG();
+            const el = document.getElementById('gameScreen');
+            r.resonanceCue = {
+              ver: BA_RES_VER,
+              threshold: BA_CB_W1,
+              streak: g ? (g.streak || 0) : 0,
+              on: !!(el && el.classList.contains('ba-resonance')),
+              n: Object.assign({}, BA_RES_N),
+              styled: !!document.getElementById('baResStyle')
+            };
+          } catch (e) { baResErr(e, 'audit'); }
+          return r;
+        };
+      }
+    })();
+
       try {
         /* .g-monster-area อยู่ใน HTML แบบสแตติกอยู่แล้ว จึงสร้างได้ตั้งแต่โหลดหน้า
            ไม่ต้องรอ startGame (กติกาเดียวกับ miInstall ของ v5.9) */

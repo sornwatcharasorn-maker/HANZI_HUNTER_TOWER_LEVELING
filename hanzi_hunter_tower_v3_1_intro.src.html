@@ -44779,6 +44779,119 @@
       }
     })();
 
+    /* ═══════════════════════════════════════════════════════════════════
+       Patch · FIX ABYSS HP & STAGE DESYNC (ต่อยอด v8.3 · DECOUPLED DEDICATED
+       ABYSS ENGINE) — อยู่ในเนมสเปซ `ba` เดิม ไม่ได้ตั้งพรีฟิกซ์ใหม่ระดับชั้น
+       (กติกาเดียวกับ v6.1–v9.x) วางท้ายสุดของไฟล์ ต่อจากแพตช์ล่าสุดและก่อน
+       `baBuild()` จึงห่อทับทุกชั้นได้ · ไม่แก้โค้ดของ v4.0-ปัจจุบันเลยแม้แต่
+       บรรทัดเดียว ที่เพิ่มคือ wrapper 3 ตัว (`monsterHpFor` · `renderMonster`
+       · `baBattleAudit`)
+
+       อาการที่แพตช์นี้แก้ — v8.3 ตัดขาด "ทัพเงาตัวไหนโผล่" ออกจาก G.floor
+       สำเร็จแล้ว (ผ่าน baOdIdx() 1-25) แต่ไม่ได้ตัดขาด "HP ของมันคำนวณยังไง"
+       กับ "ป้ายชื่อชั้นที่ค้างอยู่บนจอ" — ทั้งสองยังอิงชั้นหอคอยเดิมที่ผู้เล่น
+       ยืนอยู่ตอนกดสวิตช์ 🕳️ ABYSS ทำให้ทัพเงาลำดับสูง (เช่นตัวที่ 20) อาจมี
+       HP เท่าอสูรชั้น 3 ถ้าเปิดสวิตช์ตอนยืนชั้นนั้น และป้ายบนจอยังเขียนว่า
+       "ชั้น 3" ทั้งที่กำลังสู้กับทัพเงาตัวที่ 20 อยู่จริง
+
+       1) HP Decoupling — ห่อ `monsterHpFor` ชั้นนอกสุด
+       เมื่อ `baOdMode()` เป็นจริง คำนวณ "ชั้นเทียบเท่า" จาก `baOdIdx()` แทน
+       ชั้นจริงที่ยืนอยู่ แล้วส่งต่อให้สายเดิม (`hitsForFloor` → ตัวคูณโซนของ
+       v8.2 → `hunterAtk()`) ทำงานตามปกติ — ไม่เขียนสูตร HP ใหม่เอง
+       ยืมของเดิมทั้งชุดเพื่อไม่ให้บาลานซ์ที่ทดสอบมาแล้วเพี้ยน
+
+       ลำดับ 1-20 (tier 'mini') → จับคู่ 1:1 กับชั้นหอคอย 1-20 (หนีบด้วย
+       FLOOR_MAX กันหลุดขอบ) · ลำดับ 21-25 (tier 'mythic' — มังกร Kamish)
+       → คีย์ที่ FLOOR_MAX เสมอ (ยากสุดเท่าที่ระบบชั้นมีให้) พร้อมตั้งธง boss
+       สังเคราะห์เป็น true เพื่อให้ได้ HP ระดับบอส (v8.2's zone multiplier
+       wrapper ข้ามตัวเองอยู่แล้วเมื่อมีทัพเงายืนอยู่ (baWvSh() true) ไม่ว่า
+       boss จะเป็นอะไร จึงไม่มีทางถูกคูณซ้อนสองชั้น)
+
+       2) Stage Display — ห่อ `renderMonster` ชั้นนอกสุด
+       ปล่อยให้สายเดิมทั้ง 8 ชั้นทำงานจนจบก่อน (วาด HP · โจทย์ · ไอเทม ฯลฯ
+       ตามปกติ) แล้วเขียนทับ `.g-monster-tag` (ป้ายค้างจอถาวรที่ v6.0 ย้าย
+       เข้าไปอยู่ในสนามรบ) ด้วยข้อความอิง baOdIdx() แทนเลขชั้นจริง —
+       ใช้สำนวนเดียวกับที่ v8.3's `baOdAnnounce()` ใช้กับแบนเนอร์ชั่วคราวอยู่
+       แล้ว (ซึ่งถูกต้องอยู่ก่อนแล้ว) เพื่อให้ข้อความสองจุดตรงกัน ไม่ใช่คิด
+       สำนวนใหม่ · เป็นการเขียนทับ textContent ล้วน ไม่เพิ่ม DOM โหนดใหม่
+       สักตัว จึง CLS=0 โดยธรรมชาติ
+
+       เรดาร์หอคอย (#trPanel) และแถบชั้นแบน (#gFloorNum ฯลฯ ที่ถูก v4.5 ซ่อน
+       ไว้ด้วย display:none อยู่แล้วเป็นปกติ) ไม่ถูกแตะเลย — ทั้งสองยังโชว์
+       ชั้นจริงที่ผู้เล่นจะกลับไปยืนหลังออกจากรัน ซึ่งถูกต้องตามเจตนา ไม่ใช่
+       บั๊ก (ระบบเรดาร์ถูกบันทึกไว้แล้วว่าเปราะบาง — TR_ART_Z — จึงไม่แตะ)
+
+       3) Save State — ไม่ต้องเขียนโค้ดใหม่เลย
+       v8.3's `baOdSave()` (เรียกจาก wrapper ของ saveStore/startGame/exitGame/
+       migrateAccount ที่มีอยู่แล้ว) ตรึง `account.ax.floor = 0` ไว้ตลอด และ
+       ไม่เคยแตะ `G.floor` เลยสักบรรทัด — ทั้งสอง wrapper ใหม่ของแพตช์นี้ก็
+       ไม่เขียนทับ G.floor หรือ account.ax.floor เช่นกัน ชั้นหอคอยจริงจึงคง
+       สภาพเดิมไว้ให้กลับไปยืนต่อได้เสมอ
+
+       ไม่เพิ่มฟิลด์ในบัญชี · ไม่เพิ่ม toast/gate · ไม่เพิ่มปุ่ม/DOM สักโหนด
+       · ไม่เพิ่มภาพหรือเสียงสักไบต์ · ไม่แตะ Math.random สักครั้ง
+       ══════════════════════════════════════════════════════════════════ */
+    (function baAhsInstall() {
+      const BA_AHS_VER = '1.0';
+      const BA_AHS_N = { hp: 0, tag: 0 };
+      function baAhsErr(e, where) { try { baErr(e, 'ahs:' + where); } catch (x) {} }
+
+      if (typeof monsterHpFor === 'function') {
+        const _ahsHpFor = monsterHpFor;
+        monsterHpFor = function (floor, boss) {
+          try {
+            if (baOdMode()) {
+              const idx = baOdIdx();
+              const foe = baOdFoeAt(idx);
+              const synthFloor = Math.max(1, Math.min(FLOOR_MAX, idx));
+              const synthBoss = !!(foe && foe.tier === 'mythic');
+              BA_AHS_N.hp++;
+              return _ahsHpFor.call(this, synthFloor, synthBoss);
+            }
+          } catch (e) { baAhsErr(e, 'hp'); }
+          return _ahsHpFor.apply(this, arguments);
+        };
+      }
+
+      if (typeof renderMonster === 'function') {
+        const _ahsRenderMon = renderMonster;
+        renderMonster = function () {
+          const r = _ahsRenderMon.apply(this, arguments);
+          try {
+            if (baOdMode()) {
+              const idx = baOdIdx();
+              const foe = baOdFoeAt(idx);
+              const tag = document.querySelector('.g-monster-tag');
+              if (tag) {
+                tag.textContent = (foe && foe.tier === 'mythic')
+                  ? '[ระบบ] 👑 จอมมารเหวลึกตัวที่ ' + idx + ' / ' + BA_OD_MAX + ' ปรากฏ!'
+                  : '[ระบบ] 🌌 ทัพเงาเหวลึก ตัวที่ ' + idx + ' / ' + BA_OD_MAX + ' ปรากฏ!';
+                BA_AHS_N.tag++;
+              }
+            }
+          } catch (e) { baAhsErr(e, 'tag'); }
+          return r;
+        };
+      }
+
+      if (typeof baBattleAudit === 'function') {
+        const _ahsAudit = baBattleAudit;
+        baBattleAudit = function () {
+          const r = _ahsAudit.apply(this, arguments) || {};
+          try {
+            r.abyssHpStageFix = {
+              ver: BA_AHS_VER,
+              on: baOdMode(),
+              idx: baOdIdx(),
+              max: BA_OD_MAX,
+              n: Object.assign({}, BA_AHS_N)
+            };
+          } catch (e) { baAhsErr(e, 'audit'); }
+          return r;
+        };
+      }
+    })();
+
       try {
         /* .g-monster-area อยู่ใน HTML แบบสแตติกอยู่แล้ว จึงสร้างได้ตั้งแต่โหลดหน้า
            ไม่ต้องรอ startGame (กติกาเดียวกับ miInstall ของ v5.9) */

@@ -44232,12 +44232,8 @@
                 g.mp = Math.min(cap, (g.mp || 0) + rf);
                 renderStats();
               }
-              /* v9.18b · S1 ตีเกราะที่ยังไม่แตก: ผู้พิทักษ์ CD=0 · นักบวชคืนรวม 15 MP (สุทธิ 10) */
-              if (shl) {
-                const cid = baPlClass(g).id;
-                if (cid === 'guardian') BA_V91_CD[0] = 0;
-                else if (cid === 'priest') g.mp = Math.min(maxMpOf(g), (g.mp || 0) + 3), renderStats();
-              }
+              /* v9.18b · S1 ตีเกราะที่ยังไม่แตก: ผู้พิทักษ์/นักบวช (C1+C2) รีเซ็ต CD ช่อง 1 เป็น 0 */
+              if (shl) { const cid = baPlClass(g).id; if (cid === 'guardian' || cid === 'priest') BA_V91_CD[0] = 0; }
               if (typeof baPlPips === 'function' && typeof baPlPipSet === 'function') baPlPipSet(g, baPlPips() + 2);
               if (typeof baRand === 'function' && baRand(100) < 20) {
                 const t = baSpot('baHero');

@@ -44219,6 +44219,8 @@
           const slot = typeof baV91Active === 'function' ? (baV91Active(0) ? 0 : (baV91Active(2) ? 2 : -1)) : -1;
           const c0 = g ? (g.correct || 0) : 0;
           const h0 = g ? (g.monsterHp || 0) : 0;
+          let shl = false;
+          try { shl = !!(g && slot === 0 && baV918Gate(g)); } catch (e) {}
           const r = _v918Res.apply(this, arguments);
           try {
             g = baG();
@@ -44229,6 +44231,12 @@
                 const cap = typeof maxMpOf === 'function' ? maxMpOf(g) : (g.mp || 0) + rf;
                 g.mp = Math.min(cap, (g.mp || 0) + rf);
                 renderStats();
+              }
+              /* v9.18b · S1 ตีเกราะที่ยังไม่แตก: ผู้พิทักษ์ CD=0 · นักบวชคืนรวม 15 MP (สุทธิ 10) */
+              if (shl) {
+                const cid = baPlClass(g).id;
+                if (cid === 'guardian') BA_V91_CD[0] = 0;
+                else if (cid === 'priest') g.mp = Math.min(maxMpOf(g), (g.mp || 0) + 3), renderStats();
               }
               if (typeof baPlPips === 'function' && typeof baPlPipSet === 'function') baPlPipSet(g, baPlPips() + 2);
               if (typeof baRand === 'function' && baRand(100) < 20) {

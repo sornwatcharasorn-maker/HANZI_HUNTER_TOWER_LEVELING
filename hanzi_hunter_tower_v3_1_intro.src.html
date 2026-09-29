@@ -32743,10 +32743,23 @@
     const BA_MN_GOLD  = 0.05;              /* +5% ทองให้ทั้งห้องระหว่างมีออร่า */
     const BA_MN_TTL   = 300000;            /* แคชผลดึงคลาวด์ 5 นาที */
 
-    /* ── เสาหลัก 6 ต้น — สารบัญเดียวของทั้งแพตช์ ─────────────────────────
-       ทุกต้นอ่านจากฟังก์ชันของชั้นล่างตรง ๆ **ไม่มีตัวนับซ้อน** ยกเว้นต้นที่ 6
-       ซึ่งต้องจำว่า "ทัพเงาตัวไหนถูกปราบไปแล้วบ้าง" เพราะ v6.6 ไม่เคยเก็บไว้ */
+    /* ── เสาหลัก 12 ต้น · 4 หมวด — สารบัญเดียวของทั้งแพตช์ (ขยายจาก 6 ต้น
+       เดิมโดย Patch v9.20 · DODECAGRAM MATRIX) ทุกต้นอ่านจากฟังก์ชันของ
+       ชั้นล่างตรง ๆ **ไม่มีตัวนับซ้อน** ยกเว้นต้นที่ต้องจำสถิติสะสมตลอดชีพ
+       ที่ไม่มีชั้นไหนเคยเก็บไว้ (ทัพเงาที่ปราบไปแล้ว · ล้มมอนสเตอร์สะสม ·
+       ไต่คอมโบสูงสุดกี่ครั้ง · เคลียร์เควสกี่ใบ · ชำระคำจุดอ่อนกี่คำ)
+       6 ต้นเดิม (codex/core/seal/level/acc/abyss) **ไม่ถูกแก้เลยแม้แต่ตัวอักษรเดียว**
+       ตำแหน่งในอาร์เรย์ขยับตามหมวดใหม่ แต่ id/icon/name/col/desc/get ของแต่ละต้นเดิม
+       ยังเหมือนเดิมทุกประการ — v9.6 ยังเขียนทับ get ของ 'codex' ในที่ได้เหมือนเดิม
+       เพราะยังค้นด้วย .find(x => x.id === 'codex') ไม่ได้ผูกกับดัชนี 0 ตรง ๆ */
+    const BA_MN_CAT = [
+      'รากฐานและขุมพลังตัวละคร',
+      'ความเชี่ยวชาญการต่อสู้และสกิล',
+      'บททดสอบความเร็วและความแม่นยำ',
+      'พิชิตความท้าทายขั้นสูงสุด'
+    ];
     const BA_MN_PILL = [
+      /* ── หมวดที่ 1: รากฐานและขุมพลังตัวละคร ── */
       { id: 'codex', icon: '📖', name: 'คลังอักขระทองคำ', col: '#2ef2d0',
         desc: 'นับเฉพาะคำที่ไต่ถึงขั้น Tier 4 · ศิลาทองคำบริสุทธิ์ 👑 เท่านั้น ' +
               '(netScore = ตอบถูก − 2×ตอบผิด ต้อง ≥ 30 · ผ่านด่าน Gatekeeper ที่ชั้น 12 ' +
@@ -32762,24 +32775,63 @@
           return [AB_CORES.reduce(function (s, c) { return s + abCoreLv(g, c.key); }, 0),
                   AB_CORES.length * AB_CORE_MAX];
         } },
-      { id: 'seal',  icon: '🔓', name: 'ผนึกประตูบอส',  col: '#c084fc',
-        desc: 'จำนวนประตูบอสที่ทลายเกราะผนึกสำเร็จแล้ว (ชั้น 4 · 8 · 12 · 16 · 20) — ' +
-              'ทลายด้วยการตอบถูกขณะสตรีคสูงหรือใช้ไอเทมกดเกราะ ตอบผิดจะซ่อมตัวเองบางส่วน ' +
-              'ทลายให้ครบทั้ง 5 บานเพื่อปิดผนึกดวงนี้',
-        get: function (g) { return [abSealCount(g), AB_SEAL_FLOORS.length]; } },
       { id: 'level', icon: '👑', name: 'เลเวลสูงสุด',    col: '#ffc845',
         desc: 'เลเวลปัจจุบันของฮันเตอร์เทียบกับเพดานสูงสุด Lv.' + BA_LV_MAX +
               ' — ได้ EXP จากการตอบคำถามถูกและเคลียร์ชั้นหอคอย เส้นโค้ง EXP ยิ่งสูงยิ่งชันมาก ' +
               'ต้องไต่หอคอยสะสมเวลานานพอสมควรถึงจะแตะเพดาน',
         get: function (g) { return [baLvNow(g), BA_LV_MAX]; } },
+      /* ── หมวดที่ 2: ความเชี่ยวชาญการต่อสู้และสกิล ── */
+      { id: 'class', icon: '🗡️', name: 'เชี่ยวชาญทุกอาชีพ', col: '#ff9f6b',
+        desc: 'นับ 2 แต้มต่อหนึ่งสายอาชีพที่อัปเมทริกซ์คริสตัลครบทั้ง 4 ช่องสูงสุด (Lv.5 ทุกช่อง) ' +
+              'ในแผงโปรไฟล์ 💎 — ต้องไล่สลับสายแล้วหลอมคริสตัลของแต่ละสายให้ครบ ไม่ใช่แค่สายที่ใช้อยู่ตอนนี้ ' +
+              'ครบทั้ง 4 สาย (🗡️ นักลอบสังหาร · ⚔️ นักรบสังหาร · 🛡️ ผู้พิทักษ์ · ✨ นักบวชอักขระ) จึงจะได้ 8/8 เต็ม',
+        get: function (g) {
+          let n = 0;
+          try {
+            if (typeof BA_PL_CLASSES !== 'undefined' && typeof baV912ClassMaxed === 'function') {
+              BA_PL_CLASSES.forEach(function (c) { if (baV912ClassMaxed(g, c.id)) n += 2; });
+            }
+          } catch (e) {}
+          return [n, 8];
+        } },
+      { id: 'hunt',  icon: '⚔️', name: 'ปลิดชีพด้วยอักขระเวท', col: '#f97373',
+        desc: 'จำนวนอสูรอักขระที่ปราบสำเร็จตลอดชีพ (นับทุกตัวในหอคอยปกติ + ทัพเงาเหวลึก ' +
+              'แต่ไม่นับโหมดฝึกจุดอ่อน) — ตัวนับเดินสดทุกครั้งที่ล้มมอนสเตอร์ตัวหนึ่งจบ ' +
+              'ครบ 500 ตัวเพื่อปิดผนึกดวงนี้',
+        get: function (g) { const m = baMn2Of(g); return [(m && m.kill) || 0, 500]; } },
+      { id: 'combo', icon: '🔥', name: 'คอมโบต่อเนื่องชำนาญการ', col: '#fb923c',
+        desc: 'จำนวนครั้งตลอดชีพที่ไต่คอมโบขึ้นถึงขั้นสูงสุด 🩸 Vampiric Monarch (คอมโบ x20 ขึ้นไป) ' +
+              'ของระบบบัฟตามขั้นคอมโบ — ทุกครั้งที่คอมโบร่วงแล้วไต่กลับขึ้นไปแตะขั้นนี้ใหม่นับเพิ่มอีกหนึ่งครั้ง ' +
+              'ครบ 30 ครั้งเพื่อปิดผนึกดวงนี้',
+        get: function (g) { const m = baMn2Of(g); return [(m && m.combo) || 0, 30]; } },
+      /* ── หมวดที่ 3: บททดสอบความเร็วและความแม่นยำ ── */
       { id: 'acc',   icon: '🎯', name: 'ความแม่นยำ',     col: '#7ee787',
         desc: 'ความแม่นยำสะสมตลอดการเล่น (ตอบถูก ÷ ตอบทั้งหมด) ต้องรักษาให้ถึง ' + BA_MN_ACC +
               '% — ยิ่งตอบข้อมากยิ่งขยับยาก ควรทบทวนคำที่เคยพลาดก่อนลุยข้อใหม่เพื่อไม่ให้เปอร์เซ็นต์ร่วง',
         get: function (g) { return [accAccuracy(g), BA_MN_ACC]; } },
+      { id: 'speed', icon: '⏱️', name: 'สปีดรันความเร็วสูง', col: '#38bdf8',
+        desc: 'จำนวนข้อที่ตอบถูกภายใน 5 วินาทีสะสมตลอดชีพ (ฟิลด์ fastAnswers ของ v4.0 เดิม ' +
+              'ซึ่งซิงก์ข้ามเครื่องอยู่แล้ว) — ยิ่งตอบไวยิ่งสะสมเร็ว ครบ 1,500 ข้อเพื่อปิดผนึกดวงนี้',
+        get: function (g) { return [(g && g.fastAnswers) || 0, 1500]; } },
+      { id: 'quest', icon: '📜', name: 'วินัยและภารกิจฮันเตอร์', col: '#a3e635',
+        desc: 'จำนวนภารกิจที่กดรับรางวัลสำเร็จตลอดชีพจากกระดานเควสประจำวัน (ไม่นับโบนัสรับรวมท้ายวัน) ' +
+              '— เคลียร์ภารกิจประจำวันให้ครบทุกวันสม่ำเสมอจะไต่ถึง 200 ภารกิจได้เร็วที่สุด',
+        get: function (g) { const m = baMn2Of(g); return [(m && m.quest) || 0, 200]; } },
+      /* ── หมวดที่ 4: พิชิตความท้าทายขั้นสูงสุด ── */
+      { id: 'seal',  icon: '🔓', name: 'ผนึกประตูบอส',  col: '#c084fc',
+        desc: 'จำนวนประตูบอสที่ทลายเกราะผนึกสำเร็จแล้ว (ชั้น 4 · 8 · 12 · 16 · 20) — ' +
+              'ทลายด้วยการตอบถูกขณะสตรีคสูงหรือใช้ไอเทมกดเกราะ ตอบผิดจะซ่อมตัวเองบางส่วน ' +
+              'ทลายให้ครบทั้ง 5 บานเพื่อปิดผนึกดวงนี้',
+        get: function (g) { return [abSealCount(g), AB_SEAL_FLOORS.length]; } },
       { id: 'abyss', icon: '🕳️', name: 'ทัพเงาเหวลึก',   col: '#ef4444',
         desc: 'จำนวนทัพเงาเหวลึกทั้ง 25 ตัวที่เคยปราบสำเร็จ (ทั้งจากการเปิดโหมดเหวลึกเองและ ' +
               'จากผู้บุกรุกที่โผล่มาแทรกกลางหอคอยปกติ) ปราบให้ครบทั้ง ' + BA_MN_SH + ' ตัวเพื่อปิดผนึกดวงนี้',
-        get: function (g) { return [baMnShCount(g), BA_MN_SH]; } }
+        get: function (g) { return [baMnShCount(g), BA_MN_SH]; } },
+      { id: 'purify', icon: '💠', name: 'ชำระล้างมลทิน', col: '#5eead4',
+        desc: 'จำนวนคำที่เคยตอบผิดแล้วกลับมาตอบถูกซ้ำสองครั้งติดกันในโหมดฝึกจุดอ่อนตลอดชีพ ' +
+              '— คือการ "ชำระล้าง" คำที่เคยเป็นจุดอ่อนให้กลายเป็นความรู้ที่แม่นจริง ' +
+              'ครบ 100 คำเพื่อปิดผนึกดวงนี้',
+        get: function (g) { const m = baMn2Of(g); return [(m && m.pure) || 0, 100]; } }
     ];
 
     /* สถานะของรอบการเปิดหน้า ไม่ต้องเซฟ (กฎเดียวกับ AB_LIVE ของ v4.6) */
@@ -32875,7 +32927,7 @@
       if (!anchor) return null;
       anchor.insertAdjacentHTML('beforebegin',
         '<div class="ba-mn-bar" id="baMnBar" onclick="baMnOpen()" ' +
-        'title="หนทางสู่บัลลังก์จักรพรรดิเงา — แตะเพื่อดูผนึกทั้งหก">' +
+        'title="หนทางสู่บัลลังก์จักรพรรดิเงา — แตะเพื่อดูผนึกทั้ง ' + BA_MN_PILL.length + ' ดวง">' +
           '<div class="ba-mn-t"><b>👑 [END GAME]</b>' +
             '<span>หนทางสู่บัลลังก์จักรพรรดิเงา</span><i id="baMnPct">0%</i></div>' +
           '<div class="ba-mn-track"><span id="baMnFill"></span></div>' +
@@ -32919,20 +32971,37 @@
     /* ดาวหกแฉก = สามเหลี่ยมสองรูปซ้อนกัน (0-2-4 กับ 1-3-5) แล้ววางผนึกไว้ที่
        ยอดทั้งหก · สีของแต่ละดวงมาจากฟิลด์ `col` ของเสานั้น ส่งผ่าน custom
        property จุดเดียว จึงไม่ต้องเขียนกฎ CSS ทีละดวง                      */
+    /* ── Patch v9.20 · DODECAGRAM MATRIX — ดาว 12 แฉกแทนดาวหกแฉกเดิม ──
+       ยังใช้กรอบ viewBox 112×112 กับรัศมี R=42 เท่าเดิมเป๊ะ (ไม่ขยับกล่อง)
+       เปลี่ยนแค่มุมย่างก้าว (360/n แทน 60° ตายตัว) กับรัศมีวงกลมโหนด
+       (7 แทน 10 — ระยะห่างระหว่างจุดที่ n=12 แคบกว่า n=6 มาก เว้นไว้กัน
+       วงกลม/อีโมจิสองดวงติดกันชนกัน) · n=12 วาดเป็น "คอมพาวด์ 3 สี่เหลี่ยม
+       จัตุรัสหมุนสลับ 30°" (dodecagram {12/3}) แต่ละจัตุรัสร้อยผนึก "อันดับ
+       เดียวกันของทั้ง 4 หมวด" เข้าด้วยกัน (จัตุรัสที่ 1 = อันดับ 1 ของทุกหมวด
+       · ที่ 2 = อันดับ 2 · ที่ 3 = อันดับ 3) จึงเห็นโครงสร้าง 4 หมวดชัดในตัว
+       เรขาคณิต ไม่ใช่แค่ในข้อความ · n=6 ของเดิมยังรองรับไว้เป็นทางสำรอง       */
     function baMnHex(list) {
-      const R = 42, C = 56, pt = [];
-      for (let i = 0; i < 6; i++) {
-        const a = (-90 + i * 60) * Math.PI / 180;
+      const n = list.length, R = 42, C = 56, pt = [];
+      for (let i = 0; i < n; i++) {
+        const a = (-90 + i * (360 / n)) * Math.PI / 180;
         pt.push([(C + R * Math.cos(a)).toFixed(1), (C + R * Math.sin(a)).toFixed(1)]);
       }
-      const P = function (i) { return pt[i][0] + ',' + pt[i][1]; };
-      let s = '<svg class="ba-mn-hex" viewBox="0 0 112 112" aria-hidden="true">' +
-              '<polygon points="' + P(0) + ' ' + P(2) + ' ' + P(4) + '"/>' +
-              '<polygon points="' + P(1) + ' ' + P(3) + ' ' + P(5) + '"/>';
+      const P = function (i) { return pt[i % n][0] + ',' + pt[i % n][1]; };
+      let s = '<svg class="ba-mn-hex" viewBox="0 0 112 112" aria-hidden="true">';
+      if (n === 12) {
+        for (let k = 0; k < 3; k++) {
+          s += '<polygon points="' + P(k) + ' ' + P(k + 3) + ' ' + P(k + 6) + ' ' + P(k + 9) + '"/>';
+        }
+      } else if (n === 6) {
+        s += '<polygon points="' + P(0) + ' ' + P(2) + ' ' + P(4) + '"/>' +
+             '<polygon points="' + P(1) + ' ' + P(3) + ' ' + P(5) + '"/>';
+      }
+      const r = n > 8 ? 7 : 10, fs = n > 8 ? 6.6 : 9;
       list.forEach(function (p, i) {
         const on = p.ok ? ' class="on"' : '';
-        s += '<circle cx="' + pt[i][0] + '" cy="' + pt[i][1] + '" r="10" style="--c:' + p.col + '"' + on + '/>' +
-             '<text x="' + pt[i][0] + '" y="' + (Number(pt[i][1]) + 3.4).toFixed(1) + '"' + on + '>' + p.icon + '</text>';
+        s += '<circle cx="' + pt[i][0] + '" cy="' + pt[i][1] + '" r="' + r + '" style="--c:' + p.col + '"' + on + '/>' +
+             '<text x="' + pt[i][0] + '" y="' + (Number(pt[i][1]) + r * 0.34).toFixed(1) +
+             '" style="font-size:' + fs + 'px"' + on + '>' + p.icon + '</text>';
       });
       return s + '</svg>';
     }
@@ -32977,8 +33046,12 @@
             '<div class="ba-mn-sub">' + (asc ? '👑 ' + esc(BA_MN_TITLE)
               : s.done ? '✨ ผนึกครบแล้ว — พร้อมประกอบพิธี'
                        : 'ผนึกแล้ว ' + s.n + ' / ' + s.list.length + ' ดวง') + '</div></div></div>' +
-        s.list.map(function (p) {
-          return '<div class="ba-mn-p' + (p.ok ? ' ok' : '') + '" style="--c:' + p.col + '">' +
+        s.list.map(function (p, i) {
+          /* ป้ายหัวหมวดแทรกที่ขอบเขต 0/3/6/9 — ใช้ BA_MN_CAT ตัวเดียวกับที่
+             จัดกลุ่ม BA_MN_PILL ไว้แล้ว ไม่ต้องนับจำนวนเสาต่อหมวดเอง (v9.20) */
+          const cat = (i % 3 === 0 && BA_MN_CAT[i / 3])
+            ? '<div class="ba-mn-cat">' + esc(BA_MN_CAT[i / 3]) + '</div>' : '';
+          return cat + '<div class="ba-mn-p' + (p.ok ? ' ok' : '') + '" style="--c:' + p.col + '">' +
             '<div class="ba-mn-ph"><b>' + p.icon + ' ' + esc(p.name) + '</b>' +
               '<span>' + p.n + ' / ' + p.d + (p.ok ? ' ✅' : '') + '</span></div>' +
             '<div class="ba-mn-pb"><i style="width:' + Math.round(p.r * 100) + '%"></i></div>' +
@@ -32986,7 +33059,7 @@
         }).join('') +
         (asc ? '' :
           '<button class="ba-mn-go" onclick="baMnAscend()"' + (s.done ? '' : ' disabled') + '>' +
-          (s.done ? '✨ ประกอบพิธีขึ้นครองบัลลังก์' : '⏳ ยังไม่ครบทั้ง 6 ผนึก') + '</button>') +
+          (s.done ? '✨ ประกอบพิธีขึ้นครองบัลลังก์' : '⏳ ยังไม่ครบทั้ง ' + s.list.length + ' ผนึก') + '</button>') +
         '<div class="ba-mn-aura' + (baMnAuraOn() ? ' on' : '') + '">' + (baMnAuraOn()
           ? '🌟 ออร่าจอมราชันของห้อง — ทองทั้งห้อง +' + Math.round(BA_MN_GOLD * 100) + '%' +
             ' (โดย ' + esc(BA_MN_BY || '—') + ' · เหลือ ' + baMnLeft() + ')'
@@ -33036,7 +33109,7 @@
         BA_MN_N.asc++;
         baMnFlash();
         try { baSfx('BA_SH_ROAR'); } catch (e) {}
-        try { baBannerText('👑 ' + BA_MN_TITLE, 'ผนึกครบ 6 ดวง — บัลลังก์จักรพรรดิเงาเป็นของท่านแล้ว'); } catch (e) {}
+        try { baBannerText('👑 ' + BA_MN_TITLE, 'ผนึกครบ ' + BA_MN_PILL.length + ' ดวง — บัลลังก์จักรพรรดิเงาเป็นของท่านแล้ว'); } catch (e) {}
         baMnPub();
         BA_MN_SIG = '';
         baMnPaint();
@@ -33047,8 +33120,8 @@
       return true;
     }
 
-    /* ตรวจว่าครบทั้งหกต้นหรือยัง — เรียกจาก renderStats ซึ่งเป็นปลายทางของ
-       **ทุก** การขยับสถานะผู้เล่น จึงไม่ต้องไล่ดักทีละแหล่ง                 */
+    /* ตรวจว่าครบทั้ง 12 ต้นหรือยัง (v9.20 ขยายจาก 6) — เรียกจาก renderStats
+       ซึ่งเป็นปลายทางของ **ทุก** การขยับสถานะผู้เล่น จึงไม่ต้องไล่ดักทีละแหล่ง */
     function baMnSync(s) {
       if (!BA_MN_READY || BA_MN_IN) return;
       try {
@@ -33286,6 +33359,10 @@
           'background:linear-gradient(90deg,#c084fc,#ffc845);-webkit-background-clip:text;' +
           'background-clip:text;color:transparent}' +
         '.ba-mn-sub{margin-top:5px;font-size:11.5px;opacity:.85}' +
+        /* ป้ายหัวหมวด (v9.20 · 4 หมวด × 3 เสา) — ข้อความล้วน ไม่มีกล่อง/กรอบใหม่
+           ที่กินความสูงเพิ่มเกินบรรทัดเดียว จึงไม่กระทบ CLS ของหน้าเล่นเลย */
+        '.ba-mn-cat{margin:12px 0 6px;padding-bottom:4px;font-size:10.5px;font-weight:700;' +
+          'color:#c084fc;border-bottom:1px solid rgba(192,132,252,.25)}' +
         '.ba-mn-p{border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:6px 9px;' +
           'margin-bottom:6px;background:rgba(255,255,255,.03)}' +
         '.ba-mn-p.ok{border-color:var(--c);background:rgba(255,255,255,.06)}' +
@@ -45033,6 +45110,211 @@
               styled: !!document.getElementById('baResStyle')
             };
           } catch (e) { baResErr(e, 'audit'); }
+          return r;
+        };
+      }
+    })();
+
+    /* ═══ Patch v9.20 · DODECAGRAM MATRIX — ตัวนับ 4 ผนึกใหม่ (account.mn2) ═══
+       ขยาย 👑 หนทางสู่บัลลังก์จักรพรรดิเงา จาก 6 เป็น 12 ผนึก · 6 ผนึกเดิม
+       (codex/core/level/acc/seal/abyss) ไม่ถูกแตะเลยสักบรรทัด — ยังอ่านจาก
+       ฟิลด์เดิมของชั้นล่างทั้งหมด · P4 (class) กับ P8 (speed) เป็นการอ่านสด
+       จากข้อมูลที่มีอยู่แล้ว (BA_PL_CLASSES.skills / g.fastAnswers) ไม่ต้องมี
+       ฟิลด์บัญชีใหม่ · เหลือ 4 ผนึกที่ต้องมีตัวนับตลอดชีพใหม่จริง ๆ คือ
+       hunt(P5) · combo(P6) · quest(P9) · purify(P12) — เก็บรวมไว้ที่
+       account.mn2 ก้อนเดียว ตามแบบ account.mn ของ v8.0 ทุกประการ (กับดักข้อ 16
+       — startGame ปั้น G ใหม่ทุกครั้ง ต้องดึงฟิลด์ของตัวเองจาก store เอง)     */
+    (function baMn2Install() {
+      function baMn2Err(e, where) { try { baErr(e, 'mn2:' + where); } catch (x) {} }
+
+      function baMn2Blank() { return { kill: 0, combo: 0, quest: 0, pure: 0 }; }
+
+      function baMn2Of(src) {
+        const s = src || baG();
+        return (s && s.mn2 && typeof s.mn2 === 'object') ? s.mn2 : null;
+      }
+
+      function baMn2Ensure(a) {
+        if (!a || typeof a !== 'object') return null;
+        let m = a.mn2;
+        if (!m || typeof m !== 'object') m = a.mn2 = baMn2Blank();
+        ['kill', 'combo', 'quest', 'pure'].forEach(function (k) {
+          const v = Number(m[k]);
+          m[k] = (isFinite(v) && v > 0) ? Math.floor(v) : 0;
+        });
+        return m;
+      }
+
+      let BA_MN2_READY = false;
+      const BA_MN2_N = { kill: 0, combo: 0, quest: 0, pure: 0 };
+
+      function baMn2Save() {
+        if (!BA_MN2_READY) return;
+        try {
+          const g = baG();
+          if (!g || !g.mn2 || typeof CURRENT_USER === 'undefined' || !CURRENT_USER) return;
+          const st = loadStore();
+          const a = st[CURRENT_USER];
+          if (!a) return;
+          a.mn2 = { kill: g.mn2.kill || 0, combo: g.mn2.combo || 0,
+                    quest: g.mn2.quest || 0, pure: g.mn2.pure || 0 };
+          saveStore(st);
+        } catch (e) { baMn2Err(e, 'save'); }
+      }
+
+      window.baMn2Of = baMn2Of;   /* ให้ BA_MN_PILL (ประกาศไว้ก่อนไฟล์นี้) เรียกถึง */
+      window.baMn2Ensure = baMn2Ensure;   /* ให้ชุดเทสต์เสกฟิกซ์เจอร์ผ่านคอนโซลได้ */
+
+      // ── wrapper วงจรข้อมูล 4 ตัว ──────────────────────────────────────────
+      if (typeof migrateAccount === 'function') {
+        const _mn2Mig = migrateAccount;
+        migrateAccount = function (a) {
+          const r = _mn2Mig.apply(this, arguments);
+          try { baMn2Ensure(r || a); } catch (e) { baMn2Err(e, 'mig'); }
+          return r;
+        };
+      }
+
+      if (typeof startGame === 'function') {
+        const _mn2Start = startGame;
+        startGame = function () {
+          BA_MN2_READY = false;
+          const r = _mn2Start.apply(this, arguments);
+          try {
+            const g = baG();
+            if (g) {
+              let src = null;
+              try { src = (loadStore()[CURRENT_USER] || {}).mn2; } catch (e) {}
+              g.mn2 = (src && typeof src === 'object')
+                ? { kill: src.kill | 0, combo: src.combo | 0,
+                    quest: src.quest | 0, pure: src.pure | 0 }
+                : baMn2Blank();
+              baMn2Ensure(g);
+            }
+            BA_MN2_READY = true;
+          } catch (e) { baMn2Err(e, 'start'); }
+          return r;
+        };
+      }
+
+      if (typeof exitGame === 'function') {
+        const _mn2Exit = exitGame;
+        exitGame = function () {
+          try { baMn2Save(); } catch (e) { baMn2Err(e, 'exit'); }
+          BA_MN2_READY = false;
+          return _mn2Exit.apply(this, arguments);
+        };
+      }
+
+      if (typeof saveProgress === 'function') {
+        const _mn2Prog = saveProgress;
+        saveProgress = function () {
+          const r = _mn2Prog.apply(this, arguments);
+          try { baMn2Save(); } catch (e) { baMn2Err(e, 'prog'); }
+          return r;
+        };
+      }
+
+      // ── P5 · ปลิดชีพด้วยอักขระเวท — นับทุกครั้งที่ล้มมอนสเตอร์จบ (ไม่ใช่โหมดฝึก) ──
+      if (typeof onMonsterDefeated === 'function') {
+        const _mn2Kill = onMonsterDefeated;
+        onMonsterDefeated = function () {
+          const r = _mn2Kill.apply(this, arguments);
+          try {
+            const g = baG();
+            if (g && g.mn2 && !g.practiceMode) {
+              g.mn2.kill = (g.mn2.kill || 0) + 1;
+              BA_MN2_N.kill++;
+              baMn2Save();
+            }
+          } catch (e) { baMn2Err(e, 'kill'); }
+          return r;
+        };
+      }
+
+      // ── P6 · คอมโบต่อเนื่องชำนาญการ — นับทุกครั้งที่ไต่ถึงขั้นคอมโบสูงสุด (Lv.4 · 🩸) ──
+      if (typeof baCbSync === 'function') {
+        const _mn2Cb = baCbSync;
+        baCbSync = function () {
+          const before = (typeof BA_CB_ANN !== 'undefined') ? BA_CB_ANN : 0;
+          const r = _mn2Cb.apply(this, arguments);
+          try {
+            const g = baG();
+            const after = (typeof BA_CB_ANN !== 'undefined') ? BA_CB_ANN : 0;
+            if (g && g.mn2 && before < 4 && after >= 4) {
+              g.mn2.combo = (g.mn2.combo || 0) + 1;
+              BA_MN2_N.combo++;
+              baMn2Save();
+            }
+          } catch (e) { baMn2Err(e, 'combo'); }
+          return r;
+        };
+      }
+
+      // ── P9 · วินัยและภารกิจฮันเตอร์ — นับตอนกดรับรางวัลเควสสำเร็จ (ไม่นับปุ่มรับรวม 'all') ──
+      if (typeof baQdClaim === 'function') {
+        const _mn2Qd = baQdClaim;
+        baQdClaim = function (id) {
+          const before = (typeof BA_QD_N !== 'undefined') ? BA_QD_N.claim : 0;
+          const r = _mn2Qd.apply(this, arguments);
+          try {
+            const g = baG();
+            const after = (typeof BA_QD_N !== 'undefined') ? BA_QD_N.claim : 0;
+            if (g && g.mn2 && id !== 'all' && after > before) {
+              g.mn2.quest = (g.mn2.quest || 0) + 1;
+              BA_MN2_N.quest++;
+              baMn2Save();
+            }
+          } catch (e) { baMn2Err(e, 'quest'); }
+          return r;
+        };
+      }
+
+      // ── P12 · ชำระล้างมลทิน — คำที่เคยผิดแล้วตอบถูกซ้ำสองครั้งติดในโหมดฝึกจุดอ่อน ──
+      let BA_MN2_WP_HITS = {};
+      if (typeof resolveAnswer === 'function') {
+        const _mn2Wp = resolveAnswer;
+        resolveAnswer = function (choice, extra, isTimeout) {
+          const g = baG();
+          const m = g && g.currentMonster;
+          const wid = m && m.id;
+          const practice = !!(g && g.practiceMode);
+          const wasCorrect = !!(m && !isTimeout && choice === m.answer);
+          const hadWrongBefore = !!(practice && wid && g.wordStats && g.wordStats[wid] && g.wordStats[wid].wrong);
+          const r = _mn2Wp.apply(this, arguments);
+          try {
+            if (practice && wid && g && g.mn2) {
+              if (wasCorrect && hadWrongBefore) {
+                BA_MN2_WP_HITS[wid] = (BA_MN2_WP_HITS[wid] || 0) + 1;
+                if (BA_MN2_WP_HITS[wid] >= 2) {
+                  g.mn2.pure = (g.mn2.pure || 0) + 1;
+                  BA_MN2_WP_HITS[wid] = 0;
+                  BA_MN2_N.pure++;
+                  baMn2Save();
+                }
+              } else if (!wasCorrect) {
+                BA_MN2_WP_HITS[wid] = 0;
+              }
+            }
+          } catch (e) { baMn2Err(e, 'purify'); }
+          return r;
+        };
+      }
+
+      if (typeof baBattleAudit === 'function') {
+        const _mn2Audit = baBattleAudit;
+        baBattleAudit = function () {
+          const r = _mn2Audit.apply(this, arguments) || {};
+          try {
+            const g = baG();
+            r.dodecagram = {
+              ver: '9.20',
+              mn2: baMn2Of(g) || baMn2Blank(),
+              n: Object.assign({}, BA_MN2_N),
+              pillars: (typeof BA_MN_PILL !== 'undefined') ? BA_MN_PILL.length : 0,
+              categories: (typeof BA_MN_CAT !== 'undefined') ? BA_MN_CAT.length : 0
+            };
+          } catch (e) { baMn2Err(e, 'audit'); }
           return r;
         };
       }

@@ -1039,7 +1039,7 @@
   /* SHIELD + INVENTORY + SHOP  (v4 เฟส 2)              */
   /* ══════════════════════════════════════════════════ */
 
-  .g-shield { letter-spacing: 1px; font-size: 11px; }
+  .g-shield { letter-spacing: 1px; font-size: 11px; white-space: nowrap; }
 
   /* ══════════════════════════════════════════════════ */
   /* SKILLS & MANA  (v4.3)                              */
@@ -3157,7 +3157,8 @@
 
       document.getElementById('gBagCount').textContent = bagCount() + '/' + BAG_SLOTS;
       const sh = document.getElementById('gShield');
-      if (sh) sh.textContent = G.shield > 0 ? '🛡️'.repeat(G.shield) : '';
+      /* v9.8: ไอคอนเดียว + ตัวเลข (เดิม repeat ตามจำนวนโล่ → โล่ 1000 = 1000 อีโมจิ) */
+      if (sh) sh.textContent = G.shield > 0 ? '🛡️ ' + G.shield + '/' + maxShield() : '';
       renderTip();
     }
 
@@ -39647,7 +39648,8 @@
         /* เกราะทุก 3 ข้อ (อะตอม barr — ผู้พิทักษ์เหวลึก C2 ช่อง 2) */
         const bar = baDsAny(g, 'barr');
         if (bar > 0 && BA_DS_HIT % 3 === 0) {
-          try { g.shield = Math.max(g.shield | 0, Math.round((g.maxHp || 0) * bar / 100)); } catch (e) {}
+          /* v9.9: เกราะนับเป็น "ชั้น" (1 ชั้น = กันดาเมจ 1 ครั้ง) ไม่ใช่ HP — แปลง % เป็น 1-2 ชั้น หนีบที่ maxShield() */
+          try { g.shield = Math.min(maxShield(), Math.max(g.shield | 0, Math.ceil(bar / 50))); } catch (e) {}
         }
       } catch (e) { baDsErr(e, 'correct'); }
     }

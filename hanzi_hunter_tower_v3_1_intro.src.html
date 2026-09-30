@@ -45002,6 +45002,64 @@
       } catch (e) { baErr(e, 'install'); }
     })();
 
+    /* ═══ Patch P4 · DUAL-LOCK (PURE RUN + MAX SKILL) — เสา "class" ของหน้าต่างผนึก ═══
+       เสาที่ 4 เดิมนับ 2 แต้ม/สาย (เป้า 8) → ตอนนี้ 1 แต้ม/อาชีพ (เป้า 4) เมื่อครบสองล็อก:
+       (1) เคลียร์บอสชั้น 20 โดยไม่สลับสายกลางรัน (g.r20[role]=1)
+       (2) เมทริกซ์สกิลของสายนั้นครบ MAX (baV912ClassMaxed) · ไม่มี DOM/CSS ใหม่
+       role key ตามสเปก: slayer(C2)=warrior · ที่เหลือใช้ชื่อร่าง C2 · เซฟผ่าน saveStore */
+    const BA_P4R = { monarch: ['assassin', 'ราชันเงา'], warrior: ['slayer', 'นักรบเหวลึก'],
+                     guard: ['guardian', 'ผู้พิทักษ์เหวลึก'], soulmaster: ['priest', 'จอมวิญญาณ'] };
+    function baDsBaseRoleOf(g) {
+      for (const k in BA_P4R) if (BA_P4R[k][0] === g.classId) return k;
+    }
+    function baCheckRoleSkillsMax(g, r) { return baV912ClassMaxed(g, BA_P4R[r][0]); }
+    function baP4Ok(g, r) { return !!(g && g.r20 && g.r20[r] === 1); }
+    (function baInstallP4() {
+      const P = BA_MN_PILL.filter(function (p) { return p.id === 'class'; })[0];
+      if (P) {
+        P.get = function (g) {
+          let n = 0;
+          for (const k in BA_P4R) if (baP4Ok(g, k) && baCheckRoleSkillsMax(g, k)) n++;
+          return [n, 4];
+        };
+        Object.defineProperty(P, 'desc', { get: function () {
+          const g = baG();
+          return 'เคลียร์บอสชั้น 20 โดยไม่สลับสาย + อัปสกิลสายนั้นครบ MAX — ' +
+            Object.keys(BA_P4R).map(function (k) {
+              return BA_P4R[k][1] + ': ⚔️ชั้น20: ' + (baP4Ok(g, k) ? '✅' : '❌') +
+                ' | 📖สกิลMAX: ' + (g && baCheckRoleSkillsMax(g, k) ? '✅' : '⏳');
+            }).join(' ‖ ');
+        } });
+      }
+      const st = function (g) { if (g.floor === 1) { g.r20 = g.r20 || {}; g.pureRole = baDsBaseRoleOf(g); } };
+      const _nm = nextMonster;
+      nextMonster = function () { const r = _nm.apply(this, arguments); try { const g = baG(); if (g) st(g); } catch (e) {} return r; };
+      const _cf = clearFloor;
+      clearFloor = function () {
+        const g = baG(), f = g && g.floor, b = g && baDsBaseRoleOf(g);
+        const r = _cf.apply(this, arguments);
+        try { if (f === 20 && g.pureRole === b && !g.practiceMode) (g.r20 = g.r20 || {})[b] = 1; } catch (e) {}
+        return r;
+      };
+      const _sw = baPlSwitch;
+      baPlSwitch = function () {
+        const r = _sw.apply(this, arguments);
+        try { const g = baG(); if (r && g) { g.pureRole = null; st(g); } } catch (e) {}
+        return r;
+      };
+      const _sg = startGame;
+      startGame = function () {
+        const r = _sg.apply(this, arguments);
+        try { const g = baG(), a = loadStore()[CURRENT_USER]; if (g) { g.r20 = (a && a.r20) || {}; g.pureRole = (a && a.pureRole) || null; } } catch (e) {}
+        return r;
+      };
+      const _ss = saveStore;
+      saveStore = function (s) {
+        try { const g = baG(), a = g && CURRENT_USER && s[CURRENT_USER]; if (a && g.r20) { a.r20 = g.r20; a.pureRole = g.pureRole || null; } } catch (e) {}
+        return _ss.apply(this, arguments);
+      };
+    })();
+
   </script>
 </body>
 </html>

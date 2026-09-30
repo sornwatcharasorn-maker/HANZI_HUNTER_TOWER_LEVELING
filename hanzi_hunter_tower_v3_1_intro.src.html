@@ -44950,6 +44950,51 @@
       }
     })();
 
+      /* Patch v9.21 · S4 ULTIMATE READY ALERT + HERO MANA BAR
+         ห่อ baPlUltPaint (เกจขยับ) กับ renderStats (MP ขยับ · จ่ายมานา · คืนมานา) เท่านั้น
+         · แถบ MP เป็น absolute ในรางใต้ .ba-row เดิม แบ่งครึ่งกับแถบคริต (ซ้าย MP · ขวาคริต)
+           เพราะช่องว่างมีแค่ 4px — ห้ามเอาเข้าสายเลย์เอาต์ (CLS = 0)
+         · ใช้ inline style ล้วน ไม่มีคลาส CSS ใหม่ · ปุ่ม S4 ถูกวาดใหม่ทุกครั้งที่แถบสกิลซิงก์
+           จึงทาสีซ้ำทุกรอบ ส่วนแอนิเมชันเต้นแค่ 6 รอบตอนขอบขาขึ้น (ไม่ใช้ infinite — กับดักข้อ 31) */
+      let BA_V921_RDY = false;
+      function baV921Sync() {
+        try {
+          const g = baG();
+          if (!g) return;
+          const c = document.getElementById('baCritBar');
+          let m = document.getElementById('baMpBar');
+          if (c && !m) {
+            c.insertAdjacentHTML('afterend', '<div id="baMpBar" style="position:absolute;left:0;right:53%;top:100%;' +
+              'box-sizing:border-box;margin-top:1px;height:3px;border-radius:2px;overflow:hidden;' +
+              'background:rgba(0,0,0,.62);border:1px solid rgba(255,255,255,.14)"><span style="display:block;' +
+              'height:100%;width:0;background:#00b4d8;transition:width .2s"></span></div>');
+            c.style.left = '53%';
+            m = document.getElementById('baMpBar');
+          }
+          if (m) m.firstElementChild.style.width =
+            Math.max(0, Math.min(100, (g.mp || 0) / (maxMpOf(g) || 1) * 100)) + '%';
+          const rdy = !g.practiceMode && baPlUltReady() && (g.mp || 0) >= baV9UltCost(g);
+          const b = document.querySelector('#gSkills [data-ds="3"]');
+          if (b) {
+            b.style.borderColor = rdy ? '#f03' : '';
+            b.style.boxShadow = rdy ? '0 0 12px #f03,0 0 24px #900' : '';
+          }
+          if (rdy && !BA_V921_RDY) {
+            if (b && b.animate) b.animate([{ boxShadow: '0 0 4px #f03' }, { boxShadow: '0 0 12px #f03,0 0 24px #900' }],
+              { duration: 600, iterations: 6, direction: 'alternate' });
+            if (baCanPlay()) {
+              baBannerText('⚡ ULTIMATE READY ⚡', 'ท่าไม้ตายพร้อมปลดปล่อย!');
+              baFlash('#f03');
+            }
+          }
+          BA_V921_RDY = rdy;
+        } catch (e) { try { baErr(e, 'v921'); } catch (x) {} }
+      }
+      const _v921Paint = baPlUltPaint;
+      baPlUltPaint = function () { const r = _v921Paint.apply(this, arguments); baV921Sync(); return r; };
+      const _v921Stats = renderStats;
+      renderStats = function () { const r = _v921Stats.apply(this, arguments); baV921Sync(); return r; };
+
       try {
         /* .g-monster-area อยู่ใน HTML แบบสแตติกอยู่แล้ว จึงสร้างได้ตั้งแต่โหลดหน้า
            ไม่ต้องรอ startGame (กติกาเดียวกับ miInstall ของ v5.9) */

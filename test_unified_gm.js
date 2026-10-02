@@ -270,7 +270,7 @@ async function confirmOk(page) {
       modes: document.querySelectorAll('#baMrModal .ba-mr-btn').length
     }));
     ok('🔄 เปิดเมนูรีเซ็ตของ v7.4 ได้', mr.open, mr);
-    eq('เมนูรีเซ็ตมีครบ 4 โหมด', mr.modes, 4);
+    eq('เมนูรีเซ็ตมีครบ 10 โหมด (4 เดิม + 6 ของ v9.21)', mr.modes, 10);
     await page.evaluate(() => { const m = document.getElementById('baMrModal'); if (m) m.classList.remove('active'); });
 
     /* ✏️ / 🔑 — ต้องเรียกฟังก์ชันจริงของชั้นล่าง */

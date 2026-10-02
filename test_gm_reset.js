@@ -133,8 +133,8 @@ async function confirmOk(page) {
     say('\n═══ 1 · สารบัญโหมดรีเซ็ต · ฟิลด์ Auth · ทางเข้าชุดเทสต์ ═══');
     const { ctx, page, errs } = await fresh(browser);
 
-    eq('มีโหมดรีเซ็ต 4 แบบตามสเปก',
-       await page.evaluate(() => BA_MR_MODES.map(m => m.id)), ['full', 'level', 'floor', 'gold']);
+    eq('มีโหมดรีเซ็ต 4 แบบแรกตามสเปก (v9.21 ต่อท้ายอีก 6)',
+       await page.evaluate(() => BA_MR_MODES.map(m => m.id).slice(0, 4)), ['full', 'level', 'floor', 'gold']);
     eq('ฟิลด์ Auth ครบตามสเปก (u/name/pass/class/registeredAt) + frozen',
        await page.evaluate(() => BA_MR_AUTH),
        ['user', 'name', 'pw', 'classroom', 'createdAt', 'frozen']);
@@ -143,7 +143,7 @@ async function confirmOk(page) {
          .every(k => BA_MR_KEEP.indexOf(k) >= 0)),
        await page.evaluate(() => BA_MR_KEEP));
     ok('ไอคอนของแต่ละโหมดตรงสเปก 🧹👑🗼🪙',
-       await page.evaluate(() => BA_MR_MODES.map(m => m.icon).join('')) === '🧹👑🗼🪙');
+       await page.evaluate(() => BA_MR_MODES.map(m => m.icon).slice(0, 4).join('')) === '🧹👑🗼🪙');
 
     const au = await page.evaluate(() => baBattleAudit().gmReset);
     eq('audit บอกรุ่น 7.4', au.ver, '7.4');
@@ -332,7 +332,7 @@ async function confirmOk(page) {
                user: BA_MR_USER };
     });
     ok('กด 🔄 แล้วเมนูเปิด', st.open, st);
-    eq('เมนูมีปุ่มครบ 4 โหมด', st.btns, 4);
+    eq('เมนูมีปุ่มครบ 10 โหมด (4 เดิม + 6 ของ v9.21)', st.btns, 10);
     eq('เมนูจำว่ากำลังทำกับใคร', st.user, 'nut');
     ok('หัวเมนูบอกชื่อ · เลเวล · ชั้นสูงสุด · รอบ', /nut/.test(st.who) && /รอบที่ 3/.test(st.who), st.who);
 

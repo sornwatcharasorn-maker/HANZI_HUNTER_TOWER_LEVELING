@@ -45084,6 +45084,172 @@
       };
     })();
 
+    /* ══════════════════════════════════════════════════════════════════
+       Patch v9.21 · GM WIPE ENGINE (3-TIER FLUSH) · 6 MODULAR WIPES · LIVE 12-PILLAR INSPECTOR
+       ══════════════════════════════════════════════════════════════════
+       พรีฟิกซ์ baGw / BA_GW_ (grep ได้ 0 ก่อนตั้งชื่อ) · ห่อทับ ไม่แก้ชั้นล่าง
+
+       ต้นเหตุ ghost ที่วัดมา: baMrApply ล้างเฉพาะ store แล้ว baMrLive ดัน G แค่บางฟิลด์ —
+       ที่เหลือ (correct/wordStats/ab/r20/skills ฯลฯ) ค้างใน G แล้ว saveProgress/saveStore
+       เขียนทับกลับ · และ /wordbank/<user> บนคลาวด์ไม่เคยถูกล้าง wbRestore ผสานคืนด้วย Math.max
+       แก้ 3 ชั้น: (1) แก้ record (2) เครื่องที่กำลังเล่น → คัดลอก store→G ทุกคีย์ของบัญชี
+       (3) เขียนทะเบียนทันที + PUT /wordbank + fbPush */
+    const BA_GW_VER = '9.21';
+    const BA_GW_N = { wipe: 0, pull: 0, cloud: 0, seal: 0 };
+    function baGwErr(e, w) { try { baErr(e, 'gw:' + w); } catch (x) {} }
+
+    const BA_GW_NEW = [
+      { id: 'vocab', icon: '📖', name: 'ล้างคลังคำศัพท์', sub: 'คำที่พิชิต 0/' + CX_TOTAL + ' · ล้างบุ๊กมาร์ก',
+        mut: function (a) { a.wordStats = {}; a.codex = { ms: -1, first: {} }; ['bookmarks', 'bm', 'bookmark'].forEach(function (k) { if (a[k] !== undefined) a[k] = Array.isArray(a[k]) ? [] : {}; }); } },
+      { id: 'wrongs', icon: '❌', name: 'ล้างคำที่ผิดซ้ำ', sub: 'แผนที่คำผิด → {} (คงคำที่พิชิตไว้)',
+        mut: function (a) {
+          const ws = a.wordStats || {};
+          Object.keys(ws).forEach(function (k) {
+            const w = ws[k]; if (!w) return;
+            const x = w.wrong || 0;
+            w.seen = Math.max(0, (w.seen || 0) - x); w.wrong = 0;
+            if (Array.isArray(w.recent)) w.recent = w.recent.filter(function (v) { return v; });
+            if (!w.seen) delete ws[k];
+          });
+        } },
+      { id: 'p4', icon: '💠', name: 'ล้างสถิติ P4', sub: 'r20 = {} · pureRole = null',
+        mut: function (a) { a.r20 = {}; a.pureRole = null; } },
+      { id: 'skills', icon: '🔮', name: 'ล้างสกิล', sub: 'สกิลทุกสาย → Lv.1 · เกจท่าไม้ตาย 0',
+        mut: function (a) { a.skills = baPlBlankSkills(); a.ult = 0; } },
+      { id: 'gems', icon: '💎', name: 'ล้างเพชร', sub: 'เศษคริสตัล 💎 → 0',
+        mut: function (a) { a.ab = a.ab || {}; a.ab.shards = 0; } },
+      { id: 'core', icon: '⚙️', name: 'ล้าง System Core', sub: 'แกนกลางระบบทุกเส้น + 💎 → ค่าเริ่มต้น',
+        mut: function (a) { a.ab = a.ab || {}; a.ab.shards = 0; const c = {}; AB_CORES.forEach(function (k) { c[k.key] = 0; }); a.ab.core = c; } }
+    ];
+    BA_GW_NEW.forEach(function (m) { BA_MR_MODES.push(m); BA_MR_BY[m.id] = m; });
+    const BA_GW_BY = {}; BA_GW_NEW.forEach(function (m) { BA_GW_BY[m.id] = m; });
+
+    function baGwClone(v) { try { return v === undefined ? v : JSON.parse(JSON.stringify(v)); } catch (e) { return v; } }
+
+    /* ชั้น 2 — store → G ทุกคีย์ของบัญชี (ไม่ใช่แค่ชุดย่อยแบบ baMrLive) */
+    function baGwPull(u) {
+      try {
+        if (typeof CURRENT_USER === 'undefined' || CURRENT_USER !== u || !G) return false;
+        const a = loadStore()[u]; if (!a) return false;
+        Object.keys(a).forEach(function (k) {
+          if (BA_MR_KEEP.indexOf(k) >= 0 && k !== 'name') return;
+          G[k] = baGwClone(a[k]);
+        });
+        BA_GW_N.pull++;
+        try { if (typeof BA_V91_ARM !== 'undefined') { BA_V91_ARM[0] = BA_V91_ARM[1] = BA_V91_ARM[2] = BA_V91_ARM[3] = false; BA_V91_CD[0] = BA_V91_CD[1] = BA_V91_CD[2] = BA_V91_CD[3] = 0; } } catch (e) {}
+        try { recalcStats(); G.hp = Math.min(G.hp || 1, G.maxHp); } catch (e) {}
+        ['renderStats', 'renderFloor', 'renderItems', 'renderSkills'].forEach(function (f) { try { window[f] && window[f](); } catch (e) {} });
+        try { baSyncCurrentClassSkills(true); } catch (e) {}
+        return true;
+      } catch (e) { baGwErr(e, 'pull'); return false; }
+    }
+
+    /* ชั้น 3 — เขียนทะเบียนแล้ว PUT /wordbank/<u> (ล้างก้อนผสานเก่าบนคลาวด์) + fbPush */
+    function baGwCloud(u) {
+      try {
+        const a = loadStore()[u]; if (!a) return;
+        if (typeof fbOn === 'function' && fbOn() && typeof wbPayload === 'function') {
+          fbFetch(wbUrl('/' + encodeURIComponent(u)), { method: 'PUT', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(wbPayload(a)) }).catch(function (e) { baGwErr(e, 'wb'); });
+          BA_GW_N.cloud++;
+        }
+        if (typeof CURRENT_USER !== 'undefined' && CURRENT_USER === u) {
+          try { fbPush(u, true); } catch (e) {}
+          try { csTouch(true); } catch (e) {}
+        }
+      } catch (e) { baGwErr(e, 'cloud'); }
+    }
+
+    if (typeof baMrApply === 'function') {
+      const _gwApply = baMrApply;
+      baMrApply = function (user, mode) {
+        const u = String(user || '').trim();
+        const def = BA_GW_BY[mode];
+        const active = (typeof CURRENT_USER !== 'undefined' && CURRENT_USER === u && typeof G !== 'undefined' && G);
+        try { if (active) saveProgress(); } catch (e) {}             /* ฟลัช G→store ก่อน กันของที่ไม่ได้ล้างหาย */
+        if (def) {                                                    /* ชั้น 1 — โหมดใหม่แก้ record ก่อนชั้นล่างวาด/ซิงก์ */
+          try { const s = loadStore(); if (s[u]) { def.mut(s[u]); saveStore(s); } } catch (e) { baGwErr(e, 'mut'); }
+        }
+        /* ชั้นล่าง (gcLive ใน baMrLive) เรียก saveProgress ขณะ G ยังถือค่าเก่า → เขียนทับทะเบียนที่เพิ่งล้าง (ghost)
+           จึงปิด saveProgress ชั่วคราวระหว่างของเดิมทำงาน แล้วดึง store→G เองทีหลัง */
+        if (active) {                                                 /* ชั้น 2 — ล้าง runtime ใน G ก่อน กัน saveStore ของ P4 ฯลฯ ประทับค่าเก่าจาก G ทับ */
+          try { if (def) def.mut(G); if (mode === 'full') { G.r20 = {}; G.pureRole = null; } } catch (e) { baGwErr(e, 'gmut'); }
+        }
+        const _sp = saveProgress; let r;
+        if (active) saveProgress = function () {};
+        try { r = _gwApply.apply(this, arguments); } finally { saveProgress = _sp; }
+        if (!r) return r;
+        BA_GW_N.wipe++;
+        try { if (mode === 'full' && active) cdReset(); } catch (e) {}
+        baGwPull(u);
+        try { if (active) saveProgress(); } catch (e) {}              /* G ตรงกับ store แล้ว — เขียนทะเบียนซ้ำแบบซิงโครนัส */
+        baGwCloud(u);
+        return r;
+      };
+    }
+
+    /* ── 🏛️ ผนึก — ตัวตรวจ 12 เสาหลักสดรายคน ─────────────────────────────── */
+    function baGwPillars(u) {
+      let a = null;
+      try { a = (typeof CURRENT_USER !== 'undefined' && CURRENT_USER === u && G) ? G : loadStore()[u]; } catch (e) {}
+      const list = [];
+      BA_MN_PILL.forEach(function (p) {
+        let n = 0, d = 1;
+        try { const v = a ? p.get(a) : [0, 1]; n = Math.max(0, Math.round(v[0] || 0)); d = Math.max(1, Math.round(v[1] || 1)); } catch (e) {}
+        if (n > d) n = d;
+        list.push({ id: p.id, icon: p.icon, name: p.name, n: n, d: d, ok: n >= d });
+      });
+      return { u: u, a: a, list: list, done: list.filter(function (x) { return x.ok; }).length, total: list.length,
+               mirror: !!(a && typeof LR_MIRROR === 'string' && a[LR_MIRROR]) };
+    }
+
+    function baGwSealOpen(u) {
+      try {
+        let el = document.getElementById('baGwSeal');
+        if (!el) {
+          el = document.createElement('div'); el.className = 'g-modal'; el.id = 'baGwSeal';
+          el.style.zIndex = '795';
+          document.body.appendChild(el);
+        }
+        const s = baGwPillars(u);
+        el.innerHTML = '<div class="g-modal-inner"><div class="g-modal-title">🏛️ ผนึก — @' + esc(u) + '</div>' +
+          '<div id="baGwSealSum" style="font-weight:700;margin-bottom:8px">ปลดแล้ว: ' + s.done + '/' + s.total + '</div>' +
+          (s.mirror ? '<div style="font-size:11px;opacity:.8;margin-bottom:6px">📡 แถวสด — ข้อมูลบางเสาอาจไม่ครบ</div>' : '') +
+          s.list.map(function (x) {
+            return '<div class="ba-gw-p" data-id="' + x.id + '" data-ok="' + (x.ok ? 1 : 0) + '" style="display:flex;justify-content:space-between;gap:8px;padding:4px 0;border-bottom:1px solid rgba(255,255,255,.08)">' +
+              '<span>' + x.icon + ' ' + esc(x.name) + '</span><span>' + (x.ok ? '✅ ผ่าน' : '⏳ ยังไม่สำเร็จ') + ' · ' + x.n + '/' + x.d + '</span></div>';
+          }).join('') +
+          '<button class="gm-btn" onclick="document.getElementById(\'baGwSeal\').classList.remove(\'active\')">ปิดหน้าต่าง</button></div>';
+        el.classList.add('active');
+        BA_GW_N.seal++;
+        return s;
+      } catch (e) { baGwErr(e, 'seal'); return null; }
+    }
+
+    if (typeof baUniRowHtml === 'function') {
+      const _gwRow = baUniRowHtml;
+      baUniRowHtml = function (r) {
+        const h = _gwRow.apply(this, arguments);
+        return h.replace('</div></td>', '<button class="gc-row-btn" data-a="seal" title="ตรวจ 12 เสาหลักสดของฮันเตอร์คนนี้">🏛️ ผนึก</button></div></td>');
+      };
+    }
+    if (typeof baUniAct === 'function') {
+      const _gwAct = baUniAct;
+      baUniAct = function (k, u) {
+        if (k === 'seal' && u) { BA_UNI_N.act++; baGwSealOpen(u); return true; }
+        return _gwAct.apply(this, arguments);
+      };
+    }
+
+    if (typeof baBattleAudit === 'function') {
+      const _gwAud = baBattleAudit;
+      baBattleAudit = function () {
+        const r = _gwAud.apply(this, arguments);
+        try { r.gmWipe = { ver: BA_GW_VER, modes: BA_MR_MODES.map(function (m) { return m.id; }), n: Object.assign({}, BA_GW_N) }; } catch (e) {}
+        return r;
+      };
+    }
+
   </script>
 </body>
 </html>

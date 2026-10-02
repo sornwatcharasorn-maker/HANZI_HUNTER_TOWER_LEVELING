@@ -8707,7 +8707,7 @@
         return (b.getAttribute('onclick') || '').indexOf('openShop') !== -1;
       })[0];
       const html = '<button class="g-btn hint" id="cxBoardBtn" onclick="cxOpenBoard()">' +
-                   '📖 CODEX — คลังอักขระทองคำ<span class="cx-badge" id="cxBadge" style="display:none">0</span></button>';
+                   '📖 CODEX — คลังอักขระโบราณ<span class="cx-badge" id="cxBadge" style="display:none">0</span></button>';
       if (shop) shop.insertAdjacentHTML('afterend', html);
       else act.insertAdjacentHTML('beforeend', html);
     }
@@ -32762,9 +32762,9 @@
     const BA_MN_PILL = [
       /* ── หมวดที่ 1: รากฐานและขุมพลังตัวละคร ── */
       { id: 'codex', icon: '📖', name: 'คลังอักขระโบราณ', col: '#2ef2d0',
-        desc: 'นับคำที่รู้จักแล้ว (เคยเจอในสถิติคำศัพท์ · ตรงกับหน้า ANALYTICS · / ' + CX_TOTAL + ' คำ) ' +
+        desc: 'นับคำที่ตอบถูกแล้วอย่างน้อย 1 ครั้ง (ตรงกับหน้า CODEX · / ' + CX_TOTAL + ' คำ) ' +
               'ครบทั้งเล่มเมื่อไรผนึกดวงนี้ปิดสมบูรณ์',
-        get: function (g) { return [Math.min(CX_TOTAL, Object.keys((g && g.wordStats) || {}).length), CX_TOTAL]; } },
+        get: function (g) { return [Math.min(CX_TOTAL, cxCount(g)), CX_TOTAL]; } },
       { id: 'core',  icon: '⚙️', name: 'แกนกลางระบบ',   col: '#8fd8ff',
         desc: 'ผลรวมระดับของแกนกลางระบบทั้ง 7 เส้น (มานา · เวลา · โชคลาภ · ชีวิต · พิฆาต · เกราะ · สังหาร) ' +
               'ที่ซื้อด้วย 💎 เศษคริสตัลเหวลึกในแผงระบบ ⚙️ SYSTEM CORE — แต่ละเส้นอัปได้สูงสุด ' +

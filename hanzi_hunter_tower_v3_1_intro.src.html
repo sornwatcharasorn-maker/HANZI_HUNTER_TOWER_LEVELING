@@ -44171,7 +44171,7 @@
             if (!g) return out;
             const armed = typeof baV91Active === 'function' && (baV91Active(0) || baV91Active(2));
             if (baV918Gate(g) && !armed) { baV918Blk(BA_IMPACT || 170); return 0; }
-            if (armed && (g.streak || 0) >= 5) out = Math.round(out * 1.3);
+            if (armed && (g.streak || 0) >= 5 && baPlClass(g).id !== 'guardian' && baPlClass(g).id !== 'priest') out = Math.round(out * 1.3); /* v9.19 Fair Pierce: ผู้พิทักษ์/นักบวชไม่มีโบนัสคอมโบ */
           } catch (e) {}
           return out;
         };
@@ -44199,6 +44199,28 @@
           const gone = _v918Exec.apply(this, arguments);
           try { if (BA_SK4_CASTING && alive) BA_SK4_PENDING = true; } catch (e) {}
           return gone;
+        };
+      }
+
+      /* v9.19 · S1 Instant + Fair Pierce (guardian/guard · priest/soulmaster)
+         กดช่อง 1 = หัก MP แล้วลงดาเมจทันที (เกราะกินดาเมจ 1:1 ส่วนเกินทะลุลง HP) · เกราะไม่แตก = CD 0 */
+      if (typeof baV91Activate === 'function') {
+        const _v919Act = baV91Activate;
+        baV91Activate = function (i, g, r) {
+          const ok = _v919Act.apply(this, arguments);
+          try {
+            const cid = baPlClass(g).id;
+            if (ok && i === 0 && (cid === 'guardian' || cid === 'priest') && g.currentMonster &&
+                g.monsterHp > 0 && !g.locked && !g.practiceMode) {
+              const h = g.monsterHp, was = BA_SK4_CASTING, lv = BA_LIVE;
+              BA_SK4_CASTING = true; BA_LIVE = true;
+              try { cdHitMonster(hunterAtk(), h); } finally { BA_SK4_CASTING = was; BA_LIVE = lv; }
+              BA_V91_ARM[0] = false; baBarSync();
+              if (g.monsterHp > 0 && baV918Gate(g)) BA_V91_CD[0] = 0;
+              baSyncCurrentClassSkills(true);
+            }
+          } catch (e) {}
+          return ok;
         };
       }
 

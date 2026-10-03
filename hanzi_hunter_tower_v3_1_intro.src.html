@@ -32764,7 +32764,7 @@
       { id: 'codex', icon: '📖', name: 'คลังอักขระโบราณ', col: '#2ef2d0',
         desc: 'นับคำที่ตอบถูกแล้วอย่างน้อย 1 ครั้ง (ตรงกับหน้า CODEX · / ' + CX_TOTAL + ' คำ) ' +
               'ครบทั้งเล่มเมื่อไรผนึกดวงนี้ปิดสมบูรณ์',
-        get: function (g) { return [Math.min(CX_TOTAL, cxCount(g)), CX_TOTAL]; } },
+        get: function (g) { return [Math.min(CX_TOTAL, Math.max((g && g.lrWords) | 0, cxCount(g))), CX_TOTAL]; } },
       { id: 'core',  icon: '⚙️', name: 'แกนกลางระบบ',   col: '#8fd8ff',
         desc: 'ผลรวมระดับของแกนกลางระบบทั้ง 7 เส้น (มานา · เวลา · โชคลาภ · ชีวิต · พิฆาต · เกราะ · สังหาร) ' +
               'ที่ซื้อด้วย 💎 เศษคริสตัลเหวลึกในแผงระบบ ⚙️ SYSTEM CORE — แต่ละเส้นอัปได้สูงสุด ' +

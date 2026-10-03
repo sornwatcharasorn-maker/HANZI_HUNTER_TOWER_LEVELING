@@ -18687,6 +18687,7 @@
 
     let CA_BUSY = false;               /* กำลังถามคลาวด์อยู่ — กันเรียกซ้อน */
     let CA_KICK = false;               /* กำลังเด้งออกเพราะรหัสถูกเปลี่ยน */
+    let CA_MG   = {};                  /* เวลาที่ Union แถวเต็มจากคลาวด์ครั้งล่าสุด รายคน */
     let CA_PWH  = {};                  /* แฮชที่ "คลาวด์บอก" รายคน — ไม่ใช่ที่เครื่องนี้คิดเอง */
 
     function caErr(e, w) {
@@ -18792,6 +18793,75 @@
       } catch (e) { return ''; }
     }
 
+    /* ── คลังคำศัพท์ + ความคืบหน้าถาวรข้ามเครื่อง (Patch · CROSS-DEVICE VOCAB UNION) ──────
+       payload ของ v5.3 มีแค่คำที่ผิด ≥2 ครั้ง (สูงสุด 8) กับตัวเลขสรุป เครื่องใหม่ที่ล็อกอินไอดีเดิม
+       จึงได้คลังคำศัพท์แค่เศษเดียว แล้ว PUT รอบถัดไปก็ทับของเต็มบนคลาวด์ด้วยก้อนที่ขาด
+       ws = "id.ถูก.ผิด,…" · ex = แกน/ผนึก/บอส/ทองสะสม/r20/ผนึกจอมราชัน (ก้อนเล็ก ~200B)
+       ผสานแบบ Union: เก็บ max ของ "จำนวนที่ตอบถูก" กับ "จำนวนที่ผิด" แยกกัน
+       (ไม่ max seen ตรง ๆ — ไม่งั้นเครื่องที่ผิด 5/5 จะกลบเครื่องที่ถูก 3 แล้วคำนั้นหลุดจากคลัง) */
+    function caWs(a) {
+      const w = (a && a.wordStats) || {}, o = [];
+      Object.keys(w).forEach(function (k) {
+        const e = w[k]; if (!e || !/^\d+$/.test(k)) return;
+        const x = Math.max(0, e.wrong | 0), c = Math.max(0, (e.seen | 0) - x);
+        if (c + x) o.push(k + '.' + c + '.' + x);
+      });
+      return o.join(',');
+    }
+
+    function caEx(a) {
+      a = a || {};
+      const b = a.ab || {}, m = a.mn || {}, r = a.r20 || {}, se = {};
+      Object.keys(b.seals || {}).forEach(function (f) {
+        const t = b.seals[f]; se[f] = (t && t.broken) ? (t.flawless ? 2 : 1) : 0;
+      });
+      return { co: b.core || {}, se: se, bc: a.bossClears | 0, tg: a.totalGoldEarned | 0,
+               r: Object.keys(r).filter(function (k) { return r[k] === 1; }),
+               pr: a.pureRole || '', ms: m.sh | 0, ma: m.at || 0 };
+    }
+
+    /* a = บัญชี หรือ G · r = แถวจากคลาวด์ · คืนจำนวนที่ขยับ · ทุกอย่างเพิ่มขึ้นได้อย่างเดียว */
+    function caUnion(a, r) {
+      let n = 0;
+      if (!a || !r || typeof r !== 'object') return 0;
+      const mx = function (o, k, v) { v = Math.max(0, +v | 0); if (v > (o[k] | 0)) { o[k] = v; n++; } };
+      if (typeof r.ws === 'string' && r.ws) {
+        const w = a.wordStats || (a.wordStats = {});
+        r.ws.split(',').forEach(function (t) {
+          const p = t.split('.'), c = Math.max(0, +p[1] | 0), x = Math.max(0, +p[2] | 0);
+          if (!/^\d+$/.test(p[0]) || c + x < 1) return;
+          const o = w[p[0]] || (w[p[0]] = { seen: 0, wrong: 0, totalMs: 0, lastSeen: 0, recent: [] });
+          const ox = Math.max(0, o.wrong | 0), oc = Math.max(0, (o.seen | 0) - ox);
+          const nc = Math.max(oc, c), nx = Math.max(ox, x);
+          if (nc !== oc || nx !== ox) { o.seen = nc + nx; o.wrong = nx; n++; }
+        });
+      }
+      mx(a, 'towerClears', r.loops);
+      const e = r.ex;
+      if (e && typeof e === 'object') {
+        mx(a, 'bossClears', e.bc); mx(a, 'totalGoldEarned', e.tg);
+        const ab = a.ab || (a.ab = {});
+        mx(ab, 'shards', r.shards);
+        const co = ab.core || (ab.core = {});
+        Object.keys(e.co || {}).forEach(function (k) { mx(co, k, e.co[k]); });
+        const sl = ab.seals || (ab.seals = {});
+        Object.keys(e.se || {}).forEach(function (f) {
+          const v = e.se[f] | 0, t = sl[f] || (sl[f] = { broken: false, flawless: false });
+          if (v > 0 && !t.broken) { t.broken = true; n++; }
+          if (v > 1 && !t.flawless) { t.flawless = true; n++; }
+        });
+        if (Array.isArray(e.r)) {
+          const r20 = a.r20 || (a.r20 = {});
+          e.r.forEach(function (k) { if (typeof k === 'string' && r20[k] !== 1) { r20[k] = 1; n++; } });
+        }
+        if (!a.pureRole && typeof e.pr === 'string' && e.pr) { a.pureRole = e.pr; n++; }
+        const m = a.mn || (a.mn = { sh: 0, at: 0 }), sh = (m.sh | 0) | (e.ms | 0);
+        if (sh !== (m.sh | 0)) { m.sh = sh; n++; }
+        if ((+e.ma || 0) > (m.at || 0)) { m.at = +e.ma; n++; }
+      }
+      return n;
+    }
+
     async function caSealBody(u, opt) {
       let body = null;
       try { body = JSON.parse(opt.body); } catch (e) { return opt; }
@@ -18802,6 +18872,25 @@
       if (CA_GUARD && !opt.keepalive) {
         try { cloud = await _caFbFetch(fbUrl('/' + encodeURIComponent(u) + '/pwh')); }
         catch (e) { cloud = null; }
+      }
+
+      /* กันเครื่องที่คำศัพท์น้อยกว่า PUT ทับของเต็มบนคลาวด์: อ่านแถวเต็มทุก 60 วิ แล้ว Union
+         ลงทั้ง G (ถ้าเป็นคนที่กำลังเล่น) หรือบัญชีในเครื่อง ก่อนประกอบ ws/ex ส่งขึ้นไป */
+      if (CA_GUARD && !opt.keepalive && Date.now() - (CA_MG[u] || 0) > 60000) {
+        try {
+          const row = await _caFbFetch(fbUrl('/' + encodeURIComponent(u)));
+          if (caRowOk(row)) {
+            const cur = (u === CURRENT_USER && typeof G === 'object' && G) ? G : null;
+            const st = cur ? null : loadStore(), t = cur || (st && st[u]);
+            if (t && !caMirror(t)) {
+              if (caUnion(t, row) && st) saveStore(st);
+              body.ws = caWs(t); body.ex = caEx(t);
+              body.loops = Math.max(body.loops | 0, t.towerClears | 0);
+              body.shards = Math.max(body.shards | 0, (t.ab && t.ab.shards) | 0);
+            }
+          }
+          CA_MG[u] = Date.now();
+        } catch (e) { caErr(e, 'merge'); }
       }
 
       if (typeof cloud === 'string' && cloud) {
@@ -18846,6 +18935,8 @@
       if (row && (fresh || at > (Number(a.lastActive) || 0))) {
         try { if (typeof lrApply === 'function') lrApply(a, row); } catch (e) { caErr(e, 'adoptApply'); }
       }
+      try { caUnion(a, row); } catch (e) { caErr(e, 'adoptUnion'); }
+      try { window.CA_R20 = window.CA_R20 || {}; window.CA_R20[u] = Object.assign({}, a.r20 || {}); } catch (e) {}
       a.pw = pw;
       delete a.lrMirror;
       delete a.lrAt;
@@ -18958,6 +19049,7 @@
         const mine = caPwhOf(user, a);
         const h = CA_PWH[user] || mine;
         if (h) { p.pwh = h; if (!CA_PWH[user] && mine) CA_PWH[user] = mine; }
+        p.ws = caWs(a); p.ex = caEx(a);
       } catch (e) { caErr(e, 'payload'); }
       return p;
     };
@@ -45081,6 +45173,16 @@
       saveStore = function (s) {
         try { const g = baG(), a = g && CURRENT_USER && s[CURRENT_USER]; if (a && g.r20) { a.r20 = g.r20; a.pureRole = g.pureRole || null; } } catch (e) {}
         return _ss.apply(this, arguments);
+      };
+      /* v5.8: P4 ทับ r20 ด้วย G ว่างระหว่าง startGame — เติมค่าที่ดึงจากคลาวด์คืนหลังสุด (OR เท่านั้น) */
+      const _sg2 = startGame;
+      startGame = function () {
+        const r = _sg2.apply(this, arguments);
+        try {
+          const g = baG(), p = window.CA_R20 && window.CA_R20[CURRENT_USER];
+          if (g && p) { g.r20 = g.r20 || {}; Object.keys(p).forEach(function (k) { if (p[k] === 1) g.r20[k] = 1; }); saveStore(loadStore()); }
+        } catch (e) {}
+        return r;
       };
     })();
 

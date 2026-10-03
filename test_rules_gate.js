@@ -102,7 +102,7 @@ const scrollBottom = page => page.evaluate(() => {
      ['ห้าม Facebook', /Facebook/], ['ข้อมูลสลายหาย', /สลายหายไป/]]
       .forEach(([n, re]) => ok('คำเตือนอุปกรณ์: ' + n, re.test(txt)));
 
-    [['Cloud Sync v5.5', /REALTIME CLOUD SYNC v5\.5/], ['อัตโนมัติ 100%', /อัตโนมัติ 100%/],
+    [['Cloud Sync v9.22', /REALTIME CLOUD SYNC v9\.22/], ['ซิงก์ข้ามเครื่อง', /Union Merge/],
      ['Realtime', /Realtime/], ['GM Control Room', /GM Control Room/]]
       .forEach(([n, re]) => ok('คลาวด์ซิงก์: ' + n, re.test(txt)));
 

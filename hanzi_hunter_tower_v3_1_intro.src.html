@@ -5927,7 +5927,7 @@
             เงื่อนไขเควส 19 (สะสมทองตลอดชีพ 3,000) ไม่ได้ — ต้องหาจากการต่อสู้จริงเท่านั้น
          2. เควสระยะยาวเก็บสถานะไว้ที่ done.L ตลอดชีพ รีเซ็ตรายวัน/รายสัปดาห์ไม่แตะ */
 
-    const Q_KEYS = ['ans', 'kill', 'fast', 'streak', 'floor', 'boss', 'skill', 'gold', 'redeem'];
+    const Q_KEYS = ['ans', 'kill', 'fast', 'streak', 'floor', 'boss', 'skill', 'gold', 'redeem', 'seal', 'abyss', 'shadow'];
 
     /* ── 20 เควส: 01-07 รายวัน · 08-13 รายสัปดาห์ · 14-20 ระยะยาว ── */
     const Q_DEFS = [
@@ -6019,7 +6019,7 @@
 
       RESET: { tag:'QUEST 06/06', tone:'',
         title: d => `🔄 รีเซ็ตรอบภารกิจ${d.week ? 'รายสัปดาห์' : 'รายวัน'}แล้ว`,
-        body:  d => `${d.day ? 'ภารกิจรายวัน 7 รายการ' : ''}${d.day && d.week ? ' และ' : ''}${d.week ? 'ภารกิจรายสัปดาห์ 6 รายการ' : ''} เริ่มนับใหม่หมด\nรางวัลรอบก่อนที่ไม่ได้กดรับถือว่าหมดอายุ\nภารกิจระยะยาว 7 รายการ <b>ไม่รีเซ็ต</b> — เก็บความคืบหน้าไว้ตลอดชีพ` }
+        body:  d => `${d.day ? 'ภารกิจรายวัน ' + Q_DEFS.filter(x => x.cat === 'd').length + ' รายการ' : ''}${d.day && d.week ? ' และ' : ''}${d.week ? 'ภารกิจรายสัปดาห์ ' + Q_DEFS.filter(x => x.cat === 'w').length + ' รายการ' : ''} เริ่มนับใหม่หมด\nรางวัลรอบก่อนที่ไม่ได้กดรับถือว่าหมดอายุ\nภารกิจระยะยาว 7 รายการ <b>ไม่รีเซ็ต</b> — เก็บความคืบหน้าไว้ตลอดชีพ` }
     };
 
     /* ── รอบเวลา ────────────────────────────────────────── */
@@ -6189,7 +6189,7 @@
       renderStats();      /* renderStats → saveProgress → เขียน quest ลง store */
       qRenderBoard();
 
-      qNotify('CLAIM', { name: def.name, no: qPad(def.no) + '/20 · ภารกิจ' + qCatName(def.cat),
+      qNotify('CLAIM', { name: def.name, no: qPad(def.no) + '/' + Q_DEFS.length + ' · ภารกิจ' + qCatName(def.cat),
                          cond: def.cond, gold: def.gold, exp: def.exp,
                          item: def.item ? qItemLabel(def.item) : '', wallet: G.gold });
 
@@ -6261,7 +6261,7 @@
 
       document.getElementById('qBoardBody').innerHTML = head +
         qSection('d', '🌅 ภารกิจรายวัน', 'รีเซ็ตทุกเที่ยงคืน · รอบวันที่ ' + G.quest.day +
-                 ' · รางวัลรวม 115 ทอง/วัน (น้อยกว่าเคลียร์หอคอย 1 ชั้น)') +
+                 ' · รางวัลรวม ' + Q_DEFS.filter(x => x.cat === 'd').reduce((a, x) => a + x.gold, 0) + ' ทอง/วัน') +
         qSection('w', '🗓️ ภารกิจรายสัปดาห์', 'รีเซ็ตเช้าวันจันทร์ · รอบสัปดาห์ของ ' + G.quest.week.slice(1) +
                  ' · แถมไอเทมสนับสนุนทุกรายการ') +
         qSection('L', '🐉 ภารกิจระยะยาว', 'ทำครั้งเดียวจบตลอดชีพ ไม่รีเซ็ต · รางวัลใหญ่ 150-500 ทอง พร้อมฉายาปลายเกม');
@@ -32320,16 +32320,16 @@
        ใช้ `qDayKey()` ของ v4.2 เป็นตัวตัดสินรอบวันตัวเดียวกัน ไม่สร้างนาฬิกา
        ชุดที่สองมาให้เพี้ยนกันเอง (กติกาเดียวกับ v4.9.3) */
     const BA_QD_DEFS = [
-      { id: 'f20',    icon: '🗼', name: 'พิชิตยอดหอคอย',   goal: 1,  rw: 20,
+      { id: 'f20',    icon: '🗼', name: 'พิชิตยอดหอคอย',   goal: 1,  gold: 120, exp: 200,
         cond: 'เคลียร์ชั้น ' + FLOOR_MAX + ' ให้ได้ 1 รอบ' },
-      { id: 'abyss',  icon: '🕳️', name: 'ดำดิ่งเหวลึก',    goal: 5,  rw: 50,
-        cond: 'จบรอบเหวลึก 5 ครั้ง' },
-      { id: 'mini',   icon: '💀', name: 'ล่ามินิบอสทัพเงา', goal: 50, rw: 30,
-        cond: 'สังหารมินิบอสทัพเงา 50 ตัว' },
-      { id: 'dragon', icon: '🐲', name: 'ล้มมังกรผลึกแก้ว', goal: 1,  rw: 20,
+      { id: 'abyss',  icon: '🕳️', name: 'ดำดิ่งเหวลึก',    goal: 3,  gold: 150, exp: 250,
+        cond: 'จบรอบเหวลึก 3 ครั้ง' },
+      { id: 'mini',   icon: '💀', name: 'ล่ามินิบอสทัพเงา', goal: 20, gold: 100, exp: 200,
+        cond: 'สังหารมินิบอสทัพเงา 20 ตัว' },
+      { id: 'dragon', icon: '🐲', name: 'ล้มมังกรผลึกแก้ว', goal: 1,  gold: 120, exp: 200,
         cond: 'สังหารบอสชั้น ' + FLOOR_MAX + ' ในหอคอยปกติ' }
     ];
-    const BA_QD_ALLRW = 50;   /* โบนัสเก็บครบทั้งสี่ */
+    const BA_QD_ALLRW = { gold: 200, exp: 400 };   /* โบนัสเก็บครบทั้งสี่ */
 
     /* สถานะของรอบการเล่น ไม่ต้องเซฟ (กฎเดียวกับ AB_LIVE ของ v4.6) */
     let BA_QD_READY = false;  /* สวิตช์กันเขียนทับตอน startGame (กับดักข้อ 16) */
@@ -32644,7 +32644,7 @@
       const pct  = Math.round(n / q.goal * 100);
       return '<div class="ba-qd-q' + (done ? ' ok' : rdy ? ' rdy' : '') + '">' +
         '<div class="ba-qd-h"><b>' + q.icon + ' ' + q.name + '</b>' +
-          '<span class="ba-qd-rw">💎 ' + q.rw + '</span></div>' +
+          '<span class="ba-qd-rw">🪙 ' + q.gold + ' · ⭐ ' + q.exp + '</span></div>' +
         '<div class="ba-qd-c">' + esc(q.cond) + '</div>' +
         '<div class="ba-qd-bar"><i style="width:' + pct + '%"></i></div>' +
         '<div class="ba-qd-f"><span>' + n + ' / ' + q.goal + '</span>' +
@@ -32665,12 +32665,12 @@
       let shards = 0;
       try { shards = (typeof abShards === 'function') ? abShards(g) : 0; } catch (e) {}
       body.innerHTML =
-        '<div class="ba-qd-top"><span>💎 เศษคริสตัลที่มี</span><b>' + shards + '</b></div>' +
+        '<div class="ba-qd-top"><span>🪙 ทองที่มี</span><b>' + g.gold + '</b></div>' +
         '<div class="ba-qd-note">รีเซ็ตทุกเที่ยงคืน · รอบวันนี้: ' + esc(d.day) + '</div>' +
         BA_QD_DEFS.map(function (q) { return baQdRow(q, d); }).join('') +
         '<div class="ba-qd-q all' + (allDone ? ' ok' : allRdy ? ' rdy' : '') + '">' +
           '<div class="ba-qd-h"><b>🏆 โบนัสเก็บครบทั้งวัน</b>' +
-            '<span class="ba-qd-rw">💎 ' + BA_QD_ALLRW + '</span></div>' +
+            '<span class="ba-qd-rw">🪙 ' + BA_QD_ALLRW.gold + ' · ⭐ ' + BA_QD_ALLRW.exp + '</span></div>' +
           '<div class="ba-qd-c">รับรางวัลครบทั้ง ' + BA_QD_DEFS.length + ' เควสของวันนี้</div>' +
           '<div class="ba-qd-f"><span>' +
             BA_QD_DEFS.filter(function (q) { return d.done.indexOf(q.id) >= 0; }).length +
@@ -32696,14 +32696,17 @@
       if (!d) return;
       const all = id === 'all';
       if (all ? !baQdAllOk() : !baQdReady(id)) return;
-      const rw = all ? BA_QD_ALLRW : BA_QD_BY[id].rw;
+      const rw = all ? BA_QD_ALLRW : BA_QD_BY[id];
       d.done.push(id);
+      /* v9.22: รางวัลเควส = ทอง + EXP เท่านั้น (💎 สงวนไว้ให้เหวลึก/ประตูผนึก) · ทองไม่เข้า totalGoldEarned */
+      G.gold += rw.gold;
+      try { baXpPay(rw.exp); } catch (e) {}
       baQdSave();
-      const got = baQdGem(rw, '');
+      try { renderStats(); } catch (e) {}
       BA_QD_N.claim++;
       baQdRender();
       const msg = document.getElementById('baQdMsg');
-      if (msg) msg.textContent = '✨ รับรางวัลแล้ว — 💎 +' + got;
+      if (msg) msg.textContent = '✨ รับรางวัลแล้ว — 🪙 +' + rw.gold + ' · ⭐ +' + rw.exp;
       try { baSfx('BA_SH_BARRIER'); } catch (e) {}
     }
 
@@ -32781,7 +32784,7 @@
           o.daily = {
             ver: BA_QD_VER, day: d ? d.day : '', c: d ? Object.assign({}, d.c) : null,
             done: d ? d.done.slice() : [],
-            defs: BA_QD_DEFS.map(function (q) { return { id: q.id, goal: q.goal, rw: q.rw }; }),
+            defs: BA_QD_DEFS.map(function (q) { return { id: q.id, goal: q.goal, gold: q.gold, exp: q.exp }; }),
             allRw: BA_QD_ALLRW, allRdy: baQdAllOk(),
             ready: BA_QD_DEFS.filter(function (q) { return baQdReady(q.id); }).map(function (q) { return q.id; }),
             open: !!(board && board.classList.contains('active')),
@@ -45351,6 +45354,130 @@
         return r;
       };
     }
+
+
+    /* ══════════════════════════════════════════════════════════════════════
+       Patch v9.22 · QUEST & ACHIEVEMENT REBALANCE (เหวลึก · 12 ผนึก · Pure Run)
+       กติกาเศรษฐกิจ: รางวัลเควสห้ามเป็น 💎 (สงวนไว้ให้เหวลึกกับประตูผนึก System Core)
+       รางวัล = ทอง (ไม่เข้า totalGoldEarned) · EXP · ไอเทม/บัฟชั่วคราว · ฉายาเกียรติยศ
+       ใช้กระดานเควสเดิมทั้งหมด ไม่เพิ่ม CSS/DOM · ความคืบหน้าถาวรผสานข้ามเครื่องแบบ Union
+       ══════════════════════════════════════════════════════════════════════ */
+    (function baQ922Install() {
+      function qe(e, w) { try { baErr(e, 'q922:' + w); } catch (x) {} }
+      /* นับจำนวนเสาหลักที่เต็มแล้ว — อ่านสดจาก BA_MN_PILL ด้วยบัญชีที่ส่งเข้ามา */
+      function pillarsOf(s) {
+        let n = 0;
+        try { BA_MN_PILL.forEach(function (p) { const v = p.get(s); if (v && v[0] >= v[1]) n++; }); } catch (e) {}
+        return n;
+      }
+      const PN = BA_MN_PILL.length;
+      const add = function (d) { if (!Q_DEFS.some(function (x) { return x.id === d.id; })) Q_DEFS.push(d); };
+      /* รายวัน */
+      add({ id:'D8', no:21, cat:'d', icon:'🕳️', name:'ดำดิ่งเหวลึก', cond:'จบรอบเหวลึก 1 ครั้ง', key:'abyss', goal:1, gold:30, exp:60 });
+      /* รายสัปดาห์ */
+      add({ id:'W7', no:22, cat:'w', icon:'🔓', name:'ผู้ทลายผนึก', cond:'ทลายประตูผนึกบอส 1 บาน', key:'seal', goal:1, gold:120, exp:250, item:'potion' });
+      add({ id:'W8', no:23, cat:'w', icon:'🌌', name:'นักดำดิ่งเหวลึก', cond:'จบรอบเหวลึก 8 ครั้งในสัปดาห์', key:'abyss', goal:8, gold:130, exp:300, item:'freeze' });
+      add({ id:'W9', no:24, cat:'w', icon:'🗡️', name:'ผู้ล่าทัพเงา', cond:'สังหารมินิบอสทัพเงา 30 ตัว', key:'shadow', goal:30, gold:110, exp:220, item:'scroll' });
+      /* ระยะยาว — 3/6/9/12 เสาหลัก · Pure Run · ปราชญ์อักขระ */
+      [[3,250,600],[6,450,1000],[9,700,1600],[PN,1000,2500]].forEach(function (t, i) {
+        const d = { id:'L' + (8 + i), no:25 + i, cat:'L', icon:['🧱','🏛️','🏰','👑'][i],
+          name:'ผนึก ' + t[0] + ' เสาหลัก', cond:'เสาหลักเต็ม ' + t[0] + ' จาก ' + PN + ' ต้น',
+          goal:t[0], gold:t[1], exp:t[2], prog: pillarsOf };
+        if (i === 3) d.title = 'sealkeeper';
+        add(d);
+      });
+      add({ id:'L12', no:29, cat:'L', icon:'🛡️', name:'Pure Run ชั้น ' + FLOOR_MAX,
+        cond:'ล้มบอสชั้น ' + FLOOR_MAX + ' โดยไม่เปลี่ยนสายอาชีพ', goal:1, gold:800, exp:1500, title:'purerunner',
+        prog: function (s) { return (s && s.r20 && Object.keys(s.r20).some(function (k) { return s.r20[k] === 1; })) ? 1 : 0; } });
+      add({ id:'L13', no:30, cat:'L', icon:'📖', name:'ปราชญ์อักขระโบราณ', cond:'พิชิตศัพท์ Tier 4 ครบ ' + CX_TOTAL + ' คำ',
+        goal:CX_TOTAL, gold:600, exp:1200, title:'codexsage',
+        prog: function (s) { try { return baSmTier4Count(s); } catch (e) { return 0; } } });
+      /* ฉายาเกียรติยศ — เงื่อนไขอ่านจากบัญชีที่ส่งมาเท่านั้น */
+      [['sealkeeper','👑','ผู้พิทักษ์ผนึกทั้งสิบสอง','เสาหลักเต็มครบ','L11'],
+       ['purerunner','🛡️','จอมสายเดียว','Pure Run ชั้น ' + FLOOR_MAX,'L12'],
+       ['codexsage','📖','ปราชญ์อักขระโบราณ','ศัพท์ Tier 4 ครบทุกคำ','L13']].forEach(function (t) {
+        if (TITLES.some(function (x) { return x.key === t[0]; })) return;
+        TITLES.push({ key:t[0], icon:t[1], name:t[2], cond:'รับรางวัลเควส · ' + t[3], bonus:{ int:4 },
+          check: function (s) { return !!(s && s.quest && s.quest.done && Array.isArray(s.quest.done.L) && s.quest.done.L.indexOf(t[4]) !== -1); } });
+      });
+
+      /* ตัวนับใหม่ผูกกับเหตุการณ์จริง — ห่อเท่านั้น ไม่แตะชั้นล่าง */
+      if (typeof abSealBroken === 'function') {
+        const _a = abSealBroken;
+        abSealBroken = function () {
+          const was = typeof AB_SEAL !== 'undefined' && AB_SEAL && AB_SEAL.done;
+          const r = _a.apply(this, arguments);
+          try { if (!was && AB_SEAL && AB_SEAL.done && G.quest && !G.practiceMode) { qSync(); qAdd('seal', 1); } } catch (e) { qe(e, 'seal'); }
+          return r;
+        };
+      }
+      if (typeof baQdAdd === 'function') {
+        const _b = baQdAdd;
+        baQdAdd = function (key, n) {
+          const r = _b.apply(this, arguments);
+          try {
+            if (G && G.quest && !G.practiceMode && n > 0 && (key === 'abyss' || key === 'mini')) {
+              qSync(); qAdd(key === 'abyss' ? 'abyss' : 'shadow', Math.floor(n));
+            }
+          } catch (e) { qe(e, 'add'); }
+          return r;
+        };
+      }
+      /* สกิลประจำคลาส (v9.1) ไม่ผ่าน useSkill — ถ้าไม่นับ เควสร่ายสกิลจะเป็นเควสตาย */
+      if (typeof baV91Activate === 'function') {
+        const _c = baV91Activate;
+        baV91Activate = function () {
+          const mp0 = G ? G.mp : 0;
+          const r = _c.apply(this, arguments);
+          try { if (G && G.quest && !G.practiceMode && G.mp < mp0) { qSync(); qAdd('skill', 1); qAfterProgress(); } } catch (e) { qe(e, 'cast'); }
+          return r;
+        };
+      }
+      if (typeof baPlCast === 'function') {
+        const _d = baPlCast;
+        baPlCast = function () {
+          const r = _d.apply(this, arguments);
+          try { if (r && G && G.quest && !G.practiceMode) { qSync(); qAdd('skill', 1); qAfterProgress(); } } catch (e) { qe(e, 'ult'); }
+          return r;
+        };
+      }
+
+      /* ซิงก์ข้ามเครื่อง: เควสระยะยาวที่รับแล้ว = union (ไม่รับซ้ำ ไม่หายเมื่อสลับเครื่อง) */
+      if (typeof caEx === 'function') {
+        const _e = caEx;
+        caEx = function (a) {
+          const o = _e.apply(this, arguments);
+          try { o.ql = ((a && a.quest && a.quest.done && a.quest.done.L) || []).join(','); } catch (e) {}
+          return o;
+        };
+      }
+      if (typeof caUnion === 'function') {
+        const _f = caUnion;
+        caUnion = function (a, r) {
+          let n = _f.apply(this, arguments);
+          try {
+            const e = r && r.ex;
+            if (a && e && typeof e.ql === 'string' && e.ql) {
+              a.quest = qEnsureQ(a.quest);
+              e.ql.split(',').forEach(function (id) {
+                const d = qById(id);
+                if (d && d.cat === 'L' && a.quest.done.L.indexOf(id) < 0) { a.quest.done.L.push(id); n++; }
+              });
+            }
+          } catch (x) { qe(x, 'union'); }
+          return n;
+        };
+      }
+      if (typeof baBattleAudit === 'function') {
+        const _g = baBattleAudit;
+        baBattleAudit = function () {
+          const r = _g.apply(this, arguments);
+          try { r.questRebalance = { ver: 'v9.22', total: Q_DEFS.length, pillars: PN,
+                  gemRewards: BA_QD_DEFS.some(function (q) { return q.rw; }) || Q_DEFS.some(function (q) { return q.gem; }) }; } catch (e) {}
+          return r;
+        };
+      }
+    })();
 
   </script>
 </body>

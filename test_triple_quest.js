@@ -491,7 +491,7 @@ function eq(name, got, want) { ok(name + ' (=' + JSON.stringify(want) + ')', got
   eq('บล็อกของชั้นนี้มีใบเดียวหลังเรนเดอร์ 30 รอบ', board.blocks, 1);
   eq('แถวเควส 9 แถว', board.rows, 9);
   eq('หัวข้อ 3 สาย', board.secs, 3);
-  eq('20 เควสของ v4.2 ยังอยู่ครบ', board.v42rows, 20 + 9);
+  eq('20 เควสของ v4.2 ยังอยู่ครบ', board.v42rows, 20 + 9 + 10); /* v9.22 เพิ่ม D8 W7-W9 L8-L13 อีก 10 แถว */
   ok('กระดานเปิดอยู่', board.open);
 
   const layout = await page.evaluate(() => ({

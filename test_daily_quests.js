@@ -33,10 +33,10 @@ const WANT_ABYSS = [
   { to: 25, k: 15, p: 5, c: 10 }
 ];
 const WANT_QUESTS = [
-  { id: 'f20',    goal: 1,  rw: 20 },
-  { id: 'abyss',  goal: 5,  rw: 50 },
-  { id: 'mini',   goal: 50, rw: 30 },
-  { id: 'dragon', goal: 1,  rw: 20 }
+  { id: 'f20',    goal: 1,  gold: 120, exp: 200 },
+  { id: 'abyss',  goal: 3,  gold: 150, exp: 250 },
+  { id: 'mini',   goal: 20, gold: 100, exp: 200 },
+  { id: 'dragon', goal: 1,  gold: 120, exp: 200 }
 ];
 
 async function boot(browser, w, h) {
@@ -153,9 +153,9 @@ async function slay(page, perfect) {
 
     eq('เควสครบ 5 รายการ (4 + โบนัสเก็บครบ)', a.daily.defs.length, 4);
     eq('เป้าหมาย/รางวัลของทั้งสี่เควส', a.daily.defs, WANT_QUESTS);
-    eq('โบนัสเก็บครบทั้งวัน', a.daily.allRw, 50);
-    eq('รวมรางวัลเควสทั้งวัน = 170 💎',
-       a.daily.defs.reduce((s, q) => s + q.rw, 0) + a.daily.allRw, 170);
+    eq('โบนัสเก็บครบทั้งวัน', a.daily.allRw, { gold: 200, exp: 400 });
+    eq('รวมรางวัลเควสทั้งวัน = 690 ทอง (ไม่มี 💎)',
+       a.daily.defs.reduce((s, q) => s + q.gold, 0) + a.daily.allRw.gold, 690);
 
     ok('ทางเข้าสาธารณะเป็นฟังก์ชันครบทุกตัว',
        await b.page.evaluate(() => ['baQdOpen', 'baQdClose', 'baQdClaim', 'baQdRender', 'baQdEnsure']
@@ -192,7 +192,7 @@ async function slay(page, perfect) {
          G.dq.c = { f20: -5, abyss: 'x', mini: 9999, dragon: 1.7 };
          baQdEnsure(G);
          return G.dq.c;
-       }), { f20: 0, abyss: 0, mini: 50, dragon: 1 });
+       }), { f20: 0, abyss: 0, mini: 20, dragon: 1 });
 
     eq('id ที่ไม่มีจริงกับ id ซ้ำ ถูกกวาดทิ้ง',
        await b.page.evaluate(() => {
@@ -461,28 +461,28 @@ async function slay(page, perfect) {
 
     /* ทำครบทั้งสี่แล้วกดรับทีละใบ */
     const claim = await b.page.evaluate(() => {
-      G.dq.c = { f20: 1, abyss: 5, mini: 50, dragon: 1 };
+      G.dq.c = { f20: 1, abyss: 3, mini: 20, dragon: 1 };
       G.dq.done = [];
       baQdRender();
       const out = { each: [], gems: 0 };
       const s0 = abShards(G);
       ['f20', 'abyss', 'mini', 'dragon'].forEach(id => {
-        const before = abShards(G);
+        const before = G.gold;
         baQdClaim(id);
-        out.each.push(abShards(G) - before);
+        out.each.push(G.gold - before);
       });
       out.allRdyBefore = baQdAllOk();
-      const beforeAll = abShards(G);
+      const beforeAll = G.gold;
       baQdClaim('all');
-      out.all = abShards(G) - beforeAll;
+      out.all = G.gold - beforeAll;
       out.gems = abShards(G) - s0;
       out.done = G.dq.done.slice();
       return out;
     });
-    eq('รับรางวัลรายเควสได้ตามตาราง', claim.each, [20, 50, 30, 20]);
+    eq('รับรางวัลรายเควสได้ตามตาราง', claim.each, [120, 150, 100, 120]);
     ok('ครบสี่แล้วโบนัสเก็บครบพร้อมรับ', claim.allRdyBefore === true);
-    eq('โบนัสเก็บครบจ่าย 50', claim.all, 50);
-    eq('รวมทั้งวันได้ 170 💎', claim.gems, 170);
+    eq('โบนัสเก็บครบจ่าย 200 ทอง', claim.all, 200);
+    eq('เควสไม่แจก 💎 สักเม็ด', claim.gems, 0);
     eq('บันทึกว่ารับไปแล้วครบทั้งห้า', claim.done, ['f20', 'abyss', 'mini', 'dragon', 'all']);
 
     eq('กดรับซ้ำใบเดิมแล้วไม่ได้อะไรเพิ่ม',

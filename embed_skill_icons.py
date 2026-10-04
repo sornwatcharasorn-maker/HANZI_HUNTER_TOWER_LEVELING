@@ -37,6 +37,7 @@ GAME, DIST, ROOT = embed_common.resolve_game(HERE)
 BUDGET_KB = embed_common.budget_kb(GAME, DIST)
 
 W_DEF = 40                            # แสดงจริงแค่ 26 CSS px (.g-skill-icon img)
+ALPHA_Q = int(os.environ.get('ALPHA_Q', '40'))   # คุณภาพช่องอัลฟา (เดิม 100 = ไม่ลด · ALPH กินราว 60% ของไบต์)
 LADDER = [55, 48, 42, 36]             # บันไดคุณภาพ ถ้าที่ไม่พอ
 EXT = ('.jpg', '.jpeg', '.png', '.webp')
 DIRS = ('', 'assets', os.path.join('assets', 'skills'), os.path.join('assets', 'icons'))
@@ -83,7 +84,7 @@ def webp(path, w, q):
     if im.size != (w, w):
         im = im.resize((w, w), Image.LANCZOS)
     buf = io.BytesIO()
-    im.save(buf, 'WEBP', quality=q, method=6)
+    im.save(buf, 'WEBP', quality=q, method=6, alpha_quality=ALPHA_Q)
     return buf.getvalue(), im.size
 
 

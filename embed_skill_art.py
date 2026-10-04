@@ -36,6 +36,7 @@ BUDGET_KB = embed_common.budget_kb(GAME, DIST)
 # ความกว้าง "ต่อหนึ่งเฟรม" ไม่ใช่ของทั้งแถบ — สไปรต์บางใบเป็นแถบหลายเฟรม
 # (ท่ายืน 3 เฟรม · ท่าพุ่ง 4 เฟรม) จำนวนเฟรมอ่านจากฟิลด์ n ของทะเบียนในเกม
 W_DEF = 112          # #baHero กว้าง 62 CSS px (86-116 ตามความกว้างจอ) → 1.3 เท่าตามแถบ v6.5
+ALPHA_Q = int(os.environ.get('ALPHA_Q', '40'))   # คุณภาพช่องอัลฟา (เดิม 100 = ไม่ลด · ALPH กินราว 60% ของไบต์)
 LADDER = [52, 46, 40, 34]            # บันไดคุณภาพ ถ้าที่ไม่พอ
 EXT = ('.jpg', '.jpeg', '.png', '.webp')
 DIRS = ('', 'assets', os.path.join('assets', 'skills'), os.path.join('assets', 'sprites'))
@@ -105,7 +106,7 @@ def webp(path, fw, frames, q):
     if im.width != w:
         im = im.resize((w, round(im.height * w / im.width)), Image.LANCZOS)
     buf = io.BytesIO()
-    im.save(buf, 'WEBP', quality=q, method=6)
+    im.save(buf, 'WEBP', quality=q, method=6, alpha_quality=ALPHA_Q)
     return buf.getvalue(), im.size
 
 

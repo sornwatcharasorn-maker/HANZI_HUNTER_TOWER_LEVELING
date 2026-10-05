@@ -45813,6 +45813,424 @@
       }
     })();
 
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Patch v9.25 · TRUE BIDIRECTIONAL GM COMMAND WRITEBACK
+    //  (ห่อล้วน ต่อท้ายทุกชั้น · ไม่มี CSS ใหม่ · ไม่มี DOM ใหม่ · CLS = 0)
+    //
+    //  ปัญหาเดิม: เครื่องมือ GM ทุกตัว (เสกของ · 💎 · ทอง · เลเวล · ฮีล · ระงับ · ลบ · รีเซ็ต)
+    //  แก้แค่ loadStore() ของเครื่องครู แล้ว heartbeat 5 วิของเครื่องนักเรียน (v5.4)
+    //  PUT ทับคืนทั้งกิ่ง — ไม่มีช่องทางขาลงเลยสักทาง
+    //
+    //  ทางแก้: "กล่องคำสั่ง" ใต้แถวของนักเรียนเอง  /students/<u>/gmq/<id>
+    //  · GM → PATCH คำสั่งลงกล่อง (โหนดเดิม จึงใช้ RTDB Rules ชุดเดิมได้ทันที)
+    //  · นักเรียน → ก่อน PUT ทุกครั้ง GET กล่อง · ใช้คำสั่งที่ยังไม่เคยใช้ · แนบ gmAck
+    //    แล้ว PUT แทนที่ทั้งกิ่ง = กล่องถูกล้างในคำขอเดียวกัน (คำสั่งที่ยังใช้ไม่ได้
+    //    ถูกใส่กลับลงก้อนที่ PUT)  · ท่าเดียวกับ resetSignal ของ Micro-Patch นิวเคลียร์
+    //  · GM re-assert — คำสั่งที่ PUT รอบใหม่มาลบทิ้งโดยไม่มี gmAck ถูกยิงซ้ำเอง
+    //    (ใช้นาฬิกาของเครื่องครูล้วน ไม่เทียบนาฬิกาข้ามเครื่อง)
+    // ══════════════════════════════════════════════════════════════════════════
+    const BA_GQ_VER   = '9.25';
+    const BA_GQ_K_ACK = 'yao_gmq_ack';    /* ฝั่งนักเรียน {u:[id…]} — ระดับเครื่อง */
+    const BA_GQ_K_PND = 'yao_gmq_pend';   /* ฝั่งครู {u:{id:cmd}} — รอ gmAck */
+    const BA_GQ_ACK_MAX = 40, BA_GQ_TTL = 14 * 86400000, BA_GQ_RESEND = 4000;
+    let BA_GQ_IN = 0;        /* กำลังใช้คำสั่งบนเครื่องนักเรียน — ห้ามส่งคำสั่งซ้อนกลับ */
+    let BA_GQ_MUTE = 0;      /* กำลังรีเซ็ต — ห้าม diff ของ withStudent ส่งคำสั่ง edit ซ้ำ */
+    let BA_GQ_MODE = '';     /* โหมดรีเซ็ตที่กำลังทำ (ฝั่งครู) */
+    let BA_GQ_SKIPWB = '';   /* เป้าหมายเป็นแถวสด — ห้าม PUT /wordbank ด้วยก้อนภาพสะท้อน */
+    let BA_GQ_WB = 0;        /* wbRestore กำลังทำงาน — เลื่อนคำสั่งไปรอบถัดไป */
+    let BA_GQ_SEQ = 0;
+    const BA_GQ_SEEN = {};   /* id → เวลาที่ครูยิงล่าสุด (นาฬิกาเครื่องครู) */
+    const BA_GQ_N = { sent: 0, resend: 0, applied: 0, deferred: 0, acked: 0, del: 0, tomb: 0 };
+
+    function baGqErr(e, w) { try { baErr(e, 'gq925:' + w); } catch (x) {} }
+    function baGqOn() { try { return typeof fbOn === 'function' && fbOn(); } catch (e) { return false; } }
+    function baGqRd(k) { try { const v = JSON.parse(localStorage.getItem(k) || '{}'); return (v && typeof v === 'object') ? v : {}; } catch (e) { return {}; } }
+    function baGqWr(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+    function baGqAck(u) { const a = baGqRd(BA_GQ_K_ACK)[u]; return Array.isArray(a) ? a : []; }
+    function baGqAckAdd(u, id) {
+      const m = baGqRd(BA_GQ_K_ACK), a = Array.isArray(m[u]) ? m[u] : [];
+      if (a.indexOf(id) < 0) a.push(id);
+      m[u] = a.slice(-BA_GQ_ACK_MAX); baGqWr(BA_GQ_K_ACK, m);
+    }
+    function baGqPath(u, tail) { return fbUrl('/' + encodeURIComponent(u) + (tail || '')); }
+    function baGqPatch(u, tail, obj) {
+      return fbFetch(baGqPath(u, tail), { method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(obj) });
+    }
+
+    // ── 1) ฝั่งครู — ส่งคำสั่ง ────────────────────────────────────────────────
+    function baGqSend(u, cmd, keep) {
+      u = String(u || '').trim();
+      if (!u || BA_GQ_IN || !cmd || !baGqOn()) return '';
+      if (typeof CURRENT_USER !== 'undefined' && CURRENT_USER === u) return '';  /* เครื่องนี้คือเจ้าตัว — push ของมันเองพาไปแล้ว */
+      const id = 'q' + Date.now().toString(36) + (++BA_GQ_SEQ).toString(36);
+      cmd.id = id; cmd.at = Date.now();
+      if (keep !== false) {
+        const p = baGqRd(BA_GQ_K_PND);
+        p[u] = p[u] || {}; p[u][id] = cmd; baGqWr(BA_GQ_K_PND, p);
+      }
+      BA_GQ_SEEN[id] = Date.now();
+      const o = {}; o[id] = cmd;
+      baGqPatch(u, '/gmq', o).catch(function (e) { baGqErr(e, 'send'); });
+      if (cmd.t === 'edit' && typeof cmd.frz === 'boolean') {   /* ล็อกอินเครื่องอื่นถูกปฏิเสธทันทีผ่าน v5.8 */
+        baGqPatch(u, '', { frozen: cmd.frz }).catch(function (e) { baGqErr(e, 'frz'); });
+      }
+      BA_GQ_N.sent++;
+      return id;
+    }
+
+    function baGqSnap(a) {
+      if (!a) return null;
+      let mmp = 0; try { mmp = maxMpOf(a); } catch (e) {}
+      return { gold: +a.gold || 0, gem: Math.floor(+((a.ab || {}).shards) || 0),
+               items: Object.assign({}, a.items || {}), lv: +a.level || 1,
+               hp: +a.hp || 0, mhp: +a.maxHp || 0, mp: +a.mp || 0, mmp: mmp,
+               sh: +a.shield || 0, frz: a.frozen === true };
+    }
+    function baGqDiff(b, a) {
+      if (!b || !a) return null;
+      const c = { t: 'edit' }; let n = 0;
+      if (a.gold !== b.gold) { c.gold = a.gold - b.gold; n++; }
+      if (a.gem !== b.gem) { c.gem = a.gem - b.gem; n++; }
+      const it = {};
+      Object.keys(Object.assign({}, b.items, a.items)).forEach(function (k) {
+        const d = (+a.items[k] || 0) - (+b.items[k] || 0);
+        if (d) { it[k] = d; n++; }
+      });
+      if (Object.keys(it).length) c.items = it;
+      if (a.lv !== b.lv) { c.lv = a.lv; n++; }
+      if (a.hp !== b.hp) { c.hp = (a.hp >= a.mhp) ? -1 : a.hp; n++; }
+      if (a.mp !== b.mp) { c.mp = (a.mp >= a.mmp) ? -1 : a.mp; n++; }
+      if (a.sh !== b.sh) { c.sh = a.sh; n++; }
+      if (a.frz !== b.frz) { c.frz = a.frz; n++; }
+      return n ? c : null;
+    }
+    /* ห่อเครื่องมือ GM ด้วย diff ก่อน/หลัง — ครอบทุกคำสั่งโดยไม่ต้องรู้ว่าแก้ฟิลด์ไหน */
+    let BA_GQ_DEPTH = 0;
+    function baGqWrapEdit(fn) {
+      return function (user) {
+        const u = String(user || '').trim();
+        let b = null;
+        if (!BA_GQ_DEPTH && !BA_GQ_MUTE && !BA_GQ_IN) { try { b = baGqSnap(loadStore()[u]); } catch (e) {} }
+        BA_GQ_DEPTH++;
+        let r;
+        try { r = fn.apply(this, arguments); } finally { BA_GQ_DEPTH--; }
+        if (b) { try { const c = baGqDiff(b, baGqSnap(loadStore()[u])); if (c) baGqSend(u, c); } catch (e) { baGqErr(e, 'diff'); } }
+        return r;
+      };
+    }
+    if (typeof withStudent === 'function') withStudent = baGqWrapEdit(withStudent);
+    if (typeof gcItem === 'function') gcItem = baGqWrapEdit(gcItem);
+    if (typeof gcHeal === 'function') gcHeal = baGqWrapEdit(gcHeal);
+
+    /* รีเซ็ต: โหมดเต็มใช้ resetSignal ของนิวเคลียร์ (ล้าง+รีโหลด) · โหมดแยกส่วนใช้กล่องคำสั่ง
+       ก่อนแพตช์นี้ resetSignal ถูกยิงทุกโหมด = ล้างเกลี้ยงทั้งที่ครูสั่งแค่ล้างทอง */
+    if (typeof baFnCloud === 'function') {
+      const _gqFnCloud = baFnCloud;
+      baFnCloud = function () {
+        if (BA_GQ_MODE && BA_GQ_MODE !== 'full') return Promise.resolve(false);
+        return _gqFnCloud.apply(this, arguments);
+      };
+    }
+    if (typeof baGwCloud === 'function') {
+      const _gqGw = baGwCloud;
+      baGwCloud = function (u) {
+        if (BA_GQ_SKIPWB && BA_GQ_SKIPWB === String(u || '').trim()) return;   /* นักเรียนเขียน /wordbank เองหลังใช้คำสั่ง */
+        return _gqGw.apply(this, arguments);
+      };
+    }
+    if (typeof baMrApply === 'function') {
+      const _gqMr = baMrApply;
+      baMrApply = function (user, mode) {
+        const u = String(user || '').trim();
+        if (BA_GQ_IN) return _gqMr.apply(this, arguments);
+        let mir = false;
+        try { const a = loadStore()[u]; mir = !!(a && a.lrMirror); } catch (e) {}
+        const pm = BA_GQ_MODE, ps = BA_GQ_SKIPWB;
+        BA_GQ_MODE = String(mode || 'full'); BA_GQ_MUTE++;
+        if (mir && u !== CURRENT_USER) BA_GQ_SKIPWB = u;
+        let r;
+        try { r = _gqMr.apply(this, arguments); }
+        finally { BA_GQ_MUTE--; BA_GQ_MODE = pm; BA_GQ_SKIPWB = ps; }
+        if (r && String(mode || 'full') !== 'full') baGqSend(u, { t: 'reset', mode: String(mode) });
+        return r;
+      };
+    }
+
+    /* ลบไอดี: DELETE แถว (v7.2) แล้วทิ้งป้ายหลุมศพไว้ในกล่อง — heartbeat ของนักเรียน
+       จะเจอคำสั่ง del แล้วล้างบัญชีในเครื่องตัวเอง แทนที่จะ PUT แถวเก่ากลับขึ้นมา
+       · แถวที่มีแต่ gmq ไม่มี u/pwh/at = caRowOk ของ v5.8 นับว่า "ไม่มีแถว" → สมัครใหม่ได้ */
+    if (typeof baCloudDrop === 'function') {
+      const _gqDrop = baCloudDrop;
+      baCloudDrop = async function (u) {
+        const r = await _gqDrop.apply(this, arguments);
+        try {
+          u = String(u || '').trim();
+          if (u && baGqOn()) {
+            const p = baGqRd(BA_GQ_K_PND); delete p[u]; baGqWr(BA_GQ_K_PND, p);
+            /* ปลดหมุด 20 วิ ของนิวเคลียร์ ไม่งั้นแถวที่เพิ่งลบถูกปักกลับลง LIVE จนหมดล็อก */
+            try { delete BA_FN_LOCK[u]; delete BA_FN_CLEAN[u]; } catch (e) {}
+            try { delete FB_LIVE[u]; delete FB_LIVE[encodeURIComponent(u)]; } catch (e) {}
+            if (typeof wbUrl === 'function') {
+              await fbFetch(wbUrl('/' + encodeURIComponent(u)), { method: 'DELETE' }).catch(function () {});
+            }
+            if (baGqSend(u, { t: 'del' }, false)) BA_GQ_N.tomb++;
+          }
+        } catch (e) { baGqErr(e, 'drop'); }
+        return r;
+      };
+    }
+
+    // ── 2) ฝั่งครู — gmAck + re-assert + กันแถวหลุมศพโผล่ใน LIVE ──────────────
+    function baGqRow(u) {
+      if (typeof FB_LIVE === 'undefined' || !FB_LIVE) return null;
+      return FB_LIVE[u] || FB_LIVE[encodeURIComponent(u)] || null;
+    }
+    function baGqReassert() {
+      const p = baGqRd(BA_GQ_K_PND); let dirty = false;
+      const now = Date.now();
+      Object.keys(p).forEach(function (u) {
+        const row = baGqRow(u), q = p[u] || {};
+        Object.keys(q).forEach(function (id) {
+          const c = q[id];
+          if (!c || now - (+c.at || 0) > BA_GQ_TTL) { delete q[id]; dirty = true; return; }
+          if (!row) return;
+          if (Array.isArray(row.gmAck) && row.gmAck.indexOf(id) >= 0) { delete q[id]; dirty = true; BA_GQ_N.acked++; return; }
+          if (row.gmq && row.gmq[id]) return;
+          if (now - (+BA_GQ_SEEN[id] || 0) < BA_GQ_RESEND) return;
+          if (!row.u) return;                       /* ยังไม่มีแถวจริง = ไม่มี PUT ไหนลบกล่อง */
+          BA_GQ_SEEN[id] = now;
+          const o = {}; o[id] = c;
+          baGqPatch(u, '/gmq', o).catch(function (e) { baGqErr(e, 'resend'); });
+          BA_GQ_N.resend++;
+        });
+        if (!Object.keys(q).length) { delete p[u]; dirty = true; }
+      });
+      if (dirty) baGqWr(BA_GQ_K_PND, p);
+    }
+    if (typeof fbApply === 'function') {
+      const _gqApply = fbApply;
+      fbApply = function () {
+        const r = _gqApply.apply(this, arguments);
+        try {
+          if (typeof FB_LIVE !== 'undefined' && FB_LIVE) {
+            Object.keys(FB_LIVE).forEach(function (k) {
+              const x = FB_LIVE[k];
+              if (x && typeof x === 'object' && !x.u && !x.at) delete FB_LIVE[k];   /* หลุมศพ/คำสั่งค้าง ไม่ใช่นักเรียน */
+            });
+          }
+          baGqReassert();
+        } catch (e) { baGqErr(e, 'apply'); }
+        return r;
+      };
+    }
+
+    // ── 3) ฝั่งนักเรียน — ใช้คำสั่ง ──────────────────────────────────────────
+    function baGqMsg(t) {
+      try { const f = document.getElementById('gFeedback'); if (f && typeof G !== 'undefined' && G && G.currentMonster) f.textContent = t; } catch (e) {}
+    }
+    /* ใช้คำสั่งกับบัญชีใน store · live = กำลังเล่นบัญชีนี้อยู่บนเครื่องนี้
+       คืน 'del' เมื่อบัญชีถูกลบ (ผู้เรียกต้องทิ้ง PUT แล้วรีโหลด) */
+    function baGqApply(u, c, live) {
+      if (!c || !c.t) return '';
+      if (c.t === 'del') {
+        let a0 = null; try { a0 = loadStore()[u]; } catch (e) {}
+        if (a0 && (+a0.createdAt || 0) > (+c.at || 0)) return 'skip';   /* สมัครใหม่หลังถูกลบ */
+        try { const s = loadStore(); delete s[u]; saveStore(s); } catch (e) { baGqErr(e, 'del'); }
+        try { if (typeof csSesClear === 'function') csSesClear(); } catch (e) {}
+        BA_GQ_N.del++;
+        if (live) {
+          try { BA_FN_HALT = true; } catch (e) {}
+          try { setTimeout(function () { try { location.reload(); } catch (e) {} }, 400); } catch (e) {}
+        }
+        return 'del';
+      }
+      BA_GQ_IN++;
+      try {
+        if (live) { try { saveProgress(); } catch (e) {} }
+        if (c.t === 'reset') {
+          const m = String(c.mode || '');
+          if (m && m !== 'full' && typeof baMrApply === 'function') {
+            const w = (typeof BA_FN_WIPE !== 'undefined') ? BA_FN_WIPE : false;
+            try { BA_FN_WIPE = true; } catch (e) {}
+            try { baMrApply(u, m); } finally { try { BA_FN_WIPE = w; } catch (e) {} }
+          }
+          if (live) baGqMsg('[ระบบ] 📡 GM รีเซ็ตข้อมูลของคุณแล้ว');
+          return 'ok';
+        }
+        if (c.t !== 'edit') return 'skip';
+        let s = loadStore(), a = s[u];
+        if (!a) return 'skip';
+        if (c.gold) a.gold = Math.max(0, (+a.gold || 0) + (+c.gold || 0));
+        if (c.gem) {
+          if (!a.ab || typeof a.ab !== 'object') { try { abEnsure(a); } catch (e) { a.ab = { shards: 0 }; } }
+          const cap = (typeof AB_SHARD_CAP === 'number') ? AB_SHARD_CAP : 99999;
+          a.ab.shards = Math.max(0, Math.min(cap, Math.floor(+a.ab.shards || 0) + (+c.gem || 0)));
+        }
+        if (c.items && typeof c.items === 'object') {
+          if (!a.items || typeof a.items !== 'object') a.items = {};
+          Object.keys(c.items).forEach(function (k) {
+            try { if (!itemOf(k)) return; } catch (e) { return; }
+            a.items[k] = Math.max(0, (+a.items[k] || 0) + (+c.items[k] || 0));
+          });
+        }
+        if (c.lv) { const n = Math.max(1, Math.round(+c.lv)); a.level = n; a.exp = 0; try { a.maxExp = expForLevel(n); } catch (e) {} }
+        if (typeof c.sh === 'number') a.shield = Math.max(0, c.sh);
+        if (typeof c.frz === 'boolean') a.frozen = c.frz;
+        saveStore(s);
+        if (c.hp !== undefined || c.mp !== undefined) {
+          s = loadStore(); a = s[u];                 /* อ่านซ้ำ = migrateAccount คำนวณ maxHp ใหม่ตามเลเวลแล้ว */
+          if (a) {
+            if (c.hp !== undefined) a.hp = (+c.hp < 0) ? a.maxHp : Math.min(a.maxHp, Math.max(0, +c.hp));
+            if (c.mp !== undefined) { let mx = 0; try { mx = maxMpOf(a); } catch (e) {} a.mp = (+c.mp < 0) ? mx : Math.min(mx, Math.max(0, +c.mp)); }
+            saveStore(s);
+          }
+        }
+        if (live) {
+          /* 💎 ก่อน gcLive เสมอ — gcLive → renderStats → saveProgress → abSave เขียน G.ab เก่าทับ store */
+          try { const a2 = loadStore()[u]; if (a2 && a2.ab && G.ab) G.ab.shards = a2.ab.shards; } catch (e) {}
+          try { gcLive(u); } catch (e) {}
+          try { recalcStats(); } catch (e) {}
+          try { renderStats(); } catch (e) {}
+          try { renderItems(); } catch (e) {}
+          if (c.frz === true) {
+            try { setTimeout(function () { try { exitGame(); } catch (e) {} }, 60); } catch (e) {}
+          } else baGqMsg('[ระบบ] 📡 ได้รับคำสั่งจาก GM แล้ว');
+        }
+        return 'ok';
+      } catch (e) { baGqErr(e, 'apply:' + c.t); return 'skip'; }
+      finally { BA_GQ_IN--; }
+    }
+
+    /* ใช้คำสั่งทั้งกล่องตามลำดับเวลา → { applied, keep, dead } */
+    function baGqRun(u, q, live) {
+      const out = { applied: 0, keep: {}, dead: false };
+      if (!q || typeof q !== 'object') return out;
+      const ack = baGqAck(u);
+      Object.keys(q).map(function (id) { return q[id]; })
+        .filter(function (c) { return c && typeof c === 'object' && c.id; })
+        .sort(function (x, y) { return (+x.at || 0) - (+y.at || 0); })
+        .forEach(function (c) {
+          if (out.dead || ack.indexOf(c.id) >= 0) return;
+          if (BA_GQ_WB > 0 && live) { out.keep[c.id] = c; BA_GQ_N.deferred++; return; }
+          const r = baGqApply(u, c, live);
+          if (r === 'del') { out.dead = true; return; }
+          baGqAckAdd(u, c.id);
+          if (r === 'ok') { out.applied++; BA_GQ_N.applied++; }
+        });
+      return out;
+    }
+
+    /* gmAck เดินทางไปกับทุก payload (รวม keepalive) — ครูจึงทิ้งคำสั่งที่ค้างได้ */
+    if (typeof fbPayload === 'function') {
+      const _gqPay = fbPayload;
+      fbPayload = function (user) {
+        const p = _gqPay.apply(this, arguments);
+        try { const k = baGqAck(String(user || '')); if (p && k.length) p.gmAck = k.slice(-20); } catch (e) {}
+        return p;
+      };
+    }
+
+    /* ซีลชั้นนอกสุดของ PUT แถวตัวเอง — GET กล่อง → ใช้ → สร้าง body ใหม่จากบัญชีล่าสุด */
+    if (typeof fbFetch === 'function') {
+      const _gqFetch = fbFetch;
+      fbFetch = function (url, opt) {
+        let u = '';
+        try {
+          if (opt && opt.method === 'PUT' && typeof opt.body === 'string' && !opt.keepalive &&
+              typeof CURRENT_USER !== 'undefined' && CURRENT_USER && !BA_GQ_IN) {
+            const base = baGqPath(CURRENT_USER).split('?')[0];
+            if (String(url).split('?')[0] === base) u = CURRENT_USER;
+          }
+        } catch (e) { u = ''; }
+        if (!u) return _gqFetch.call(this, url, opt);
+        const self = this;
+        return _gqFetch.call(self, baGqPath(u, '/gmq')).then(function (q) {
+          if (!q || typeof q !== 'object') return _gqFetch.call(self, url, opt);
+          const live = (typeof G !== 'undefined' && !!G);
+          const r = baGqRun(u, q, live);
+          if (r.dead) return null;                            /* บัญชีถูกลบ — ห้าม PUT แถวกลับขึ้นไป */
+          let body;
+          try {
+            body = (r.applied && loadStore()[u]) ? fbPayload(u, loadStore()[u]) : JSON.parse(opt.body);
+            if (r.applied) { const o = JSON.parse(opt.body); ['pwh', 'resetSignal'].forEach(function (k) { if (o[k] !== undefined) body[k] = o[k]; }); }
+          } catch (e) { return _gqFetch.call(self, url, opt); }
+          const k = baGqAck(u); if (k.length) body.gmAck = k.slice(-20);
+          if (Object.keys(r.keep).length) body.gmq = r.keep;
+          if (r.applied && typeof wbPush === 'function') { try { setTimeout(function () { wbPush(u); }, 0); } catch (e) {} }
+          return _gqFetch.call(self, url, Object.assign({}, opt, { body: JSON.stringify(body) }));
+        }, function () { return _gqFetch.call(self, url, opt); });
+      };
+    }
+
+    /* wbRestore (v9.9/v9.24) กำลังผสานก้อนคลาวด์ — เลื่อนคำสั่งไปหลังผสานเสร็จ */
+    if (typeof wbRestore === 'function') {
+      const _gqWb = wbRestore;
+      wbRestore = async function (user) {
+        BA_GQ_WB++;
+        try { return await _gqWb.apply(this, arguments); }
+        finally {
+          BA_GQ_WB--;
+          if (!BA_GQ_WB && BA_GQ_N.deferred) { try { if (CURRENT_USER === user) fbPush(user); } catch (e) {} }
+        }
+      };
+    }
+
+    /* ล็อกอิน: นักเรียนที่ถูกระงับเล่นไม่ได้ → heartbeat ไม่เคยวิ่ง → คำสั่งปลดระงับไม่ถึง
+       จึงดึงกล่องมาใช้ระดับ store ก่อนให้ v4.0/v5.8 ตัดสินการล็อกอิน */
+    if (typeof handleSubmit === 'function') {
+      const _gqHs = handleSubmit;
+      let busy = false;
+      handleSubmit = function () {
+        if (busy || !baGqOn()) return _gqHs.apply(this, arguments);
+        let id = '';
+        try { const el = document.getElementById('login-id'); id = el ? String(el.value || '').trim() : ''; } catch (e) {}
+        let has = false; try { has = !!(id && loadStore()[id]); } catch (e) {}
+        if (!has) return _gqHs.apply(this, arguments);
+        const self = this, args = arguments;
+        busy = true;
+        return fbFetch(baGqPath(id, '/gmq')).then(function (q) {
+          try { baGqRun(id, q, false); } catch (e) { baGqErr(e, 'login'); }
+        }, function () {}).then(function () {
+          busy = false;
+          return _gqHs.apply(self, args);
+        });
+      };
+    }
+
+    /* ข้อความเตือนเดิม "ยังส่งกลับไปเครื่องนักเรียนไม่ได้" ไม่จริงแล้ว — แก้เฉพาะตัวอักษร */
+    function baGqNote() {
+      if (!baGqOn()) return;
+      try {
+        document.querySelectorAll('#gcBody .lr-note').forEach(function (n) {
+          if (n.dataset.gq) return; n.dataset.gq = '1';
+          n.innerHTML = '📡 <b>แถวนี้มาจากสัญญาณเรียลไทม์</b> — ทุกคำสั่ง GM ถูกส่งลงกล่องคำสั่งของนักเรียน' +
+            '<br>เครื่องนักเรียนจะ<b>ใช้คำสั่งเองใน heartbeat ถัดไป</b> (ออฟไลน์อยู่ = ใช้ตอนกลับมา)';
+        });
+        document.querySelectorAll('.ba-mr-mirror').forEach(function (n) {
+          n.textContent = '📡 แถวสด — คำสั่งรีเซ็ตจะถูกส่งไปใช้บนเครื่องนักเรียนใน heartbeat ถัดไป';
+        });
+      } catch (e) {}
+    }
+    if (typeof lrMirrorNote === 'function') {
+      const _gqNote = lrMirrorNote;
+      lrMirrorNote = function () { const r = _gqNote.apply(this, arguments); baGqNote(); return r; };
+    }
+    if (typeof baMrOpen === 'function') {
+      const _gqOpen = baMrOpen;
+      baMrOpen = function () { const r = _gqOpen.apply(this, arguments); baGqNote(); return r; };
+    }
+
+    if (typeof baBattleAudit === 'function') {
+      const _gqAudit = baBattleAudit;
+      baBattleAudit = function () {
+        const o = _gqAudit.apply(this, arguments) || {};
+        o.gmWriteback = { ver: BA_GQ_VER, on: baGqOn(), pend: baGqRd(BA_GQ_K_PND),
+                          ack: baGqRd(BA_GQ_K_ACK), wb: BA_GQ_WB, n: Object.assign({}, BA_GQ_N) };
+        return o;
+      };
+    }
+
   </script>
 </body>
 </html>

@@ -71,7 +71,7 @@ node build_minify.js --check   # ดูตัวเลขเฉย ๆ ไม่
 (`python3 embed_arena_art.py --q 44` คืนได้ราว 15KB · `python3 embed_hero_art.py --pal 32` คืนได้ราว 20KB · หรือ `--clear` คืนทั้ง 250KB)
 **อย่าไปลบคอมเมนต์ในต้นฉบับเพื่อประหยัดที่เด็ดขาด**
 
-**ชุดเทสต์ทั้ง 42 ชุดชี้ไปที่ไฟล์แจก** (รากrepo) โดยเจตนา — เราต้องพิสูจน์ว่า *ของที่นักเรียนได้จริง*
+**ชุดเทสต์ทั้ง 43 ชุดชี้ไปที่ไฟล์แจก** (รากrepo) โดยเจตนา — เราต้องพิสูจน์ว่า *ของที่นักเรียนได้จริง*
 ทำงานครบ ไม่ใช่พิสูจน์ต้นฉบับที่ไม่มีใครได้ใช้ **แก้ต้นฉบับแล้วต้อง build ก่อนรันเทสต์เสมอ**
 ไม่งั้นจะไปวัดไฟล์แจกใบเก่าแล้วสรุปผิด (ดูกับดักข้อ 28)
 
@@ -10723,6 +10723,45 @@ Lives in the existing `ba` namespace as one IIFE, `baV924Install`, at the very e
 **Audit:** `baBattleAudit().classSync` returns `{ver, classId, classAt, hold, n:{lww,disc,keep,sw,held}}`.
 
 **Tests:** `test_class_lww.js` (26 cases), run with `NODE_PATH=/opt/node22/lib/node_modules node test_class_lww.js`. Switching class in a test must top up gold/💎 for the v9.x gat cost, then click `#gmModalOk` for the swc layer. The switch happens in the callback, not at the time `baPlSwitch` returns.
+
+
+#### Patch v9.25 · TRUE BIDIRECTIONAL GM COMMAND WRITEBACK (คำสั่ง GM ถึงเครื่องนักเรียนจริง)
+
+Lives in the existing `ba` namespace as a block of wrappers at the very end of the source file (after v9.24, before `</script>`). **It changes no code from earlier layers.** It adds **zero CSS, zero DOM nodes and zero buttons (CLS = 0)**, and doesn't call `Math.random`. The distribution file grows by about 11.6KB (logic only): 1,942,143 bytes, leaving 57,857 bytes of headroom.
+
+**Bug it fixes:** every GM tool (items · 💎 · gold · level · heal · freeze · reset · delete) only edited the GM machine's own `loadStore()`. Then the student's 5-second heartbeat (v5.4) PUT the whole branch back over it, so there was no downstream path at all. Delete was worse: the next heartbeat recreated the row, and every reset mode sent `resetSignal`, which wipes the whole account even when the teacher only asked to clear gold.
+
+##### Command box `/students/<u>/gmq/<id>`
+
+| Side | What it does |
+|---|---|
+| GM | **PATCH** the command into the box (same node, so the existing RTDB Rules work immediately) and keep it in `yao_gmq_pend` until it is acknowledged |
+| Student | **Before every PUT** of its own row, GET the box → apply unused commands in time order → record the id in `yao_gmq_ack` → PUT a new body built from the latest account plus `gmAck`. The box is cleared in that same request (same technique as `resetSignal` in the nuclear Micro-Patch) |
+| GM | `fbApply` sees `gmAck`, so it drops the pending command. **If a command disappears with no ack** (overwritten by another device's PUT), it resends it automatically after 4 seconds, timed with the GM machine's clock only |
+
+**Commands are deltas, not absolute values.** `baGqWrapEdit` takes a snapshot before and after `withStudent` / `gcItem` / `gcHeal`, which covers every GM tool without needing to know which field each one changes. Gold, 💎 and items are sent as `+d`; level, shield and freeze are sent as the new value; HP/MP use `-1` = full bar, because each machine computes `maxHp` itself.
+
+- **💎 is written straight into `ab.shards`** (capped only by `AB_SHARD_CAP`), with no daily cap.
+- **`G.ab.shards` must be synced before calling `gcLive`.** Otherwise `gcLive → renderStats → saveProgress → abSave` writes the stale G back over the store.
+- **Freeze:** additionally PATCHes `{frozen}` on the row immediately, so v5.8 rejects logins from other devices right away. When the student applies the command, `exitGame()` runs.
+- **Unfreeze:** wraps `handleSubmit` so it fetches and applies the box at store level *before* login. A frozen student can't play, so the heartbeat never runs.
+- **Partial reset:** `{t:'reset', mode}` → the student calls `baMrApply(u, mode)` under `BA_FN_WIPE`. `resetSignal` is now sent **only for `full`**.
+- **Mirror-row reset:** the GM no longer PUTs `/wordbank` from the mirror copy (it could wipe data on the student's other device). The student writes it after applying the command.
+- **Delete:** DELETE the row (v7.2) and DELETE `/wordbank/<u>`, then leave a tombstone `{t:'del'}` in the box. A row that has only `gmq` (no u/at/pwh) counts as no row for `caRowOk` (v5.8), so the ID can be registered again.
+  - The student's heartbeat sees `del`, so it deletes the account from its own store, clears the session, sets `BA_FN_HALT`, reloads, and **does not PUT the row back**.
+  - If the account was created after the delete command (`createdAt > c.at`), the command is skipped.
+  - Delete also releases the nuclear 20-second pin (`BA_FN_LOCK`/`BA_FN_CLEAN`); otherwise the row is pinned back into LIVE.
+- **`wbRestore` in progress:** commands are deferred (kept in the box) and applied in the next round, so the v9.24 merge doesn't overwrite them.
+
+**Commands never carry pw** · `gmAck` holds at most 20 ids · TTL 14 days. The "can't send back to the student's device yet" warning in the student file (`.lr-note`/`.ba-mr-mirror`) has been replaced with accurate text.
+
+**Audit:** `baBattleAudit().gmWriteback = {ver, on, pend, ack, wb, n:{sent,resend,applied,deferred,acked,del,tomb}}`
+
+**Tests:** `test_gm_writeback.js` (43 cases), run with `NODE_PATH=/opt/node22/lib/node_modules node test_gm_writeback.js`.
+- It uses **two real browser contexts** (separate localStorage) sharing one fake cloud on the Node side via `exposeBinding`, with GET/PUT/PATCH/DELETE at every path depth.
+  - The stubs in the older suites only handle `/students/<u>`, so they can't test this layer.
+- Don't simulate SSE by assigning `FB_LIVE = …` directly; call `fbApply('put', …)` instead. Otherwise the tombstone-row filter and `baGqReassert` never run.
+- `test_nuclear_reset` has one case, "floor/loop on the cloud back to the tower start", that already **fails on HEAD** (loops=3). It is not a regression from this patch.
 
 
 ## กับดักที่เคยทำพังมาแล้ว

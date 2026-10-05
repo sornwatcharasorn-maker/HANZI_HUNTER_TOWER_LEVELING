@@ -543,8 +543,8 @@ const audit = page => page.evaluate(() => baBattleAudit());
     });
     ok('กล่องกติกาบอกโควตาความผิดพลาดชุดใหม่ [' + rule.doomMax + ']',
        new RegExp('ไม่เกิน ' + rule.doomMax + ' ครั้ง').test(rule.t), rule);
-    ok('กล่องกติกาบอกโควตาน้ำยาชุดใหม่ [' + rule.potMax + ']',
-       new RegExp('ฟื้นฟูได้ไม่เกิน ' + rule.potMax + ' ครั้ง').test(rule.t), rule);
+    /* v9.27: เพดานน้ำยาชั้น 20 ถูกยกเลิก — กล่องกติกาต้องบอกว่าไม่จำกัด */
+    ok('กล่องกติกาบอกว่าน้ำยาไม่จำกัดครั้ง', /ไม่จำกัดครั้ง/.test(rule.t) && !/ฟื้นฟูได้ไม่เกิน/.test(rule.t), rule);
     ok('ไม่มีเลขโควตาชุดเก่าหลงเหลืออยู่บนจอ', !/ไม่เกิน 2 ครั้ง/.test(rule.t), rule);
 
     const back = await b.page.evaluate(() => { baWvGateBack(); return { f: G.floor, open: baBattleAudit().apex.open }; });
@@ -631,9 +631,10 @@ const audit = page => page.evaluate(() => baBattleAudit());
       }
       return { used: used, cap: baBattleAudit().apex.potMax, n: baBattleAudit().apex.pot };
     });
-    eq('โควตาน้ำยาถูกผ่อนเป็น 3 ครั้ง', pot.cap, 3);
-    eq('ดื่มได้สามครั้งแรก ครั้งที่สี่เป็นต้นไปถูกบล็อก', pot.used, [1, 1, 1, 0, 0]);
-    eq('ตัวนับการดื่มหยุดที่เพดาน', pot.n, pot.cap);
+    /* v9.27: ยกเลิกเพดานน้ำยาชั้น 20 — ดื่มได้ทุกครั้งตามจำนวนในกระเป๋า */
+    eq('v9.27 ไม่มีเพดานน้ำยาแล้ว', pot.cap, Infinity);
+    eq('ดื่มได้ทั้งห้าครั้งติด', pot.used, [1, 1, 1, 1, 1]);
+    eq('ตัวนับของเพดานเดิมไม่ขยับ', pot.n, 0);
 
     /* ภาษีเวลา — วัดสองเรื่องแยกกัน
        (ก) ผลของภาษีล้วน ๆ ต้องวัดโดยขยับ BA_WV_TAXA เองในทิกเดียวกัน

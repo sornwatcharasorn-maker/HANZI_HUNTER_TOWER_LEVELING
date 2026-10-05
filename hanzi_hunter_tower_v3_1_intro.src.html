@@ -36878,6 +36878,19 @@
     // ══ 3) เกจปล่อยพลังของช่อง 4 — 8 ขีด ════════════════════════════════════
     const BA_PL_PIP_MAX = 8;
 
+    /* Patch v9.27 · เกจท่าไม้ตายต่อสายอาชีพ (C1/C2 ใช้ค่าเดียวกัน)
+       BA_PL_PIP_MAX = ค่าฐาน (assassin 8) ที่ชุดเทสต์อ่านอยู่ · ทุกจุดใช้งานจริงเรียก baPlPipMax()
+       guardian 4 · priest 4 · slayer 6 · assassin 8 — ขีดเป็น <i> 5px ใน flex จึงไม่มี CLS */
+    const BA_PL_PIP_BY = { guardian: 4, priest: 4, slayer: 6, assassin: 8 };
+    function baPlPipMax(src) {
+      try {
+        const c = baPlClass(src);
+        const n = BA_PL_PIP_BY[c && c.id];
+        if (n) return n;
+      } catch (e) {}
+      return BA_PL_PIP_MAX;
+    }
+
     // ══ 4) ค่าคลาสสวิตช์ ════════════════════════════════════════════════════
     /* Critical Bug Fix — เปลี่ยนสายอาชีพฟรีทุกครั้ง ไม่มีค่า 💎 อีกต่อไป
        (ของเดิมคิด 100,000 ตั้งแต่ครั้งที่สอง ซึ่งเกินเพดานเศษคริสตัลของ v4.6
@@ -36946,8 +36959,9 @@
 
       let u = a.ult;
       if (!u || typeof u !== 'object') u = a.ult = { pips: 0, locked: false };
-      u.pips = Math.max(0, Math.min(BA_PL_PIP_MAX, Math.round(u.pips || 0) || 0));
-      u.locked = u.pips >= BA_PL_PIP_MAX;   /* ล็อกตัวเองเสมอเมื่อเกจเต็ม */
+      const _pm = baPlPipMax(a);
+      u.pips = Math.max(0, Math.min(_pm, Math.round(u.pips || 0) || 0));
+      u.locked = u.pips >= _pm;   /* ล็อกตัวเองเสมอเมื่อเกจเต็ม */
       return a;
     }
 
@@ -36976,8 +36990,8 @@
       try { return Math.max(1, Math.min(BA_PL_LV_MAX, s.skills[baPlClass(s).id][i] | 0)); }
       catch (e) { return 1; }
     }
-    function baPlPips() { const g = baG(); try { return g.ult.pips | 0; } catch (e) { return 0; } }
-    function baPlUltReady() { return baPlPips() >= BA_PL_PIP_MAX; }
+    function baPlPips() { const g = baG(); try { return Math.min(g.ult.pips | 0, baPlPipMax(g)); } catch (e) { return 0; } }
+    function baPlUltReady() { return baPlPips() >= baPlPipMax(); }
 
     function baPlSave() {
       if (!BA_PL_READY) return;
@@ -37315,8 +37329,8 @@
     function baPlPipSet(g, n) {
       try {
         if (!g.ult || typeof g.ult !== 'object') g.ult = { pips: 0, locked: false };
-        g.ult.pips = Math.max(0, Math.min(BA_PL_PIP_MAX, n | 0));
-        g.ult.locked = g.ult.pips >= BA_PL_PIP_MAX;
+        g.ult.pips = Math.max(0, Math.min(baPlPipMax(), n | 0));
+        g.ult.locked = g.ult.pips >= baPlPipMax();
       } catch (e) { baPlErr(e, 'pipset'); }
     }
 
@@ -37330,7 +37344,7 @@
       /* เกจ — ของสะสมข้ามข้อ จึงเดินก่อนอย่างอื่นเสมอ */
       const p = baPlPips();
       if (ok) baPlPipSet(g, p + 1);
-      else if (p < BA_PL_PIP_MAX) baPlPipSet(g, 0);
+      else if (p < baPlPipMax()) baPlPipSet(g, 0);
 
       if (ok) {
         /* ช่อง 3 · นักบวช — ตอบถูกได้ MP เพิ่ม (หนีบด้วย maxMpOf ตามกับดักข้อ 12) */
@@ -37368,7 +37382,7 @@
     function baPlCast() {
       const g = baG();
       if (!g) return false;
-      if (!baPlUltReady()) { try { skillTip('⚡ เกจยังไม่เต็ม — ตอบถูกให้ครบ ' + BA_PL_PIP_MAX + ' ขีดก่อน'); } catch (e) {} return false; }
+      if (!baPlUltReady()) { try { skillTip('⚡ เกจยังไม่เต็ม — ตอบถูกให้ครบ ' + baPlPipMax() + ' ขีดก่อน'); } catch (e) {} return false; }
       try {
         const c = baPlClass(g), amt = baPlUltAmt(g);
         let msg = '';
@@ -37426,15 +37440,15 @@
         const el = baPlUltDom();
         if (!el) return;
         if (!g || !BA_PL_READY) { el.className = 'ba-pl-ult'; el.innerHTML = ''; BA_PL_ULT_S = ''; return; }
-        const p = baPlPips(), rdy = p >= BA_PL_PIP_MAX;
+        const p = baPlPips(), rdy = p >= baPlPipMax();
         const sig = p + '|' + (rdy ? 1 : 0) + '|' + baPlClass(g).id;
         if (sig === BA_PL_ULT_S) return;      /* ลายเซ็นกันวาดฟรี — renderStats วิ่งถี่มาก */
         BA_PL_ULT_S = sig;
         BA_PL_N.paint++;
         let pips = '';
-        for (let i = 0; i < BA_PL_PIP_MAX; i++) pips += '<i' + (i < p ? ' class="on"' : '') + '></i>';
+        for (let i = 0; i < baPlPipMax(); i++) pips += '<i' + (i < p ? ' class="on"' : '') + '></i>';
         el.className = 'ba-pl-ult on' + (rdy ? ' rdy' : '');
-        el.innerHTML = '<span class="ba-pl-uh">' + (rdy ? '⚡ พร้อมปล่อย' : '⚡ ' + p + '/' + BA_PL_PIP_MAX) +
+        el.innerHTML = '<span class="ba-pl-uh">' + (rdy ? '⚡ พร้อมปล่อย' : '⚡ ' + p + '/' + baPlPipMax()) +
                        '</span><span class="ba-pl-up">' + pips + '</span>';
       } catch (e) { baPlErr(e, 'ultPaint'); }
     }
@@ -37662,11 +37676,11 @@
       /* ── เกจปล่อยพลัง ── */
       const p = baPlPips();
       let up = '';
-      for (let i = 0; i < BA_PL_PIP_MAX; i++) up += '<i' + (i < p ? ' class="on"' : '') + '></i>';
+      for (let i = 0; i < baPlPipMax(); i++) up += '<i' + (i < p ? ' class="on"' : '') + '></i>';
       h += '<div class="g-sec-title">⚡ เกจปล่อยพลัง (ช่อง 4)</div>' +
            '<div class="ba-pl-ug"><span class="ba-pl-lp big">' + up + '</span>' +
-           '<button class="ba-pl-cast' + (p >= BA_PL_PIP_MAX ? ' rdy' : '') + '" onclick="baPlCast()">' +
-           (p >= BA_PL_PIP_MAX ? '⚡ ปล่อยพลัง' : p + ' / ' + BA_PL_PIP_MAX) + '</button></div>' +
+           '<button class="ba-pl-cast' + (p >= baPlPipMax() ? ' rdy' : '') + '" onclick="baPlCast()">' +
+           (p >= baPlPipMax() ? '⚡ ปล่อยพลัง' : p + ' / ' + baPlPipMax()) + '</button></div>' +
            '<div class="ba-pl-note">ตอบถูก +1 ขีด · ตอบผิดรีเซ็ตเฉพาะตอนเกจยังไม่เต็ม · ' +
            'เกจเต็มแล้วล็อกค้างไว้จนกว่าจะปล่อย</div>';
 
@@ -37929,7 +37943,7 @@
                        cost: BA_PL_COST[i].slice(), next: baPlNextCost(g, i) };
             }),
             maxout: BA_PL_MAXOUT,
-            pips: baPlPips(), pipMax: BA_PL_PIP_MAX, locked: baPlUltReady(),
+            pips: baPlPips(), pipMax: baPlPipMax(), locked: baPlUltReady(),
             shards: baPlShards(), scan: BA_PL_SCAN,
             art: baPlArt(g), registry: !!(ba && ba.assetRegistry),
             dom: { board: !!document.getElementById('baPlBoard'),
@@ -39457,7 +39471,7 @@
       for (let i = 0; i < 4; i++) {
         const r = baResolveSkillEffects(role, null, i, baPlSlotLv(g, i));
         const ult = r.cd < 0;
-        const tag = ult ? (rdy ? '⚡ พร้อม' : pips + ' / ' + BA_PL_PIP_MAX)
+        const tag = ult ? (rdy ? '⚡ พร้อม' : pips + ' / ' + baPlPipMax())
                         : (r.cd === 0 ? 'พาสซีฟ' : 'CD ' + r.cd);
         const cls = ult ? ('ba-ds-ult ' + (rdy ? 'rdy' : 'off')) : (r.cd === 0 ? 'ready' : 'off');
         h += '<button class="g-skill ' + cls + '" data-ds="' + i + '">' +
@@ -39740,7 +39754,7 @@
         /* เกจท่าไม้ตาย + % (อะตอม ultg — นักลอบสังหาร C1 ช่อง 2) */
         const ug = baDsAny(g, 'ultg');
         if (ug > 0 && baRand(100) < ug) {
-          try { baPlPipSet(g, Math.min(BA_PL_PIP_MAX, baPlPips() + 1)); } catch (e) {}
+          try { baPlPipSet(g, Math.min(baPlPipMax(), baPlPips() + 1)); } catch (e) {}
         }
         /* เกราะทุก 3 ข้อ (อะตอม barr — ผู้พิทักษ์เหวลึก C2 ช่อง 2) */
         const bar = baDsAny(g, 'barr');
@@ -40663,7 +40677,7 @@
        เติมความยาวข้อความในบรรทัดเดิม ไม่ใช่เพิ่มโหนด/แถวใหม่ · ป้ายอยู่ใน
        `.ba-pl-sh` ที่ตั้ง `white-space` ปกติของหัวข้อ ความสูงการ์ดจึงไม่ขยับ
 
-       ตัวเลขอ่านจาก `baV91Cost(i)` / `BA_V9_ULT_MP_PCT` / `BA_PL_PIP_MAX`
+       ตัวเลขอ่านจาก `baV91Cost(i)` / `BA_V9_ULT_MP_PCT` / `baPlPipMax()`
        ตัวเดียวกับที่แถบสกิล (baDsBarHtml) และตัวหักมานาจริง (baV91Activate
        / baPlCast) ใช้อยู่แล้ว จึงไม่มีทางที่ป้ายนี้กับของจริงจะเพี้ยนกัน
        (กติกาเดียวกับราคาร้านค้าของ v4.7.9.1) · **ห้ามฮาร์ดโค้ดเลข 25/40/40
@@ -40691,7 +40705,7 @@
               '· 🔮 ' + baV91Cost(0) + ' MP',
               '',
               '· 🔮 ' + baV91Cost(2) + ' MP',
-              '· 🔮 ' + BA_V9_ULT_MP_PCT + '% MP + ' + BA_PL_PIP_MAX + ' Pips'
+              '· 🔮 ' + BA_V9_ULT_MP_PCT + '% MP + ' + baPlPipMax() + ' Pips'
             ];
             tags.forEach(function (el, i) {
               const s = suf[i];
@@ -40716,7 +40730,7 @@
             armed: BA_V91_ARM.slice(),
             cd: BA_V91_CD.slice(),
             ultMpPctLabel: BA_V9_ULT_MP_PCT,
-            pipMaxLabel: BA_PL_PIP_MAX,
+            pipMaxLabel: baPlPipMax(),
             styled: !!document.getElementById('baV91Style'),
             n: Object.assign({}, BA_V91_N)
           };
@@ -41382,7 +41396,7 @@
     function baV95SlotState(g, i, r) {
       try {
         if (r.cd < 0) {                                    /* ช่อง 4 · ท่าไม้ตาย */
-          const pips = baPlPips(), max = BA_PL_PIP_MAX, ready = baPlUltReady();
+          const pips = baPlPips(), max = baPlPipMax(), ready = baPlUltReady();
           const cost = baV9UltCost(g);
           return { label: '🔮 ' + cost + ' MP · เกจ ' + pips + '/' + max + ' ขีด',
                     ready: ready, cls: ready ? 'on' : 'off' };
@@ -46532,6 +46546,48 @@
           const o = _kAudit.apply(this, arguments) || {};
           o.kit926 = { ver: K_VER, mp: K_G_S1_MP, shredCap: K_SHRED_CAP, hpCap: K_HP_CAP, trueNext: K_TRUE, sup: K_SUP,
                        mw: K_MW, mwPct: K_MWP, judg: K_JUDG, shred: K_SHRED, anti: kAnti(), n: Object.assign({}, K_N) };
+          return o;
+        };
+      }
+    })();
+
+    /* Patch v9.27 · ยกเลิกเพดานน้ำยาชั้น 20 (wrapper ล้วน — ไม่แตะโค้ดชั้นล่าง)
+       เพดานมีสองชั้นซ้อนกัน: v8.2 (BA_WV_POT) กับ v8.4 (BA_GB_POT) ต่างตรวจตัวนับของตัวเองที่ useItem
+       ชั้นนอกสุดนี้ล้างตัวนับทั้งคู่เป็น 0 ก่อนส่งต่อ และล้างอีกครั้งหลังเสร็จ → ทั้งสองไม่มีวันถึงเพดาน
+       ใช้ยาได้ตามจำนวนในกระเป๋า (BAG_SLOTS) ทุกชั้น · ข้อความบนโมดัลประตูกรองเลิกบอกโควตา */
+    (function baInstallV927() {
+      function zero() {
+        try { if (typeof BA_WV_POTN !== 'undefined') BA_WV_POTN = 0; } catch (e) {}
+        try { if (typeof BA_GB_POTN !== 'undefined') BA_GB_POTN = 0; } catch (e) {}
+      }
+      if (typeof useItem === 'function') {
+        const _v927Item = useItem;
+        useItem = function (kind) {
+          if (kind === 'potion') zero();
+          try { return _v927Item.apply(this, arguments); }
+          finally { if (kind === 'potion') zero(); }
+        };
+      }
+      if (typeof baWvGateRender === 'function') {
+        const _v927Gate = baWvGateRender;
+        baWvGateRender = function () {
+          const r = _v927Gate.apply(this, arguments);
+          try {
+            const el = document.querySelector('#baWvGateBody .ba-wv-gr');
+            if (el) el.innerHTML = el.innerHTML.replace(/🧪[^<]*<b>\d+<\/b>[^<]*<br>/, '🧪 ดื่มน้ำยาฟื้นฟูได้ไม่จำกัดครั้ง (ตามจำนวนในกระเป๋า)<br>');
+          } catch (e) {}
+          return r;
+        };
+      }
+      if (typeof baBattleAudit === 'function') {
+        const _v927Audit = baBattleAudit;
+        baBattleAudit = function () {
+          const o = _v927Audit.apply(this, arguments) || {};
+          try {
+            o.pipCaps = { by: Object.assign({}, BA_PL_PIP_BY), now: baPlPipMax(), potCap: false };
+            if (o.apex) { o.apex.potMax = Infinity; }
+            if (o.softening) { o.softening.potMax = Infinity; }
+          } catch (e) {}
           return o;
         };
       }

@@ -5978,7 +5978,7 @@
         cond:'ผ่านบอสประจำชั้นโดยไม่เสีย HP', goal:1, gold:180, exp:350, item:'insurance',
         prog: s => s.ironwallDone === true ? 1 : 0 },
       { id:'L5', no:18, cat:'L', icon:'🏆', name:'ผู้พิชิตหอคอย',
-        cond:'พิชิตหอคอยครบ 20 ชั้น 1 รอบ', goal:1, gold:500, exp:1000, item:'focus',
+        cond:'พิชิตหอคอยครบ ' + FLOOR_MAX + ' ชั้น 1 รอบ', goal:1, gold:500, exp:1000, item:'focus',
         prog: s => s.towerClears || 0 },
       { id:'L6', no:19, cat:'L', icon:'💰', name:'มหาเศรษฐีฮันเตอร์',
         cond:'สะสมทองรวมตลอดชีพ 3,000 ทอง', goal:3000, gold:300, exp:0,
@@ -45389,13 +45389,13 @@
       add({ id:'L12', no:29, cat:'L', icon:'🛡️', name:'Pure Run ชั้น ' + FLOOR_MAX,
         cond:'ล้มบอสชั้น ' + FLOOR_MAX + ' โดยไม่เปลี่ยนสายอาชีพ', goal:1, gold:800, exp:1500, title:'purerunner',
         prog: function (s) { return (s && s.r20 && Object.keys(s.r20).some(function (k) { return s.r20[k] === 1; })) ? 1 : 0; } });
-      add({ id:'L13', no:30, cat:'L', icon:'📖', name:'ปราชญ์อักขระโบราณ', cond:'พิชิตศัพท์ Tier 4 ครบ ' + CX_TOTAL + ' คำ',
+      add({ id:'L13', no:30, cat:'L', icon:'📖', name:'ปราชญ์อักขระโบราณ', cond:'ปลดล็อกคำศัพท์ในคลังอักขระโบราณครบ ' + CX_TOTAL + ' คำ',
         goal:CX_TOTAL, gold:600, exp:1200, title:'codexsage',
-        prog: function (s) { try { return baSmTier4Count(s); } catch (e) { return 0; } } });
+        prog: function (s) { try { return cxCount(s); } catch (e) { return 0; } } });   /* คำที่ตอบถูก ≥ 1 ครั้ง (Codex v4.4) */
       /* ฉายาเกียรติยศ — เงื่อนไขอ่านจากบัญชีที่ส่งมาเท่านั้น */
       [['sealkeeper','👑','ผู้พิทักษ์ผนึกทั้งสิบสอง','เสาหลักเต็มครบ','L11'],
        ['purerunner','🛡️','จอมสายเดียว','Pure Run ชั้น ' + FLOOR_MAX,'L12'],
-       ['codexsage','📖','ปราชญ์อักขระโบราณ','ศัพท์ Tier 4 ครบทุกคำ','L13']].forEach(function (t) {
+       ['codexsage','📖','ปราชญ์อักขระโบราณ','ปลดล็อกศัพท์ในคลังอักขระครบทุกคำ','L13']].forEach(function (t) {
         if (TITLES.some(function (x) { return x.key === t[0]; })) return;
         TITLES.push({ key:t[0], icon:t[1], name:t[2], cond:'รับรางวัลเควส · ' + t[3], bonus:{ int:4 },
           check: function (s) { return !!(s && s.quest && s.quest.done && Array.isArray(s.quest.done.L) && s.quest.done.L.indexOf(t[4]) !== -1); } });

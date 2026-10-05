@@ -45479,6 +45479,124 @@
       }
     })();
 
+
+    /* ══════════════════════════════════════════════════════════════════════
+       Patch v9.23 · PILLAR TELEMETRY (12 เสาหลักสดบนแถวสดของห้องควบคุม GM)
+       ต้นเหตุ: fbPayload ของ v5.3 ส่งแค่ lv/words/acc/... เสา core · class · hunt ·
+       combo · speed · quest · seal · abyss · purify จึงไม่มีทางถึงเครื่องครู แถวสดที่
+       lrGhost ปั้น (blankAccount) ค้างที่ 0 ทั้ง 9 เสา แม้ lv/คำศัพท์จะถูกต้อง
+       แก้: เติมคีย์ `pl` (สตริงเดียว ~60-90 ไบต์ ไม่ใช่ JSON) ลง payload เดิม แล้วให้ lrApply
+       เขียนกลับลงฟิลด์เดิมของบัญชี (ab.core/ab.seals/mn.sh/mn2/fastAnswers/skills)
+       ตัวอ่านเสา BA_MN_PILL ไม่ถูกแตะ — baGwPillars อ่านผ่านฟิลด์เดิมได้เองทุกต้น
+       ไม่เพิ่ม CSS/DOM/ฟิลด์บัญชีถาวร · แถวสดเขียนทับตรง ๆ · บัญชีจริงบนเครื่อง max-merge
+       ══════════════════════════════════════════════════════════════════════ */
+    (function baPl923Install() {
+      function pe(e, w) { try { baErr(e, 'pl923:' + w); } catch (x) {} }
+      const ni = function (v) { v = Math.round(+v); return (v === v && v > 0) ? v : 0; };
+
+      /* รูปแบบ: core(key+lv,…)|sealMask|sh|kill,combo,quest,pure|fast|classMask */
+      function plEncode(a) {
+        const core = AB_CORES.map(function (c) { return c.key + ni(abCoreLv(a, c.key)); }).join(',');
+        let sm = 0;
+        AB_SEAL_FLOORS.forEach(function (f, i) { const s = abSealsOf(a)[String(f)]; if (s && s.broken) sm |= (1 << i); });
+        let cm = 0;
+        BA_PL_CLASSES.forEach(function (c, i) { if (baV912ClassMaxed(a, c.id)) cm |= (1 << i); });
+        const m2 = a.mn2 || {};
+        return [core, sm, ni(a.mn && a.mn.sh), [ni(m2.kill), ni(m2.combo), ni(m2.quest), ni(m2.pure)].join(','),
+                ni(a.fastAnswers), cm].join('|');
+      }
+
+      /* คืนจำนวนฟิลด์ที่เปลี่ยน · แถวสด (mirror) = ตั้งค่าตรง ๆ · บัญชีจริง = เพิ่มขึ้นอย่างเดียว */
+      function plApply(a, s) {
+        const f = String(s).split('|');
+        if (f.length < 6) return 0;
+        const mirror = !!(typeof LR_MIRROR === 'string' && a[LR_MIRROR]);
+        let hit = 0;
+        const put = function (o, k, v) {
+          if (o[k] === v) return;
+          if (!mirror && (+o[k] || 0) >= v) return;
+          o[k] = v; hit++;
+        };
+        if (typeof abEnsure === 'function') abEnsure(a);
+        if (typeof baMnEnsure === 'function') baMnEnsure(a);
+        if (typeof baMn2Ensure === 'function') baMn2Ensure(a);
+        if (!a.ab) return 0;
+        if (!a.ab.core) a.ab.core = {};
+        const lv = {};
+        f[0].split(',').forEach(function (t) { const m = /^([a-z]+)(\d+)$/.exec(t); if (m) lv[m[1]] = Math.min(AB_CORE_MAX, +m[2]); });
+        AB_CORES.forEach(function (c) { put(a.ab.core, c.key, lv[c.key] || 0); });
+        if (!a.ab.seals) a.ab.seals = {};
+        const sm = ni(f[1]);
+        AB_SEAL_FLOORS.forEach(function (fl, i) {
+          const k = String(fl), on = !!(sm & (1 << i)), cur = a.ab.seals[k] || (a.ab.seals[k] = { broken: false, flawless: false });
+          if (!!cur.broken !== on && (mirror || on)) { cur.broken = on; hit++; }
+        });
+        if (a.mn) put(a.mn, 'sh', ni(f[2]) & ((1 << BA_MN_SH) - 1));
+        const k4 = f[3].split(',');
+        ['kill', 'combo', 'quest', 'pure'].forEach(function (k, i) { if (a.mn2) put(a.mn2, k, ni(k4[i])); });
+        put(a, 'fastAnswers', ni(f[4]));
+        const cm = ni(f[5]);
+        if (!a.skills || typeof a.skills !== 'object') a.skills = {};
+        BA_PL_CLASSES.forEach(function (c, i) {
+          const on = !!(cm & (1 << i)), was = baV912ClassMaxed(a, c.id);
+          if (on && !was) { a.skills[c.id] = [BA_PL_LV_MAX, BA_PL_LV_MAX, BA_PL_LV_MAX, BA_PL_LV_MAX]; hit++; }
+          else if (!on && was && mirror) { a.skills[c.id] = [1, 1, 1, 1]; hit++; }
+        });
+        if (a.lrPl !== true) { a.lrPl = true; hit++; }
+        return hit;
+      }
+
+      if (typeof fbPayload === 'function') {
+        const _f = fbPayload;
+        fbPayload = function (user, a) {
+          const p = _f.apply(this, arguments) || {};
+          try { if (a) p.pl = plEncode(a); } catch (e) { pe(e, 'enc'); }
+          return p;
+        };
+      }
+      if (typeof lrApply === 'function') {
+        const _f = lrApply;
+        lrApply = function (a, r) {
+          let n = _f.apply(this, arguments) || 0;
+          try { if (a && r && typeof r.pl === 'string' && r.pl) n += plApply(a, r.pl); } catch (e) { pe(e, 'apply'); }
+          return n;
+        };
+      }
+      /* ลายเซ็น hydrate ต้องรู้ว่า pl ขยับ ไม่งั้นสัญญาณที่เปลี่ยนแค่เสาจะถูกข้ามเงียบ ๆ */
+      if (typeof lrSig === 'function') {
+        const _f = lrSig;
+        lrSig = function (rows) {
+          const s = _f.apply(this, arguments);
+          try { return s + '|' + (rows || []).map(function (r) { return (r && r.pl) || ''; }).sort().join(','); }
+          catch (e) { pe(e, 'sig'); return s; }
+        };
+      }
+      /* แถวสดที่มี pl ครบแล้ว ไม่ต้องขึ้นป้าย "ข้อมูลบางเสาอาจไม่ครบ" (เครื่องนักเรียนบิลด์เก่ายังไม่ส่ง pl จึงยังขึ้นป้ายอยู่) */
+      if (typeof baGwSealOpen === 'function') {
+        const _f = baGwSealOpen;
+        baGwSealOpen = function (u) {
+          const s = _f.apply(this, arguments);
+          try {
+            if (s && s.a && s.a.lrPl === true) {
+              const el = document.getElementById('baGwSeal');
+              if (el) Array.prototype.forEach.call(el.querySelectorAll('.g-modal-inner > div'), function (d) {
+                if (d.textContent.indexOf('📡 แถวสด') === 0) d.remove();
+              });
+            }
+          } catch (e) { pe(e, 'seal'); }
+          return s;
+        };
+      }
+      if (typeof baBattleAudit === 'function') {
+        const _g = baBattleAudit;
+        baBattleAudit = function () {
+          const r = _g.apply(this, arguments);
+          try { r.pillarTelemetry = { ver: 'v9.23', encode: plEncode, apply: plApply }; } catch (e) {}
+          return r;
+        };
+      }
+    })();
+
   </script>
 </body>
 </html>

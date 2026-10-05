@@ -106,6 +106,33 @@ const STUB = `(function(){ window.fetch = function(){ return Promise.reject(new 
   });
   ok('เครื่องนักเรียนบิลด์เก่า (ไม่มี pl) ยังขึ้นป้ายเตือนตามเดิม', old === true);
 
+  say('═══ 5b · ping เก่าไม่มี pl → ใช้ pl ล่าสุดที่เคยเห็น ไม่รีเซ็ตเสาเป็น 0 ═══');
+  const fb2 = await page.evaluate(([p]) => {
+    FB_LIVE = { pt05: Object.assign({}, p, { u: 'pt05', name: 'pt05', at: Date.now() }) }; lrHydrate(true);
+    const cached = !!JSON.parse(localStorage.getItem('yao_pl_last') || '{}').pt05;
+    const s = loadStore(); s.pt05.ab.core = {}; s.pt05.mn2 = { kill: 0, combo: 0, quest: 0, pure: 0 }; saveStore(s);
+    const legacy = Object.assign({}, p, { u: 'pt05', name: 'pt05', at: Date.now() + 5 }); delete legacy.pl;
+    FB_LIVE = { pt05: legacy }; lrHydrate(true);
+    const a = loadStore().pt05;
+    return { cached, core: BA_MN_PILL.find(q => q.id === 'core').get(a)[0], combo: BA_MN_PILL.find(q => q.id === 'combo').get(a)[0] };
+  }, [enc.p]);
+  ok('บันทึก pl ล่าสุดลงแคชเครื่องครู', fb2.cached === true, fb2);
+  ok('ping เก่า: เสาแกนกลับมาจากแคช (ไม่ใช่ 0)', fb2.core > 0, fb2);
+  ok('ping เก่า: เสาคอมโบกลับมาจากแคช (ไม่ใช่ 0)', fb2.combo > 0, fb2);
+
+  say('═══ 5c · เคลียร์ชั้น → ยิง ping เต็มทันที (PUT ที่มี pl) ═══');
+  const cf = await page.evaluate(async () => {
+    const puts = []; const of = fbFetch;
+    fbCfgSave && 0;
+    FB_CFG.on = true; FB_CFG.pub = true;
+    fbFetch = function (u, o) { if (o && o.method === 'PUT') puts.push(String(o.body)); return Promise.resolve(null); };
+    try { FB_BUSY = false; clearFloor(false); await new Promise(r => setTimeout(r, 300)); } catch (e) {}
+    fbFetch = of;
+    return { n: puts.length, hasPl: puts.some(b => /"pl":"/.test(b)) };
+  });
+  ok('clearFloor ยิง PUT ทันทีพร้อม pl', cf.n >= 1 && cf.hasPl, cf);
+  ok('meta no-cache ถูกใส่ในหัวไฟล์', await page.evaluate(() => !!document.querySelector('meta[http-equiv="Cache-Control"]')));
+
   say('═══ 6 · ลายเซ็น hydrate เห็น pl ขยับ + การ์ดโจทย์ไม่ขยับ + ไม่มี pageerror ═══');
   const sig = await page.evaluate(([p]) => {
     const a = lrSig([Object.assign({ u: 'x' }, p)]), b = lrSig([Object.assign({ u: 'x' }, p, { pl: p.pl + '1' })]);

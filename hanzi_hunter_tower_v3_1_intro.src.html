@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Hanzi Hunter 🗼</title>
+<meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;600;700&family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
 <style>
@@ -45558,8 +45560,41 @@
         const _f = lrApply;
         lrApply = function (a, r) {
           let n = _f.apply(this, arguments) || 0;
-          try { if (a && r && typeof r.pl === 'string' && r.pl) n += plApply(a, r.pl); } catch (e) { pe(e, 'apply'); }
+          try {
+            if (a && r) {
+              if (typeof r.pl === 'string' && r.pl) { n += plApply(a, r.pl); plSave(r.u || a.user, r.pl); }
+              else if (a[LR_MIRROR]) {
+                /* ping เก่า (เครื่องนักเรียนบิลด์ค้างแคช) ไม่มี pl → ใช้ pl ล่าสุดที่เคยเห็น แทนการทิ้งเสาไว้ที่ 0 */
+                const c = plLast()[String(r.u || a.user || '')];
+                if (c) n += plApply(a, c);
+              }
+            }
+          } catch (e) { pe(e, 'apply'); }
           return n;
+        };
+      }
+      /* แคช pl ล่าสุดรายคน (ระดับเครื่องครู · เขียนเฉพาะตอนค่าเปลี่ยน) */
+      let PL_MAP = null;
+      function plLast() {
+        if (PL_MAP) return PL_MAP;
+        try { PL_MAP = JSON.parse(localStorage.getItem('yao_pl_last') || '{}') || {}; } catch (e) { PL_MAP = {}; }
+        if (typeof PL_MAP !== 'object') PL_MAP = {};
+        return PL_MAP;
+      }
+      function plSave(u, pl) {
+        u = String(u || ''); if (!u) return;
+        const m = plLast();
+        if (m[u] === pl) return;
+        m[u] = pl;
+        try { localStorage.setItem('yao_pl_last', JSON.stringify(m)); } catch (e) {}
+      }
+      /* ตอนเคลียร์ชั้น ส่ง ping เต็ม (มี pl) ทันที ไม่รอหน่วง */
+      if (typeof clearFloor === 'function') {
+        const _cf = clearFloor;
+        clearFloor = function () {
+          const r = _cf.apply(this, arguments);
+          try { if (typeof fbPush === 'function' && CURRENT_USER) fbPush(CURRENT_USER); } catch (e) { pe(e, 'cf'); }
+          return r;
         };
       }
       /* ลายเซ็น hydrate ต้องรู้ว่า pl ขยับ ไม่งั้นสัญญาณที่เปลี่ยนแค่เสาจะถูกข้ามเงียบ ๆ */

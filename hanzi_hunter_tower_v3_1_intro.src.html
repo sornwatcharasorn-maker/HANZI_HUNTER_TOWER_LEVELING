@@ -45632,6 +45632,187 @@
       }
     })();
 
+    /* ============================================================
+       Patch v9.24 · CLASS STATE LAST-WRITE-WINS (แก้สายอาชีพไม่ซิงก์ข้ามเครื่อง)
+       ============================================================
+       อาการ: เครื่อง A (มือถือ) เปลี่ยนสายเป็น Guardian แต่เครื่อง B (PC) ที่เคย
+       เล่นมาแล้วยังค้างเป็น Slayer เสมอ
+       ต้นเหตุ: classId เดินทางผ่าน /wordbank (v9.13) ทางเดียว และ v9.13 รับมาทับ
+       **เฉพาะตอนเครื่องปลายทาง "สะอาด" (baV913Clean)** เท่านั้น — เครื่องที่เคยเล่น
+       แล้วจึงไม่มีวันรับสายใหม่ ส่วน /students (v5.3/v5.8) ไม่มีคีย์ classId เลย
+       และ wbPush ยิงเฉพาะตอน exitGame/หลังผสาน จึงอาจไม่ถึงคลาวด์ด้วยซ้ำ
+       ทางแก้ (ห่อล้วน ไม่แก้ชั้นล่าง · ไม่มี CSS/DOM ใหม่):
+       1) account.classAt = เวลาเปลี่ยนสายครั้งล่าสุด (ปั๊มที่ baPlSwitch) แล้ว wbPush ทันที
+       2) wbPayload แนบ classAt/gender/class_change_count/freeAlloc/ult
+       3) wbRestore ชั้นนอกสุด: classAt ฝั่งคลาวด์ใหม่กว่า = ทับสายทั้งก้อน แล้วรีบายด์
+          สกิล/ค่าพลัง/สไปรต์ทันที (ไม่ต้องรีเฟรช) · ฟิลด์ไม่สะสม (gold/items/floor/
+          level/exp/shards) ใช้ Last-Write-Wins จาก doc.at เทียบ lastActive ก่อนล็อกอิน
+          · ตัวนับสะสม (wordStats/mono/skills/core/seals/ax) ยังเป็น union ของชั้นเดิม
+       4) ระหว่างสาย restore กัน pushback ของชั้นใน (ซึ่งจะยิงสายเก่าขึ้นไปทับ)
+          แล้วยิงครั้งเดียวตอนจบ */
+    (function baV924Install() {
+      const BA_V924_VER = 'v9.24';
+      const BA_V924_N = { lww: 0, disc: 0, keep: 0, sw: 0, held: 0 };
+      const BA_V924_PRE = {};
+      let BA_V924_HOLD = 0, BA_V924_WANT = false;
+      function e924(e, w) { try { if (typeof gcErrPush === 'function') gcErrPush('classSync', (w || '') + ': ' + ((e && e.message) || e), BA_V924_VER, e && e.stack); } catch (x) {} }
+      function num(v) { v = Number(v); return isFinite(v) ? v : 0; }
+
+      if (typeof saveStore === 'function') {
+        const _ss = saveStore;
+        saveStore = function (s) {
+          try {
+            const g = baG(), a = g && s && typeof CURRENT_USER !== 'undefined' && CURRENT_USER && s[CURRENT_USER];
+            if (a && num(g.classAt) > num(a.classAt)) a.classAt = num(g.classAt);
+          } catch (e) {}
+          return _ss.apply(this, arguments);
+        };
+      }
+
+      if (typeof startGame === 'function') {
+        const _sg = startGame;
+        startGame = function (username) {
+          try {
+            const a = username && loadStore()[username];
+            BA_V924_PRE[username] = { la: num(a && a.lastActive), ca: num(a && a.classAt) };
+          } catch (e) {}
+          const r = _sg.apply(this, arguments);
+          try { const g = baG(); if (g) g.classAt = (BA_V924_PRE[username] || {}).ca || 0; } catch (e) {}
+          return r;
+        };
+      }
+
+      /* ปั๊ม classAt ที่ baPlSave ไม่ใช่ที่ baPlSwitch — ชั้น swc (หน้าต่างยืนยัน)
+         คืน true ทันทีแล้วเปลี่ยนจริงใน callback ทีหลัง ค่าคืนของ baPlSwitch
+         จึงเชื่อไม่ได้ · baPlSave คือจุดเดียวที่ classId ลงทะเบียนจริงทุกทาง */
+      let BA_V924_ADOPT = false;
+      if (typeof baPlSave === 'function') {
+        const _bps = baPlSave;
+        baPlSave = function () {
+          let fire = false;
+          try {
+            const g = baG();
+            if (g && BA_PL_READY && !BA_V924_ADOPT && BA_V924_HOLD === 0 && CURRENT_USER) {
+              const a = loadStore()[CURRENT_USER];
+              if (a && a.classId && g.classId && a.classId !== g.classId) {
+                g.classAt = Date.now(); BA_V924_N.sw++; fire = true;
+              }
+            }
+          } catch (e) { e924(e, 'stamp'); }
+          const r = _bps.apply(this, arguments);
+          try { if (fire && typeof wbPush === 'function') wbPush(CURRENT_USER); } catch (e) {}
+          return r;
+        };
+      }
+
+      if (typeof wbPayload === 'function') {
+        const _wp = wbPayload;
+        wbPayload = function (g) {
+          const p = _wp.apply(this, arguments);
+          try {
+            if (p && g) {
+              p.classAt = num(g.classAt);
+              p.gender = g.gender || 'male';
+              p.class_change_count = g.class_change_count | 0;
+              p.freeAlloc = Object.assign({}, g.freeAlloc || {});
+              p.ult = Object.assign({}, g.ult || {});
+            }
+          } catch (e) { e924(e, 'payload'); }
+          return p;
+        };
+      }
+
+      if (typeof wbPush === 'function') {
+        const _wpu = wbPush;
+        wbPush = function () {
+          if (BA_V924_HOLD > 0) { BA_V924_WANT = true; BA_V924_N.held++; return true; }
+          return _wpu.apply(this, arguments);
+        };
+      }
+
+      function adoptDiscrete(g, doc) {
+        let n = 0;
+        if (typeof doc.gold === 'number' && doc.gold !== g.gold) { g.gold = Math.max(0, doc.gold); n++; }
+        if (doc.items && typeof doc.items === 'object') { g.items = Object.assign({}, doc.items); n++; }
+        if (typeof doc.floor === 'number' && doc.floor >= 1 && doc.floor !== g.floor) {
+          g.floor = Math.min(FLOOR_MAX, doc.floor); g.floorProgress = doc.floorProgress | 0; n++;
+        }
+        if (typeof doc.level === 'number' && doc.level >= 1 && doc.level !== g.level) {
+          g.level = doc.level; g.maxExp = expForLevel(g.level); n++;
+        }
+        if (typeof doc.exp === 'number' && doc.exp !== g.exp) { g.exp = Math.max(0, Math.min(doc.exp, (g.maxExp || 1) - 1)); n++; }
+        if (doc.ab && typeof doc.ab.shards === 'number' && g.ab && doc.ab.shards !== g.ab.shards) { g.ab.shards = doc.ab.shards; n++; }
+        if (doc.freeAlloc && typeof doc.freeAlloc === 'object') { g.freeAlloc = Object.assign({}, doc.freeAlloc); n++; }
+        return n;
+      }
+
+      function rebind(g) {
+        try { baPlEnsure(g); } catch (e) {}
+        try { recalcStats(); } catch (e) {}
+        try { if (g.hp > g.maxHp) g.hp = g.maxHp; } catch (e) {}
+        try { saveProgress(); } catch (e) {}
+        try { baPlSave(); } catch (e) {}
+        try { if (typeof abSave === 'function') abSave(); } catch (e) {}
+        try { renderStats(); } catch (e) {}
+        try { renderItems(); } catch (e) {}
+        try { renderFloor(); } catch (e) {}
+        try { renderSkills(); } catch (e) {}
+        try { baSyncCurrentClassSkills(true); } catch (e) {}
+        try { if (typeof baDsHook === 'function') baDsHook('class'); } catch (e) {}
+        try { baPlUltPaint(); } catch (e) {}
+        try { const b = document.getElementById('baPlBoard'); if (b && b.classList.contains('active')) baPlRender(); } catch (e) {}
+      }
+
+      if (typeof wbRestore === 'function') {
+        const _wr = wbRestore;
+        wbRestore = async function (user) {
+          if (!user || typeof fbOn !== 'function' || !fbOn()) return _wr.apply(this, arguments);
+          let doc = null;
+          try { doc = await fbFetch(wbUrl('/' + encodeURIComponent(user))); } catch (e) {}
+          BA_V924_HOLD++;
+          let r;
+          try { r = await _wr.apply(this, arguments); }
+          catch (e) { e924(e, 'inner'); }
+          finally { BA_V924_HOLD--; }
+          let push = BA_V924_WANT; BA_V924_WANT = false;
+          try {
+            const g = baG();
+            if (doc && typeof doc === 'object' && doc.wordStats && typeof doc.wordStats === 'object' && g &&
+                typeof CURRENT_USER !== 'undefined' && CURRENT_USER === user) {
+              const pre = BA_V924_PRE[user] || { la: 0, ca: 0 };
+              const dAt = num(doc.at), dCa = num(doc.classAt), lCa = num(g.classAt);
+              const remoteNewer = dAt > pre.la;
+              let n = 0;
+              const classWins = dCa > lCa || (!dCa && !lCa && remoteNewer);
+              if (classWins && doc.classId && BA_PL_BY_ID[doc.classId]) {
+                if (doc.classId !== g.classId) { g.classId = doc.classId; n++; BA_V924_N.lww++; }
+                g.classAt = Math.max(lCa, dCa);
+                if (doc.gender === 'male' || doc.gender === 'female') g.gender = doc.gender;
+                g.class_change_count = Math.max(g.class_change_count | 0, doc.class_change_count | 0);
+              } else if (lCa > dCa) { BA_V924_N.keep++; push = true; }
+              if (remoteNewer) { const d = adoptDiscrete(g, doc); if (d) { n += d; BA_V924_N.disc += d; } }
+              if (n > 0) { BA_V924_ADOPT = true; try { rebind(g); } finally { BA_V924_ADOPT = false; } push = true; }
+            }
+          } catch (e) { e924(e, 'merge'); }
+          try { if (push) wbPush(user); } catch (e) {}
+          return r;
+        };
+      }
+
+      if (typeof baBattleAudit === 'function') {
+        const _au = baBattleAudit;
+        baBattleAudit = function () {
+          const r = _au.apply(this, arguments);
+          try {
+            const g = baG();
+            r.classSync = { ver: BA_V924_VER, classId: g ? g.classId : null, classAt: g ? num(g.classAt) : 0,
+                            hold: BA_V924_HOLD, n: Object.assign({}, BA_V924_N) };
+          } catch (e) {}
+          return r;
+        };
+      }
+    })();
+
   </script>
 </body>
 </html>

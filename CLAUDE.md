@@ -10764,6 +10764,14 @@ Lives in the existing `ba` namespace as a block of wrappers at the very end of t
 - `test_nuclear_reset` has one case, "floor/loop on the cloud back to the tower start", that already **fails on HEAD** (loops=3). It is not a regression from this patch.
 
 
+#### Patch v9.26 · GUARDIAN & PRIEST KIT REBALANCE (Floor 20 hooks)
+
+IIFE `baInstallK926` at the end of the source; wraps only (`baV91Cost/Reset/Activate`, `baPlCast`, `hunterAtk`, `critChance`, `baRsAmt`, `baWvPunish`, `baEnDrain`, `baFighting`, `resolveAnswer`, `exitGame`, `baBattleAudit`). Adds 11 wired atoms (`hpsc mpr shr tdm sup sbst mwd mwt smi spg jdg`) and rewrites `BA_DS_FX` for guardian/guard/priest/soulmaster, then resets `BA_DS_CK/CV`.
+- Guardian S1 stored `cd:1` (cd 0 means Passive); `BA_V91_CD[0]` is forced to 0 after a cast = effective CD 0, 18 MP. Armor shred = stacking damage multiplier (game has no DEF), cap 6, reset per monster.
+- True damage lowers `BA_BAR.base` with `monsterHp`, never kills (leaves 1 HP). Anti-heal scales only REGEN/SIPHON (`baRsAmt`); Absolute Punishment is clamped by `kClampHeal`. Suppress turns `baFighting()` false.
+- Floor-20 damage numbers (`smi`, `hpsc`, `spg`, `mwd`) are NOT empirically tuned; the v6.7 damage gate still caps per-answer damage. Audit: `baBattleAudit().kit926`.
+- Existing suites (`test_skill_dispatch` 54/40, `test_polarized_class` 124/20, `test_skill_anim` 170/3) have the same failure counts as before this patch (pre-existing stale assertions).
+
 ## กับดักที่เคยทำพังมาแล้ว
 
 ### 1. คิว toast วนไม่รู้จบ → หน้าเกมค้างสนิท

@@ -46266,14 +46266,14 @@
         hpsc: { t: 'ดาเมจเพิ่มตาม Max HP', u: '% /1k HP', w: 1 },
         mpr:  { t: 'ฟื้น MP ต่อข้อที่ถูก', u: ' MP',      w: 1 },
         shr:  { t: 'ทลายเกราะศัตรูซ้อน',   u: '%/ข้อ',    w: 1 },
-        tdm:  { t: 'ข้อถัดไปเป็น True Damage', u: ' ข้อ', w: 1 },
+        tdm:  { t: 'ข้อถัดไปเป็นดาเมจจริงไม่คิดเกราะ', u: ' ข้อ', w: 1 },
         sup:  { t: 'ระงับบอสฟื้น/ร่าย',    u: ' เทิร์น',  w: 1 },
-        sbst: { t: 'Shield Burst',          u: '% Max HP', w: 1 },
-        mwd:  { t: 'Mortal Wound บอสฟื้น −', u: '%',       w: 1 },
+        sbst: { t: 'ระเบิดโล่',          u: '% Max HP', w: 1 },
+        mwd:  { t: 'แผลสลายฟื้นฟู บอสฟื้น −', u: '%',       w: 1 },
         mwt:  { t: 'นาน',                   u: ' เทิร์น',  w: 1 },
-        smi:  { t: 'Overheal Smite',        u: '% ของส่วนเกิน', w: 1 },
-        spg:  { t: 'Shield Purge ต่อตัวเลือกที่ตัด', u: '% ของเกราะ', w: 1 },
-        jdg:  { t: 'Judgment Stance',       u: ' เทิร์น',  w: 1 }
+        smi:  { t: 'แสงลงทัณฑ์ศักดิ์สิทธิ์',        u: '% ของส่วนเกิน', w: 1 },
+        spg:  { t: 'ระเบิดสลายเกราะ ต่อตัวเลือกที่ตัด', u: '% ของเกราะ', w: 1 },
+        jdg:  { t: 'เนตรพิพากษา',       u: ' เทิร์น',  w: 1 }
       });
 
       /* ตารางสกิลใหม่ — แก้ในที่ (ทั้ง C1 และ C2) แล้วทิ้งแคช */
@@ -46370,11 +46370,11 @@
               if (fx.heal > 0) cdHeal(Math.round(g.maxHp * fx.heal / 100));
               K_TRUE = fx.tdm > 0; K_SUP = Math.max(K_SUP, fx.sup | 0);
               K_N.tdm++; K_N.sup++;
-              try { baBannerText('🏰 FORTRESS BASTION', 'ข้อถัดไป True Damage · บอสถูกระงับฟื้น/ร่าย ' + (fx.sup | 0) + ' เทิร์น'); } catch (e) {}
+              try { baBannerText('🏰 ป้อมปราการอมตะ', 'ข้อถัดไปดาเมจจริงไม่คิดเกราะ · บอสถูกระงับฟื้น/ร่าย ' + (fx.sup | 0) + ' เทิร์น'); } catch (e) {}
             } else if (cid === 'priest' && i === 0) {
               const f0 = kFx(g, 0);
               K_MW = Math.max(K_MW, f0.mwt | 0); K_MWP = Math.max(K_MWP, f0.mwd || 0); K_N.mw++;
-              try { baBannerText('☠️ MORTAL WOUND', 'บอสฟื้นตัว −' + Math.round(f0.mwd || 0) + '% นาน ' + (f0.mwt | 0) + ' เทิร์น'); } catch (e) {}
+              try { baBannerText('☠️ แผลสลายฟื้นฟู', 'บอสฟื้นตัว −' + Math.round(f0.mwd || 0) + '% นาน ' + (f0.mwt | 0) + ' เทิร์น'); } catch (e) {}
             } else if (cid === 'priest' && i === 2) {
               try { if (typeof baCbCleanse === 'function') baCbCleanse(); } catch (e) {}
               const m = g.currentMonster;
@@ -46395,7 +46395,7 @@
         };
       }
 
-      /* ── ท่าไม้ตาย: Shield Burst (ผู้พิทักษ์) · Judgment Stance (นักบวช) ── */
+      /* ── ท่าไม้ตาย: ระเบิดโล่ (ผู้พิทักษ์) · เนตรพิพากษา (นักบวช) ── */
       if (typeof baPlCast === 'function') {
         const _kCast = baPlCast;
         baPlCast = function () {
@@ -46406,10 +46406,10 @@
               kChk(g);
               const cid = kCid(g), fx = kFx(g, 3);
               if (cid === 'guardian' && fx.sbst > 0 && g.currentMonster && g.monsterHp > 1) {
-                kTrue(g, g.maxHp * fx.sbst / 100, '🛡️ BURST'); K_N.burst++;
+                kTrue(g, g.maxHp * fx.sbst / 100, '🛡️ ระเบิดโล่'); K_N.burst++;
               } else if (cid === 'priest' && fx.jdg > 0) {
                 K_JUDG = fx.jdg | 0; K_N.judg++;
-                try { baBannerText('⚖️ JUDGMENT STANCE', 'คำตอบถูกทะลุเกราะ + คริต 100% นาน ' + K_JUDG + ' เทิร์น'); } catch (e) {}
+                try { baBannerText('⚖️ เนตรพิพากษา', 'คำตอบถูกทะลุเกราะ + คริต 100% นาน ' + K_JUDG + ' เทิร์น'); } catch (e) {}
               }
             }
           } catch (e) { kErr(e, 'cast'); }
@@ -46513,14 +46513,14 @@
                     const nb = Math.max(1, base0 - dealt);
                     bar.base = nb; g.monsterHp = nb + bar0;      /* เกราะชั้นนอกคงเดิม · ดาเมจลง HP จริงทั้งก้อน */
                     if (bar.broken) { bar.broken = false; BA_BREAK_UNTIL = 0; }
-                    kPaint(g, '✦ TRUE -' + dealt, 'crit'); kSeal();
+                    kPaint(g, '✦ ดาเมจจริง -' + dealt, 'crit'); kSeal();
                   }
                 }
                 if (cid === 'priest') {
                   const f1 = kFx(g, 1);
                   if (f1.heal > 0) {
                     const want = Math.round(g.maxHp * f1.heal / 100), healed = cdHeal(want), over = want - healed;
-                    if (over > 0 && f1.smi > 0 && g.monsterHp > 1) { kTrue(g, over * f1.smi / 100, '✨ SMITE'); K_N.smite++; }
+                    if (over > 0 && f1.smi > 0 && g.monsterHp > 1) { kTrue(g, over * f1.smi / 100, '✨ แสงลงทัณฑ์'); K_N.smite++; }
                     try { renderStats(); } catch (e) {}
                   }
                 }
@@ -46588,6 +46588,71 @@
             if (o.apex) { o.apex.potMax = Infinity; }
             if (o.softening) { o.softening.potMax = Infinity; }
           } catch (e) {}
+          return o;
+        };
+      }
+    })();
+
+
+    /* Patch v9.28 · นักบวช: สายธารมานาร่ายทันที + ฟื้น MP ต่อข้อ + แปลศัพท์อังกฤษเป็นไทย (wrapper ล้วน)
+       - ช่อง 3 (cd>0, นักบวช/จอมวิญญาณ): กดแล้วตัดตัวเลือกผิด+ทลายเกราะทันที ไม่รอตอบ (k926 ทำให้แล้ว · ชั้นนี้เติมตาข่ายกันพลาด + โอกาส acut ของ C2)
+       - ฟื้น MP นักบวชเพิ่มต่อข้อที่ตอบถูก (+5 ฐาน + BA_V928_MP) แก้ MP อดตาย
+       - ไม่เพิ่ม CSS/DOM · ไม่แตะ Math.random (ใช้ baRand) */
+    (function baInstallV928() {
+      const BA_V928_MP = 12;
+      const N = { inst: 0, mp: 0 };
+      function cid(g) { try { return baPlClass(g).id; } catch (e) { return ''; } }
+      if (typeof baV91Activate === 'function') {
+        const _a = baV91Activate;
+        baV91Activate = function (i, g, r) {
+          const m = g ? g.currentMonster : null;
+          const n0 = m && m.choices ? m.choices.length : 0;
+          const ok = _a.apply(this, arguments);
+          try {
+            if (ok && i === 2 && g && cid(g) === 'priest' && !g.practiceMode && m && g.currentMonster === m && m.choices && m.answer) {
+              const fx = baResolveSkillEffects(baDsRoleOf(g), null, 2, baPlSlotLv(g, 2)).fx || {};
+              let need = 0;
+              if (m.choices.length >= n0 && (fx.cut | 0) > 0) need += fx.cut | 0;       /* ชั้นในยังไม่ได้ตัด */
+              if (fx.acut > 0 && baRand(100) < fx.acut) need += 1;
+              if (need > 0) {
+                const cut = baDsPickWrong(m, need);
+                if (cut.length) {
+                  m.choices = m.choices.filter(function (c) { return cut.indexOf(c) < 0; });
+                  m.removed = (m.removed || 0) + cut.length;
+                  try { renderChoices(); } catch (e) {}
+                  if (fx.spg > 0 && g.monsterHp > 1 && typeof baBarLeft === 'function') {
+                    const left = baBarLeft();
+                    const amt = Math.min(Math.round(left * fx.spg / 100 * cut.length), Math.max(0, left));
+                    if (amt > 0) { g.monsterHp -= amt; try { baBarSync(); renderMonsterHp(); } catch (e) {} }
+                  }
+                }
+              }
+              N.inst++;
+              try { skillTip('⚡ ' + r.name + ' ทำงานทันที — ตัดตัวเลือกผิด + ระเบิดสลายเกราะแล้ว'); } catch (e) {}
+            }
+          } catch (e) { try { baErr(e, 'v928:act'); } catch (x) {} }
+          return ok;
+        };
+      }
+      if (typeof resolveAnswer === 'function') {
+        const _r = resolveAnswer;
+        resolveAnswer = function () {
+          const g = baG(), c0 = g ? (g.correct || 0) : 0;
+          const r = _r.apply(this, arguments);
+          try {
+            if (g && !g.practiceMode && cid(g) === 'priest' && (g.correct || 0) > c0) {
+              g.mp = Math.min(maxMpOf(g), (g.mp || 0) + BA_V928_MP); N.mp++;
+              try { renderStats(); } catch (e) {}
+            }
+          } catch (e) {}
+          return r;
+        };
+      }
+      if (typeof baBattleAudit === 'function') {
+        const _au = baBattleAudit;
+        baBattleAudit = function () {
+          const o = _au.apply(this, arguments) || {};
+          o.priestV928 = { ver: '9.28', mp: BA_V928_MP, n: Object.assign({}, N) };
           return o;
         };
       }

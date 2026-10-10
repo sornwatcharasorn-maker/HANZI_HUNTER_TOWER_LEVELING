@@ -236,14 +236,15 @@ async function goFloor(p, f) {
   {
     const p = await openGame(browser, 'plD', 390, 844);
     const a = await p.evaluate(() => baBattleAudit().polarized);
-    eq('ช่อง 1 ราคา',  a.slots[0].cost, [0, 40, 80, 160, 300]);
-    eq('ช่อง 2 ราคา',  a.slots[1].cost, [0, 40, 80, 160, 300]);
-    eq('ช่อง 3 ราคา',  a.slots[2].cost, [0, 60, 120, 220, 450]);
-    eq('ช่อง 4 ราคา',  a.slots[3].cost, [0, 100, 200, 350, 700]);
+    /* v9.12 · ราคาเมทริกซ์เท่ากันทุกช่อง [0,50,120,250,500] (เคสที่พลิกโดยตั้งใจ) */
+    eq('ช่อง 1 ราคา',  a.slots[0].cost, [0, 50, 120, 250, 500]);
+    eq('ช่อง 2 ราคา',  a.slots[1].cost, [0, 50, 120, 250, 500]);
+    eq('ช่อง 3 ราคา',  a.slots[2].cost, [0, 50, 120, 250, 500]);
+    eq('ช่อง 4 ราคา',  a.slots[3].cost, [0, 50, 120, 250, 500]);
     eq('ช่อง 1 คูลดาวน์ 3', a.slots[0].cd, 3);
     eq('ช่อง 2 เป็นพาสซีฟ', a.slots[1].cd, 0);
     eq('ช่อง 3 คูลดาวน์ 4', a.slots[2].cd, 4);
-    eq('อัปเต็มทั้งสาย = 3,360 💎', a.maxout, 3360);
+    eq('อัปเต็มทั้งสาย = 3,680 💎 (v9.12)', a.maxout, 3680);
     eq('ทุกช่องเริ่มที่ Lv 1', a.slots.map(s => s.lv), [1, 1, 1, 1]);
 
     const buy = await p.evaluate(() => {
@@ -253,7 +254,7 @@ async function goFloor(p, f) {
       return { okBuy, before, after: abShards(G), lv: baBattleAudit().polarized.slots[0].lv };
     });
     ok('ซื้อ Lv1→2 สำเร็จ', buy.okBuy === true);
-    eq('หัก 💎 40 พอดี', buy.before - buy.after, 40);
+    eq('หัก 💎 50 พอดี (v9.12)', buy.before - buy.after, 50);
     eq('ช่อง 1 เป็น Lv 2', buy.lv, 2);
 
     const full = await p.evaluate(() => {
@@ -269,7 +270,7 @@ async function goFloor(p, f) {
                again: baPlBuy(0), next: baBattleAudit().polarized.slots[0].next };
     });
     eq('อัปเต็มทั้ง 4 ช่องได้ Lv 5', full.lv, [5, 5, 5, 5]);
-    eq('ยอด 💎 ที่จ่ายทั้งหมด (หัก 40 ที่จ่ายไปแล้ว)', full.spent + 40, 3360);
+    eq('ยอด 💎 ที่จ่ายทั้งหมด (หัก 50 ที่จ่ายไปแล้ว)', full.spent + 50, 3680);
     ok('ช่องที่เต็มแล้วซื้อต่อไม่ได้', full.again === false);
     eq('ช่องเต็มแล้วราคาถัดไป = 0', full.next, 0);
 
@@ -359,39 +360,51 @@ async function goFloor(p, f) {
     eq('ครั้งแรกราคา 0 💎', a0.swCost, 0);
     eq('ราคาครั้งถัดไปก็ยังเป็น 0 💎', a0.swPaid, 0);
 
-    const first = await p.evaluate(() => {
-      G.level = 30; recalcStats();
-      const b = abOf(G); b.shards = 0;
-      const before = { lv: G.level, sh: abShards(G) };
-      const done = baPlSwitch('guardian');
-      const a = baBattleAudit().polarized;
-      return { done, before, sh: abShards(G), classId: a.classId, switches: a.switches,
-               swCost: a.swCost, lv: G.level, stats: Object.assign({}, G.stats), maxHp: G.maxHp };
-    });
-    ok('เปลี่ยนสายครั้งแรกสำเร็จโดยไม่มี 💎 เลย', first.done === true);
-    eq('ครั้งแรกไม่หัก 💎', first.sh, 0);
+    /* v9.x · เปลี่ยนสายมีค่าธรรมเนียม 🪙 BA_GAT_CFG.SW_GOLD + 💎 SW_DIA (เกต gat)
+       และมีหน้าต่างยืนยันของ swc คั่น — สายเปลี่ยนจริงใน callback ของ #gmModalOk
+       (เคสที่พลิกโดยตั้งใจ — ของเดิมของ v8.5 ยืนยันว่า "ฟรีทุกครั้ง") */
+    const cost = await p.evaluate(() => ({ g: BA_GAT_CFG.SW_GOLD, d: BA_GAT_CFG.SW_DIA }));
+    const sw = async (id, gold, dia) => {
+      await p.evaluate(([id, gold, dia]) => {
+        G.gold = gold; abOf(G).shards = dia;
+        const o = (typeof gatOf === 'function') ? gatOf(G) : null; if (o) o.swToken = 0;
+        window.__swRet = baPlSwitch(id);
+      }, [id, gold, dia]);
+      await p.waitForTimeout(120);
+      return p.evaluate(() => {
+        const m = document.getElementById('gmModal');
+        const opened = !!(m && m.classList.contains('active'));
+        if (opened) document.getElementById('gmModalOk').click();
+        const a = baBattleAudit().polarized;
+        return { ret: window.__swRet, opened, classId: a.classId, switches: a.switches,
+                 gold: G.gold, sh: abShards(G), lv: G.level,
+                 stats: Object.assign({}, G.stats), maxHp: G.maxHp };
+      });
+    };
+
+    await p.evaluate(() => { G.level = 30; recalcStats(); });
+    const poorSw = await sw('guardian', 0, 0);
+    eq('ไม่มีทอง/💎 → เปลี่ยนสายไม่ได้', poorSw.classId, 'assassin');
+    eq('ไม่มีทอง/💎 → ตัวนับไม่เดิน', poorSw.switches, 0);
+
+    const first = await sw('guardian', cost.g, cost.d);
+    ok('มีหน้าต่างยืนยันก่อนเปลี่ยนสาย (swc)', first.opened === true);
     eq('สายเปลี่ยนเป็น guardian', first.classId, 'guardian');
     eq('ตัวนับเดินเป็น 1', first.switches, 1);
-    eq('ราคาครั้งถัดไปยังเป็น 0 💎 (ไม่มีค่าใช้จ่ายเลยแม้แต่ครั้งที่สอง)', first.swCost, 0);
+    eq('หักทองเท่าค่าธรรมเนียม', first.gold, 0);
+    eq('หัก 💎 เท่าค่าธรรมเนียม', first.sh, 0);
     eq('เลเวลถูกคงไว้', first.lv, 30);
     eq('ค่าพลังคิดใหม่เป็นของ guardian (VIT 30+2×29)', first.stats.vit, 30 + 29 * 2);
-    /* สูตรของสเปกให้ 750+VIT*15 · ที่เหลือเป็นของที่ตั้งฉากกับค่าพลังซึ่งบวกทับต่อ
-       (v7.6 +5 ต่อเลเวล · พาสซีฟช่อง 3 ของผู้พิทักษ์ +60 ที่ Lv 1) */
     ok('HP คิดใหม่จากสูตร 750+VIT*15 แล้วบวกของที่ตั้งฉากทับ',
        first.maxHp >= 750 + first.stats.vit * 15, { got: first.maxHp, spec: 750 + first.stats.vit * 15 });
     const slope = await p.evaluate(() => [maxHpFor(30, 100, 0), maxHpFor(30, 101, 0)]);
     eq('HP ยังชันขึ้น 15 ต่อ VIT 1 แต้ม หลังเปลี่ยนสาย', slope[1] - slope[0], 15);
 
-    const second = await p.evaluate(() => {
-      const b = abOf(G); b.shards = 0;      /* ไม่มี 💎 เลยสักหน่วยก็ยังต้องเปลี่ยนได้ */
-      const done = baPlSwitch('priest');
-      const a = baBattleAudit().polarized;
-      return { done, classId: a.classId, switches: a.switches, sh: abShards(G) };
-    });
-    ok('เปลี่ยนสายครั้งที่สองก็ยังฟรี — ไม่มี 💎 เลยก็เปลี่ยนสำเร็จ', second.done === true);
+    const second = await sw('priest', cost.g + 7, cost.d + 3);
     eq('สายเปลี่ยนเป็น priest', second.classId, 'priest');
     eq('ตัวนับเดินเป็น 2', second.switches, 2);
-    eq('💎 ไม่ถูกหักแม้แต่หน่วยเดียว', second.sh, 0);
+    eq('เหลือทองส่วนเกินพอดี', second.gold, 7);
+    eq('เหลือ 💎 ส่วนเกินพอดี', second.sh, 3);
 
     const same = await p.evaluate(() => baPlSwitch('priest'));
     ok('เปลี่ยนเป็นสายเดิมไม่นับ', same === false);
@@ -399,9 +412,8 @@ async function goFloor(p, f) {
   }
 
   // ══ บล็อก 7 · แถวปุ่มล่างสองคอลัมน์ + SYSTEM SCAN ═══════════════════════
-  // v9.7.1 · SOUL CARDS ต่อปุ่มที่ 11 (เต็มแถวของตัวเอง) เข้าไปหลัง PROFILE
-  // จึง SCAN/PROFILE ไม่ใช่ "สองปุ่มสุดท้าย" อีกต่อไป — จับคู่ด้วยข้อความแทน
-  // ตำแหน่งท้ายอาร์เรย์ (เคสของชุดเดิมที่ถูกพลิกโดยตั้งใจ — ดู CLAUDE.md กับดักข้อ 11)
+  // ปุ่มคลังการ์ดวิญญาณของ v9.7.1 ไม่มีอยู่ในต้นฉบับ (ดูคอมเมนต์ในซอร์ส)
+  // แถวล่างจึงยังเป็น 10 ใบ — SCAN/PROFILE จับคู่ด้วยข้อความ (กับดักข้อ 11)
   log('\n── บล็อก 7 · Bottom Menu 2-Col + SYSTEM SCAN 🪙 5,000 ──');
   {
     const p = await openGame(browser, 'plG', 390, 844);
@@ -422,7 +434,7 @@ async function goFloor(p, f) {
                soulBelow: rSoul ? rSoul.top > rp.bottom - 3 : null,
                gridCols: getComputedStyle(document.querySelector('.g-actions')).gridTemplateColumns };
     });
-    eq('ปุ่มในแถวล่างครบ 11 ใบ (10 เดิม + คลังการ์ดวิญญาณของ v9.7.1)', m.n, 11);
+    eq('ปุ่มในแถวล่างครบ 10 ใบ (9 เดิม + PROFILE)', m.n, 10);
     ok('มีปุ่ม SYSTEM SCAN', /SYSTEM SCAN/.test(m.scanTxt), m.scanTxt);
     eq('ป้าย SYSTEM SCAN มีราคา 🪙 5,000', m.scanTxt, 'SYSTEM SCAN — เฉลยอักขระ (🪙 5,000)');
     ok('มีปุ่ม PROFILE', /PROFILE/.test(m.profTxt), m.profTxt);
@@ -432,13 +444,7 @@ async function goFloor(p, f) {
     ok('SCAN กับ PROFILE เรียงซ้าย-ขวาจริง', m.sideBySide === true, m);
     eq('ราคาสแกนคงที่ 5,000', m.price, 5000);
 
-    /* v9.7.1 · ปุ่มคลังการ์ดวิญญาณเป็นปุ่มที่ 11 กินเต็มแถวของตัวเอง
-       ต่อจาก SCAN/PROFILE (แถวที่ 6) — inline style ชนะกฎ CSS ของ v8.5
-       ที่ปิด auto-full-span ของ :last-child ไว้แล้ว (ดู CLAUDE.md v9.7.1) */
-    ok('มีปุ่มคลังการ์ดวิญญาณ (v9.7.1)', !!m.soulTxt, m.soulTxt);
-    eq('ปุ่มคลังการ์ดวิญญาณเป็นปุ่มสุดท้าย', m.soulIsLast, true);
-    eq('ปุ่มคลังการ์ดวิญญาณกินเต็มแถวของตัวเอง', m.soulSpan, '1 / -1');
-    ok('ปุ่มคลังการ์ดวิญญาณอยู่แถวถัดจาก SCAN/PROFILE', m.soulBelow === true, m);
+    ok('ไม่มีปุ่มคลังการ์ดวิญญาณค้าง (ฟีเจอร์ v9.7.1 ไม่อยู่ในต้นฉบับ)', !m.soulTxt, m.soulTxt);
 
     /* กันแทรกซ้ำ (กับดักข้อ 2) */
     const dup = await p.evaluate(() => { for (let i = 0; i < 8; i++) baPlMenu();
@@ -519,11 +525,12 @@ async function goFloor(p, f) {
   {
     const p = await openGame(browser, 'plI', 390, 844);
     await p.evaluate(() => {
-      const b = abOf(G); b.shards = 5000;
+      const b = abOf(G); b.shards = 5000 + BA_GAT_CFG.SW_DIA; G.gold = BA_GAT_CFG.SW_GOLD;
       baPlSwitch('priest');
+      const ok = document.getElementById('gmModalOk'); if (ok) ok.click();   /* swc confirm */
       baPlBuy(0); baPlBuy(0); baPlBuy(2);
       baPlSetGender('female');
-      baPlPipSet(G, 6);
+      baPlPipSet(G, 3);   /* v9.27 · priest เกจเต็มที่ 4 ขีด */
       G.level = 55; recalcStats();
       saveProgress();
     });
@@ -545,7 +552,7 @@ async function goFloor(p, f) {
     eq('ตัวนับเปลี่ยนสายรอด', a.switches, 1);
     eq('เพศรอด', a.gender, 'female');
     eq('เมทริกซ์รอด (ช่อง 1 = Lv 3 · ช่อง 3 = Lv 2)', [a.slots[0].lv, a.slots[2].lv], [3, 2]);
-    eq('เกจปล่อยพลังรอด', a.pips, 6);
+    eq('เกจปล่อยพลังรอด (priest เพดาน 4 · v9.27)', a.pips, 3);
     eq('ร่างที่สองยังเป็น c2 ที่ Lv 55', a.tier, 'c2');
     ok('BA_PL_READY เปิดแล้วหลังล็อกอิน', a.ready === true);
     await p.close();

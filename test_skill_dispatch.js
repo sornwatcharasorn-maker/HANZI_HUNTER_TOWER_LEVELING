@@ -27,42 +27,51 @@ function ok(name, cond, extra) {
 }
 function eq(name, got, want) { ok(name, JSON.stringify(got) === JSON.stringify(want), { got: got, want: want }); }
 
-/* ── เมทริกซ์ของสเปก 32 ช่อง เขียนซ้ำไว้ฝั่งเทสต์ (จำเป็น ดูหัวไฟล์) ────────
-   [atom, ค่าที่ Lv1, ค่าที่ Lv5] — ตัวเลขลอกจากสเปกตรง ๆ ไม่ได้อ่านจากเกม */
+/* ── เมทริกซ์ 32 ช่องหลังชั้น v9.26 (guardian/priest) + v9.29 (S4 1200% · heal/cut) ──
+   [atom, ค่าที่ Lv1, ค่าที่ Lv5] — ลอกจาก kSet() ของ v9.26 + atom() ของ v9.29 ไม่ได้อ่านจากเกม */
 const WANT = {
-  assassin:   [ [['win',3.5,3.5],['dmg',120,140]],
-                [['ultg',10,20],['tchn',1.5,1.5]],
-                [['dot',10,20],['eatk',10,20]],
-                [['dmg',160,230],['nxt',50,100]] ],
-  monarch:    [ [['win',2.5,2.5],['hit2',0,0],['dmg',120,150]],
-                [['crit',10,20],['cdm',150,170]],
-                [['sc2',10,20],['dot',10,20]],
-                [['dmg',180,250],['bhp',15,30]] ],
-  blade:      [ [['dmg',100,120],['shred',20,40]],
-                [['atkc',5,10]],
-                [['dmg',115,140],['edef',5,12]],
-                [['dmg',150,215],['stun',2,3.5]] ],
-  slayer:     [ [['dmg',110,130],['armor',2,4]],
-                [['pierce',15,35],['team',5,15]],
-                [['atk',15,35],['tcrit',8,20]],
-                [['dmg',170,230],['brk',40,75],['stunt',1,2]] ],
-  guardian:   [ [['dmg',70,90],['eatk',15,30]],
-                [['wdn',20,35]],
-                [['abs',50,100]],
-                [['heal',15,30],['refl',20,40]] ],
-  guard:      [ [['dmg',80,100],['time',1,2]],
-                [['barr',8,20],['bult',15,30]],
-                [['blk',100,100],['heal',0,10],['tcov',60,100]],
-                [['imm',4,8],['refl',20,40]] ],
-  priest:     [ [['dmg',80,100],['score',10,20]],
-                [['pin',15,30]],
-                [['mist',0,0],['cut',1,1]],
-                [['heal',20,35]] ],
-  soulmaster: [ [['dmg',90,110],['time',1,2]],
-                [['acut',20,40],['tcd',10,20]],
-                [['mist',0,0],['cut',1,2],['pins',3,6],['heal',0,10]],
-                [['heal',15,35],['rev',0,0]] ]
+  assassin:   [ [['win',3.5,3.5],['dmg',200,240]],
+                [['ultg',100,100],['tchn',2,2]],
+                [['time',4,4],['wdn',20,30]],
+                [['dmg',1200,1200],['bhp',8,15]] ],
+  monarch:    [ [['win',5,5],['dmg',280,340]],
+                [['ultg',100,100],['tchn',3,4]],
+                [['time',5,6],['wdn',35,45]],
+                [['dmg',1200,1200],['bhp',20,30]] ],
+  blade:      [ [['dmg',220,260]],
+                [['atk',5,10],['atkc',4,7]],
+                [['dmg',280,320],['score',50,100]],
+                [['dmg',1200,1200]] ],
+  slayer:     [ [['dmg',260,320]],
+                [['atk',10,18],['atkc',6,10]],
+                [['dmg',340,400],['score',80,150]],
+                [['dmg',1200,1200],['bhp',25,40]] ],
+  guardian:   [ [['dmg',180,220],['hpsc',20,40]],
+                [['wdn',20,30],['barr',10,15],['mpr',10,10],['shr',5,5]],
+                [['wdn',30,45],['heal',35,35],['tdm',1,1],['sup',1,1]],
+                [['heal',35,50],['barr',40,60],['sbst',15,20]] ],
+  guard:      [ [['dmg',220,280],['hpsc',35,60]],
+                [['wdn',35,45],['barr',20,30],['mpr',12,15],['shr',6,8]],
+                [['wdn',50,65],['heal',35,35],['tdm',1,1],['sup',1,1]],
+                [['heal',60,80],['barr',70,100],['sbst',20,25]] ],
+  priest:     [ [['dmg',200,230],['mwd',60,60],['mwt',3,3]],
+                [['heal',8,15]],
+                [['mist',0,0],['cut',3,3],['spg',3,5]],
+                [['heal',55,70],['jdg',3,3]] ],
+  soulmaster: [ [['dmg',260,300],['mwd',60,75],['mwt',3,3]],
+                [['heal',15,25],['score',10,20]],
+                [['mist',0,0],['cut',3,3],['acut',20,30],['spg',5,8]],
+                [['heal',80,100],['barr',30,50],['jdg',3,4]] ]
 };
+/* ชื่อสกิลตำนานไทยของ v9.29 — C1/C2 ใช้ชุดเดียวกันต่อสาย (เขียนซ้ำไว้ฝั่งเทสต์โดยตั้งใจ) */
+const LORE = {
+  priest:   ['ทัณฑ์อักขระสูบวิญญาณ', 'เนตรทิพย์กลืนวิญญาณ', 'หัตถ์เทวะสลายมนตรา', 'มหาจุติเนตรพิพากษา'],
+  guardian: ['โล่ทมิฬสะท้อนธรณี', 'กายาหินผาอเวจี', 'มหาปราการคุ้มเทวา', 'ระเบิดศิลาโลกันตร์ทลาย'],
+  assassin: ['เงาสังหารตัดกาลเวลา', 'สัญชาตญาณเนตรมรณะ', 'มีดบินทลายเกราะเหล็ก', 'ระบำเงาประหารไร้เขตขัณฑ์'],
+  slayer:   ['ดาบผ่ามิติไร้เงา', 'ปราณโทสะคลั่งเหวสมุทร', 'เพลงดาบปล้นวิญญาณ', 'ทัณฑ์อเวจีผ่าโลกันตร์']
+};
+const LORE_ROLES = { priest: ['priest','soulmaster'], guardian: ['guardian','guard'],
+                     assassin: ['assassin','monarch'], slayer: ['blade','slayer'] };
 const ROLES = Object.keys(WANT);
 /* อะตอมที่ไม่มีระบบให้เกาะในเกมนี้ (ไม่มีปาร์ตี้/เรด) — ต้องติดธง w:0 เสมอ */
 const NO_SUBSYS = ['team', 'tcrit', 'tcov', 'tcd', 'rev'];
@@ -160,9 +169,24 @@ async function enterGame(page, id) {
       baResolveSkillEffects('slayer', 'c2', 3, 3).fx.dmg,
       baResolveSkillEffects('guardian', 'c1', 3, 2).fx.heal
     ]);
-    eq('Lv3 อยู่กึ่งกลาง (assassin S1 dmg)', mid[0], 130);
-    eq('Lv3 อยู่กึ่งกลาง (slayer S4 dmg)', mid[1], 200);
-    eq('Lv2 ไล่เชิงเส้น (guardian S4 heal)', mid[2], 18.75);
+    eq('Lv3 อยู่กึ่งกลาง (assassin S1 dmg)', mid[0], 220);
+    eq('Lv3 คงที่ (slayer S4 dmg 1200%)', mid[1], 1200);
+    eq('Lv2 ไล่เชิงเส้น (guardian S4 heal)', mid[2], 38.75);
+    /* ชื่อตำนานไทยของ v9.29 ครบทั้ง 8 role (C1/C2) + สารบัญ BA_PL_CLASSES */
+    const names = await b.page.evaluate(lr => {
+      const o = {};
+      Object.keys(lr).forEach(k => {
+        o[k] = { roles: lr[k].map(r => [0,1,2,3].map(i => baResolveSkillEffects(r, null, i, 1).name)),
+                 cls: (BA_PL_CLASSES.filter(c => c.id === k)[0] || { slots: [] }).slots.map(s => s.n) };
+      });
+      o._audit = (baBattleAudit().kitV929 || {}).names;
+      return o;
+    }, LORE_ROLES);
+    Object.keys(LORE).forEach(k => {
+      LORE_ROLES[k].forEach((r, j) => eq('ชื่อตำนาน ' + r + ' (' + (j ? 'C2' : 'C1') + ')', names[k].roles[j], LORE[k]));
+      eq('ชื่อตำนานในสารบัญ BA_PL_CLASSES · ' + k, names[k].cls, LORE[k]);
+    });
+    eq('kitV929.names ตรงสเปก', names._audit, LORE);
     ok('ไม่มี pageerror', b.errs.length === 0, b.errs);
     await b.ctx.close();
   }
@@ -259,7 +283,7 @@ async function enterGame(page, id) {
     eq('Lv 1 → ร่าง C1 (assassin)', awk.c1, 'assassin');
     eq('Lv 50 → ร่าง C2 (monarch)', awk.c2, 'monarch');
     eq('tier รายงานเป็น c2', awk.tier, 'c2');
-    ok('ชื่อช่องของ C2 เป็นชุดของตัวเอง', awk.names[0] === 'โซนิคฟลูรี', awk.names);
+    eq('ชื่อช่องของ C2 เป็นชื่อตำนาน v9.29 (C1/C2 ชุดเดียวกัน)', awk.names, LORE.assassin);
     ok('ไม่มี pageerror', b.errs.length === 0, b.errs);
     await b.ctx.close();
   }
@@ -357,8 +381,8 @@ async function enterGame(page, id) {
       const sup = baPlUltAmt(G);
       return { atk: atk, sup: sup };
     });
-    eq('ท่าไม้ตายสายโจมตี = dmg/100 (230% → 2.3)', ult.atk, 2.3);
-    eq('ท่าไม้ตายสายประคอง = heal % (35)', ult.sup, 35);
+    eq('ท่าไม้ตายสายโจมตี = dmg/100 (1200% → 12)', ult.atk, 12);
+    eq('ท่าไม้ตายสายประคอง = heal % (Lv5 = 70)', ult.sup, 70);
 
     /* ข้อความบนแผงโปรไฟล์ต้องมาจากเมทริกซ์ก้อนเดียวกัน */
     const txt = await b.page.evaluate(() => {
@@ -367,7 +391,7 @@ async function enterGame(page, id) {
       G.skills.guardian[1] = 5;
       return baPlSlotText(G, 1, 5);
     });
-    ok('ข้อความช่อง 2 ผู้พิทักษ์อ้างเลขจากเมทริกซ์ (35%)', /35/.test(txt), txt);
+    ok('ข้อความช่อง 2 ผู้พิทักษ์อ้างเลขจากเมทริกซ์ (wdn Lv5 = 30%)', /30%/.test(txt) && /15%/.test(txt), txt);
     ok('ไม่มี pageerror', b.errs.length === 0, b.errs);
     await b.ctx.close();
   }
@@ -380,17 +404,117 @@ async function enterGame(page, id) {
     const r = await b.page.evaluate(no => {
       const a = baBattleAudit().dispatch.atoms;
       const bad = no.filter(k => a.wired.indexOf(k) >= 0);
-      /* ช่อง 2 ของนักรบเหวลึกมีอะตอม team ซึ่งไม่มีระบบให้เกาะ */
-      G.classId = 'slayer'; G.level = BA_PL_TIER_LV;
-      G.skills.slayer = G.skills.slayer || [1,1,1,1];
-      const txt = baPlSlotText(G, 1, 5);
-      return { wired: a.wired.length, dead: a.dead.length, bad: bad, txt: txt };
+      /* v9.29 · VERIFIED FX — เมทริกซ์ทั้ง 32 ช่องต้องใช้เฉพาะอะตอมที่เดินสายแล้ว
+         ป้าย "ยังไม่ทำงาน" จึงต้องไม่โผล่บนแผงโปรไฟล์ของสายใดเลย */
+      const deadUse = [], txts = [];
+      ['assassin','slayer','guardian','priest'].forEach(c => {
+        G.classId = c; G.skills[c] = G.skills[c] || [1,1,1,1];
+        [1, BA_PL_TIER_LV].forEach(lv => {
+          G.level = lv;
+          for (let i = 0; i < 4; i++) {
+            const e = baResolveSkillEffects(baDsRoleOf(G), null, i, 5);
+            if (e.dead && e.dead.length) deadUse.push(e.role + ':' + i + ':' + e.dead.join(','));
+            txts.push(baPlSlotText(G, i, 5));
+          }
+        });
+      });
+      return { wired: a.wired.length, dead: a.dead.length, bad: bad, deadUse: deadUse,
+               labeled: txts.filter(t => /ยังไม่ทำงาน/.test(t)) };
     }, NO_SUBSYS);
     ok('อะตอมที่ไม่มีระบบให้เกาะ ไม่ถูกนับเป็น wired', r.bad.length === 0, r.bad);
     ok('มีอะตอมที่เดินสายแล้วจริง', r.wired > 0, r.wired);
-    ok('มีอะตอมที่ประกาศไว้แต่ยังไม่ทำงาน', r.dead > 0, r.dead);
-    ok('ข้อความติดป้าย "ยังไม่ทำงาน" ให้อะตอมที่ยังไม่ได้เดินสาย',
-       /ยังไม่ทำงาน/.test(r.txt), r.txt);
+    ok('พจนานุกรมยังเก็บอะตอมที่ยังไม่ทำงานไว้ (ไม่ถูกลบ)', r.dead > 0, r.dead);
+    eq('เมทริกซ์ v9.29 ไม่มีช่องไหนใช้อะตอมที่ยังไม่ทำงาน', r.deadUse, []);
+    eq('ไม่มีข้อความช่องไหนติดป้าย "ยังไม่ทำงาน" (32 ช่อง)', r.labeled, []);
+    ok('ไม่มี pageerror', b.errs.length === 0, b.errs);
+    await b.ctx.close();
+  }
+
+  /* ─────────────────────────────────────────────────────────────────────── */
+  head('บล็อก 7.1 · v9.29 · S1/S3 ร่ายทันที · S2 พาสซีฟ · S4 1200%');
+  {
+    const b = await boot(browser);
+    await enterGame(b.page, 'ds71');
+    /* ร่ายผ่านการคลิกปุ่มจริงบนแถบสกิล — ไม่เรียก answer() เลย (ต้องลงผลทันที) */
+    const cast = await b.page.evaluate(() => {
+      function prep(c) {
+        G.classId = c; G.level = 1; baPlEnsure(G); recalcStats(); baSyncCurrentClassSkills(true);
+        recalcStats(); G.mp = maxMpOf(G); G.hp = Math.round(G.maxHp * 0.7); G.locked = false;
+        for (let i = 0; i < 4; i++) { BA_V91_CD[i] = 0; BA_V91_ARM[i] = false; }
+        G.monsterHp = G.monsterMaxHp = 2e6; G.questionStart = Date.now();
+      }
+      function click(i) {
+        const n0 = (baBattleAudit().kitV929 || { n: {} }).n.inst | 0;
+        const c0 = G.correct | 0, w0 = G.wrong | 0, h0 = G.monsterHp, mp0 = G.mp, hp0 = G.hp;
+        const ch0 = (G.currentMonster.choices || []).length, cost = baV91Cost(i);
+        const el = document.querySelector('#gSkills .g-skill[data-ds="' + i + '"]');
+        if (el) el.click();
+        const k = baBattleAudit().kitV929;
+        return { el: !!el, inst: (k.n.inst | 0) - n0, dr: k.dr, drop: Math.round(h0 - G.monsterHp),
+                 mp: Math.round(mp0 - G.mp), cost: cost, hp: Math.round(G.hp - hp0),
+                 ans: (G.correct | 0) - c0 + (G.wrong | 0) - w0, cut: ch0 - (G.currentMonster.choices || []).length,
+                 cd: BA_V91_CD[i] };
+      }
+      const o = {};
+      prep('assassin'); o.aS1 = click(0); o.aS3 = click(2);
+      prep('slayer');   o.sS1 = click(0); o.sS3 = click(2);
+      prep('guardian'); o.gS3 = click(2);
+      prep('priest');   o.pS3 = click(2);
+      prep('guardian'); o.gS2 = click(1);
+      return o;
+    });
+    [['aS1','assassin S1'],['aS3','assassin S3'],['sS1','slayer S1'],['sS3','slayer S3']].forEach(([k, n]) => {
+      const c = cast[k];
+      ok(n + ' · ร่ายทันที (นับ inst)', c.el && c.inst === 1, c);
+      ok(n + ' · ลงดาเมจทันทีโดยไม่ต้องตอบ', c.drop > 0 && c.ans === 0, c);
+      eq(n + ' · หัก MP เท่าราคาช่อง', c.mp, c.cost);
+    });
+    ok('guardian S3 · ลดดาเมจที่รับ (DR) + ฟื้น HP ทันที', cast.gS3.inst === 1 && cast.gS3.dr === 1 && cast.gS3.hp > 0 && cast.gS3.ans === 0, cast.gS3);
+    ok('priest S3 · ตัดตัวเลือกผิดทันที', cast.pS3.inst === 1 && cast.pS3.cut > 0 && cast.pS3.ans === 0, cast.pS3);
+    ok('guardian S2 (พาสซีฟ) · คลิกไม่ร่าย · ไม่หัก MP', cast.gS2.inst === 0 && cast.gS2.mp === 0 && cast.gS2.drop === 0, cast.gS2);
+
+    /* S2 พาสซีฟเมื่อตอบถูก — guardian ฟื้น MP · priest HP เต็ม = Overheal Smite */
+    const pas = await b.page.evaluate(() => {
+      function prep(c, full) {
+        G.classId = c; G.level = 1; baPlEnsure(G); recalcStats(); baSyncCurrentClassSkills(true);
+        G.mp = 1; G.hp = full ? G.maxHp : Math.round(G.maxHp * 0.5); G.locked = false; G.shield = 0;
+        G.monsterHp = G.monsterMaxHp = 2e6; G.questionStart = Date.now(); BA_PR_UNTIL = 0;
+      }
+      function right() {
+        const n = Object.assign({}, baBattleAudit().kitV929.n), h0 = G.monsterHp, mp0 = G.mp;
+        answer(G.currentMonster.answer, null);
+        const m = baBattleAudit().kitV929.n;
+        return { passive: m.passive - n.passive, smite: m.smite - n.smite, mp: G.mp - mp0, drop: Math.round(h0 - G.monsterHp) };
+      }
+      const o = {};
+      prep('guardian', false); o.g = right();
+      return o;
+    });
+    ok('guardian S2 · ตอบถูกแล้วพาสซีฟ (+MP) ทำงาน', pas.g.passive === 1 && pas.g.mp > 0, pas.g);
+    await b.page.waitForTimeout(1300);
+    await clearOverlays(b.page);
+    const sm = await b.page.evaluate(() => {
+      G.locked = false;
+      G.classId = 'priest'; G.level = 1; baPlEnsure(G); recalcStats(); baSyncCurrentClassSkills(true);
+      G.hp = G.maxHp; G.shield = 0; G.monsterHp = G.monsterMaxHp = 2e6; G.questionStart = Date.now(); BA_PR_UNTIL = 0;
+      const n = baBattleAudit().kitV929.n.smite, h0 = G.monsterHp;
+      answer(G.currentMonster.answer, null);
+      return { smite: baBattleAudit().kitV929.n.smite - n, drop: Math.round(h0 - G.monsterHp), atk: hunterAtk() };
+    });
+    ok('priest S2 · HP เต็มแล้วตอบถูก = Overheal Smite', sm.smite === 1 && sm.drop > 0, sm);
+
+    /* S4 · 1200% — ตัวคูณท่าไม้ตายของสายโจมตี = 12 ทุกระดับ */
+    const u4 = await b.page.evaluate(() => {
+      const o = {};
+      ['assassin', 'slayer'].forEach(c => {
+        G.classId = c; [1, BA_PL_TIER_LV].forEach(lv => {
+          G.level = lv; G.skills[c] = G.skills[c] || [1,1,1,1];
+          [1, 5].forEach(sl => { G.skills[c][3] = sl; o[c + lv + '_' + sl] = baPlUltAmt(G); });
+        });
+      });
+      return o;
+    });
+    eq('S4 สายโจมตี = 1200% (×12) ทุกร่าง/ทุกระดับ', Object.values(u4).every(v => v === 12), true);
     ok('ไม่มี pageerror', b.errs.length === 0, b.errs);
     await b.ctx.close();
   }

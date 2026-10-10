@@ -10772,6 +10772,11 @@ IIFE `baInstallK926` at the end of the source; wraps only (`baV91Cost/Reset/Acti
 - Floor-20 damage numbers (`smi`, `hpsc`, `spg`, `mwd`) are NOT empirically tuned; the v6.7 damage gate still caps per-answer damage. Audit: `baBattleAudit().kit926`.
 - Existing suites (`test_skill_dispatch` 54/40, `test_polarized_class` 124/20, `test_skill_anim` 170/3) have the same failure counts as before this patch (pre-existing stale assertions).
 
+#### Patch v9.29 · VERIFY HELPER & QUICK FIXES
+
+Inside `baInstallV929` (outermost IIFE). Adds `window.verifyV929Combat()` (async console helper: shield overlay, S2 neon pulse, S1/S3 instant casts for 4 classes in a sandbox, banners, CLS snapshot; result in `baBattleAudit().kitV929.verify`). Fixes: shield width clamp, non-stacking pulse (WeakMap), `hit()` restores `BA_LIVE`/barrier in `finally`, `shred` ≥ 0, `lockDead` on cast kill, per-cast `acted` flag, stale-monster guard. Changelog: `PATCH_V929_VERIFY.md`. Test: `test_v929_verify.js` (37/0).
+- Stubs of top-level functions use `new Function('f', name+' = f')`, **never direct `eval`** (direct eval disables terser mangling for the whole IIFE).
+
 ## กับดักที่เคยทำพังมาแล้ว
 
 ### 1. คิว toast วนไม่รู้จบ → หน้าเกมค้างสนิท
@@ -12931,6 +12936,11 @@ wrapper **ครั้งเดียว** (กันด้วย `!document.get
 
 วัดจริงหลังแพตช์ · `test_soul_cards_v972` **85/85** · `verify_arena` 144/0 ·
 `verify_monsters` 80/0 — **ไม่มี regression สักเคส**
+
+
+### 46. `let` ที่อยู่ใน closure ของ IIFE อื่น มองไม่เห็นจากชั้นนอก — ReferenceError ถูก try/catch กลืนเงียบ
+
+ตัวแปรระดับสคริปต์ (`TURN_TIMER` `BA_LIVE` `BA_BAR` `BA_V91_ARM`) อ่าน/เขียนจากชั้นไหนก็ได้ แต่ `let` ที่ประกาศ **ข้างใน** IIFE ของชั้นอื่น (เช่น `BA_SK4_CASTING`) ไม่อยู่ในสโคปของชั้นนอก อ้างถึงแล้วได้ `ReferenceError` ซึ่ง wrapper ทุกตัวหุ้ม `try/catch` ไว้ → โค้ดทั้งบล็อกหายเงียบโดยไม่มี error บนจอ · ก่อนอ้างตัวแปรของชั้นอื่นให้เช็กว่าประกาศอยู่ระดับบนสุดจริง (`typeof X` จากคอนโซล) และพิสูจน์ด้วยตัวนับที่ต้องขยับ ไม่ใช่แค่ "ไม่มี error"
 
 ## วิธีทดสอบ
 

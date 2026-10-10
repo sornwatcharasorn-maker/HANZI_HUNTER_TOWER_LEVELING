@@ -46671,7 +46671,9 @@
       const CLS_OF = { priest: 'priest', soulmaster: 'priest', guardian: 'guardian', guard: 'guardian',
                        assassin: 'assassin', monarch: 'assassin', blade: 'slayer', slayer: 'slayer' };
       const BA_V929_DR = 0.35, BA_V929_SMITE = 10, BA_V929_ULT12 = 1200;
-      const N = { name: 0, inst: 0, smite: 0, dr: 0, shield: 0, pulse: 0 };
+      const BA_V929_GLOW = '0 0 18px #00ff66', BA_V929_PULSE_MS = 600;
+      const N = { name: 0, inst: 0, smite: 0, dr: 0, shield: 0, pulse: 0, passive: 0, lock: 0, verify: 0 };
+      let VERIFY = null;
       let DR = 0;
       function cid(g) { try { return baPlClass(g).id; } catch (e) { return ''; } }
       function role(g) { try { return baDsRoleOf(g); } catch (e) { return ''; } }
@@ -46701,14 +46703,18 @@
 
       function hero() { return document.getElementById('baHero'); }
       function banner(a, b) { try { baBannerText(a, b || ''); } catch (e) {} }
+      /* v9.29 fix: ชีพจรซ้อนกันต้องไม่ล็อกเงาเรืองค้าง — จำค่าเดิม "ครั้งแรก" ต่อโหนด */
+      const GLOW = (typeof WeakMap === 'function') ? new WeakMap() : null;
       function pulse(i) {
         try {
           const els = [document.querySelector('#gSkills .g-skill[data-ds="' + i + '"]'), hero()];
           els.forEach(function (e) {
             if (!e) return;
-            const o = e.style.boxShadow;
-            e.style.boxShadow = '0 0 18px #00ff66';
-            setTimeout(function () { e.style.boxShadow = o; }, 600);
+            let st = GLOW && GLOW.get(e);
+            if (st) clearTimeout(st.t); else st = { o: e.style.boxShadow };
+            e.style.boxShadow = BA_V929_GLOW;
+            st.t = setTimeout(function () { e.style.boxShadow = st.o; if (GLOW) GLOW.delete(e); }, BA_V929_PULSE_MS);
+            if (GLOW) GLOW.set(e, st);
           });
           N.pulse++;
         } catch (e) {}
@@ -46731,42 +46737,59 @@
       function shred(g, pct) {
         try {
           const left = bar(g) ? baBarLeft() : 0;
+          if (!(left > 0)) return 0;
           const a = Math.min(Math.round(left * pct / 100), Math.max(0, left));
           if (a > 0) { g.monsterHp -= a; try { baBarSync(); } catch (e) {} paintFoe(); seal(); }
           return a;
         } catch (e) { return 0; }
       }
+      /* v9.29 fix: เดิมอ้าง BA_SK4_CASTING ซึ่งเป็น let ในคลอเชอร์ของ IIFE อื่น
+         → ReferenceError ถูก try/catch กลืนเงียบ = ร่ายแล้วไม่ลงดาเมจเลย (กับดักข้อ 46)
+         ทะลุประตูเกราะของ v9.18 ด้วยการพลิก BA_BAR.broken ชั่วคราว (let ระดับสคริปต์) แทน */
       function hit(g, i) {
-        const h = g.monsterHp, was = BA_SK4_CASTING, lv = BA_LIVE;
-        BA_SK4_CASTING = true; BA_LIVE = true;
-        try { cdHitMonster(hunterAtk(), h); } finally { BA_SK4_CASTING = was; BA_LIVE = lv; }
+        const b = bar(g), br = b ? b.broken : true, lv = BA_LIVE, h = g.monsterHp; let d = 0;
+        if (b && !br) b.broken = true;
+        BA_LIVE = true;
+        try { d = cdHitMonster(hunterAtk(), h) || 0; } finally { if (b && !br) b.broken = false; BA_LIVE = lv; }
         BA_V91_ARM[i] = false;
         try { baBarSync(); } catch (e) {}
+        paintFoe();
+        return d;
       }
       function live(g) { return g && g.currentMonster && g.monsterHp > 0 && !g.locked && !g.practiceMode; }
+      /* ร่ายจนอสูรตายก่อน onMonsterDefeated มาถึง → ล็อกเทิร์นกันหมดเวลาตัดสินกับศพ (nextMonster ปลดให้เอง) */
+      function lockDead(g, m) {
+        try {
+          if (g.currentMonster === m && g.monsterHp <= 0 && !g.locked && TURN_TIMER) {
+            g.locked = true; try { clearQuestionTimer(); } catch (e) {} N.lock++;
+          }
+        } catch (e) {}
+      }
 
       /* ── 2) ร่ายทันที ── */
       if (typeof baV91Activate === 'function') {
         const _a = baV91Activate;
         baV91Activate = function (i, g, r) {
-          const m = g ? g.currentMonster : null;
+          const m = g ? g.currentMonster : null, h0 = g ? g.monsterHp : 0;
           const ok = _a.apply(this, arguments);
           try {
-            if (!ok || !live(g) || g.currentMonster !== m) return ok;
+            if (!ok || !g || g.practiceMode || !m || g.currentMonster !== m) return ok;
             const k = cid(g), f = fx(g, i);
-            if ((k === 'assassin' || k === 'slayer') && i === 0) {
+            let acted = false;
+            if (!live(g)) { /* อสูรล้มไปแล้วในสายของเดิม */ }
+            else if ((k === 'assassin' || k === 'slayer') && i === 0) {
               hit(g, 0); shred(g, 15);
               try { extendQuestionTimer(Math.round((f.win || 3.5) * 1000)); } catch (e) {}
-              banner('⚡ ' + NAMES[k][0], 'ฟันทันที · ฉีกเกราะ 15% · ชะลอเวลา'); N.inst++;
+              banner('⚡ ' + NAMES[k][0], 'ฟันทันที · ฉีกเกราะ 15% · ชะลอเวลา'); acted = true;
             } else if ((k === 'assassin' || k === 'slayer') && i === 2) {
               const sec = f.time || 3;
               try { extendQuestionTimer(Math.round(sec * 1000)); } catch (e) {}
               hit(g, 2); const a = shred(g, 25);
-              banner('🗡️ ' + NAMES[k][2], 'ชะลอเวล +' + sec + ' วิ · ลดเกราะ ' + a); N.inst++;
+              banner('🗡️ ' + NAMES[k][2], 'ชะลอเวลา +' + sec + ' วิ · ลดเกราะ ' + a); acted = true;
             } else if (k === 'guardian' && i === 2) {
               DR = 1; N.dr++;
               const t = trueDmg(g, hunterAtk() * 0.5);
-              banner('🏰 ' + NAMES[k][2], 'ฟื้น 35% · ดาเมจที่รับ −65% · ระงับบอส 1T' + (t ? ' · ทะลุ -' + t : '')); N.inst++;
+              banner('🏰 ' + NAMES[k][2], 'ฟื้น 35% · ดาเมจที่รับ −65% · ระงับบอส 1T' + (t ? ' · ทะลุ -' + t : '')); acted = true;
             } else if (k === 'priest' && i === 2) {
               try { baCbCleanse(); } catch (e) {}
               const mm = g.currentMonster;
@@ -46779,14 +46802,31 @@
                 }
               }
               shred(g, 25);
-              banner('✨ ล้างสถานะผิดปกติ', NAMES[k][2] + ' · ตัดตัวเลือกผิด 3 · สลายเกราะ'); N.inst++;
-            } else if (k === 'priest' && i === 0) {
-              banner('☠️ ตัดการฟื้นฟูเลือดบอส -75%', NAMES[k][0]);
+              banner('✨ ล้างสถานะผิดปกติ', NAMES[k][2] + ' · ตัดตัวเลือกผิด 3 · สลายเกราะ'); acted = true;
             }
-            if (N.inst) baSyncCurrentClassSkills(true);
+            const d0 = Math.max(0, Math.round(h0 - g.monsterHp));
+            if (!acted && i === 0 && k === 'guardian') {
+              banner('🛡️ ' + NAMES[k][0], 'โจมตีทันที' + (d0 ? ' -' + d0 : '')); acted = true;
+            } else if (!acted && i === 0 && k === 'priest') {
+              banner('☠️ ตัดการฟื้นฟูเลือดบอส -75%', NAMES[k][0] + (d0 ? ' · -' + d0 : '')); acted = true;
+            }
+            lockDead(g, m);
+            if (acted) { N.inst++; baSyncCurrentClassSkills(true); }
           } catch (e) { try { baErr(e, 'v929:act'); } catch (x) {} }
           return ok;
         };
+      }
+      /* ตอบถูก: Overheal Smite ของนักบวช หรือชีพจรพาสซีฟ S2 — แยกเป็นฟังก์ชันให้ตัวตรวจเรียกได้ */
+      function afterRight(g, k, m0, mp0, hp0, full) {
+        if (k === 'priest' && full && m0 && g.currentMonster === m0 && g.monsterHp > 1) {
+          const t = trueDmg(g, hunterAtk() * BA_V929_SMITE);
+          if (t) { banner('☀️ แสงลงทัณฑ์ศักดิ์สิทธิ์', 'HP เต็ม · ดาเมจศักดิ์สิทธิ์ 1000% -' + t); pulse(1); N.smite++; return 'smite'; }
+        } else if (g.mp > mp0 || g.hp > hp0) {
+          const dm = Math.round(g.mp - mp0), dh = Math.round(g.hp - hp0);
+          banner('พาสซีฟ: ' + (dm > 0 ? '+' + dm + ' MP' : '') + (dm > 0 && dh > 0 ? '/' : '') + (dh > 0 ? '+' + dh + ' HP' : ''), NAMES[k] ? NAMES[k][1] : '');
+          pulse(1); N.passive++; return 'passive';
+        }
+        return '';
       }
       /* ลดดาเมจที่รับ −65% ข้อเดียว */
       if (typeof wrongDamage === 'function') {
@@ -46805,17 +46845,7 @@
           const full = g && g.hp >= g.maxHp, m0 = g ? g.currentMonster : null;
           const r = _r.apply(this, arguments);
           try {
-            if (g && !g.practiceMode && (g.correct || 0) > c0) {
-              const k = cid(g);
-              if (k === 'priest' && full && m0 && g.currentMonster === m0 && g.monsterHp > 1) {
-                const t = trueDmg(g, hunterAtk() * BA_V929_SMITE);
-                if (t) { banner('☀️ แสงลงทัณฑ์ศักดิ์สิทธิ์', 'HP เต็ม · ดาเมจศักดิ์สิทธิ์ 1000% -' + t); pulse(1); N.smite++; }
-              } else if (g.mp > mp0 || g.hp > hp0) {
-                const dm = Math.round(g.mp - mp0), dh = Math.round(g.hp - hp0);
-                banner('พาสซีฟ: ' + (dm > 0 ? '+' + dm + ' MP' : '') + (dm > 0 && dh > 0 ? '/' : '') + (dh > 0 ? '+' + dh + ' HP' : ''), NAMES[k] ? NAMES[k][1] : '');
-                pulse(1);
-              }
-            }
+            if (g && !g.practiceMode && (g.correct || 0) > c0) afterRight(g, cid(g), m0, mp0, hp0, full);
             if (DR) DR = 0;
           } catch (e) { try { baErr(e, 'v929:ans'); } catch (x) {} }
           return r;
@@ -46829,9 +46859,11 @@
           const sh = (g.shield | 0) > 0 ? Math.min(100, Math.round((g.shield | 0) * 25)) : 0;
           if (!seg && sh <= 0) return;
           if (!seg) { seg = document.createElement('i'); seg.className = 'ba-shield'; hp.appendChild(seg); }
+          /* v9.29 fix: เดิมกว้าง 100−HP% → HP เต็ม = 0px มองไม่เห็นเลย · ตอนนี้ซ้อนทับปลายหลอด HP */
           const hpPct = Math.max(0, Math.min(100, g.hp / (g.maxHp || 1) * 100));
-          seg.style.left = hpPct + '%';
-          seg.style.width = Math.min(100 - hpPct, sh) + '%';
+          const w = Math.min(100, sh);
+          seg.style.left = Math.max(0, Math.min(hpPct, 100 - w)) + '%';
+          seg.style.width = w + '%';
           if (sh > 0) N.shield++;
         } catch (e) {}
       }
@@ -46856,11 +46888,155 @@
           return ok;
         };
       }
+      /* ── 4) ตัวตรวจในเกม — window.verifyV929Combat() ──
+         เรียกจาก Console ระหว่างอยู่ในสนามรบ · ร่าย S1/S3 ของ 4 สายในกล่องทราย (sandbox) บนอสูรตัวจริง
+         แล้วคืนทุกอย่างกลับ: G · อสูร · เกราะ · localStorage · ฟังก์ชันที่ถูกสตับ
+         ใช้อสูรตัวจริง ไม่สลับตัวปลอม เพราะตัวติดตามที่ผูกด้วยตัวอ็อบเจกต์ (BA_FIGHT_M · BA_INC_M ·
+         BA_RS_M · BA_QD_PH_M ฯลฯ) จะรีเซ็ตไฟต์ แล้วอาจจ่ายเฟส 💎 ซ้ำ */
+      function vLayout() {
+        const o = {};
+        [['card', '.ac-battle'], ['arena', '#baArena'], ['hpbar', '#baHeroHp'], ['skills', '#gSkills'], ['hero', '#baHero']]
+          .forEach(function (p) { const e = document.querySelector(p[1]); o[p[0]] = e ? e.offsetWidth + 'x' + e.offsetHeight : '-'; });
+        o.hscroll = document.body.scrollWidth > window.innerWidth;
+        return o;
+      }
+      function vSame(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
+      function vSnap(o, skip) {
+        const s = {};
+        Object.keys(o).forEach(function (k) {
+          if (skip && skip.indexOf(k) >= 0) return;
+          const v = o[k];
+          if (v === null || typeof v !== 'object') s[k] = { v: v };
+          else { try { s[k] = { j: JSON.stringify(v) }; } catch (e) { s[k] = { r: v }; } }
+        });
+        return s;
+      }
+      function vRestore(o, s, skip) {
+        Object.keys(o).forEach(function (k) { if (!(k in s) && !(skip && skip.indexOf(k) >= 0)) delete o[k]; });
+        Object.keys(s).forEach(function (k) {
+          const e = s[k];
+          if ('v' in e) { if (o[k] !== e.v) o[k] = e.v; }
+          else if ('r' in e) o[k] = e.r;
+          else { let cur; try { cur = JSON.stringify(o[k]); } catch (x) {} if (cur !== e.j) o[k] = JSON.parse(e.j); }
+        });
+      }
+      function vBanner() { const e = document.getElementById('baSkill'); return e ? e.textContent : null; }
+      window.verifyV929Combat = async function () {
+        const g = baG();
+        if (!g || !g.currentMonster) return { ok: false, error: 'ต้องอยู่ในสนามรบ (มีอสูรตรงหน้า)' };
+        const errors = [], rep = { ver: '9.29', casts: [], shield: {}, pulse: {}, passive: {}, smite: {}, cls: {} };
+        const L0 = vLayout();
+        /* A) แถบเกราะ + ชีพจร บนสถานะจริง */
+        const sh0 = g.shield, hpA = g.hp, hadSeg = !!document.querySelector('#baHeroHp .ba-shield');
+        try {
+          g.shield = 2;
+          [['full', g.maxHp], ['half', Math.max(1, Math.round(g.maxHp / 2))]].forEach(function (c) {
+            g.hp = c[1]; shieldPaint();
+            const bar0 = document.getElementById('baHeroHp'), seg = bar0 && bar0.querySelector('.ba-shield');
+            const sw = seg ? seg.offsetWidth : 0, sl = seg ? seg.offsetLeft : -1, bw = bar0 ? bar0.offsetWidth : 0;
+            rep.shield[c[0]] = { w: sw, left: sl, bar: bw, ok: !!seg && sw > 0 && sl >= 0 && sl + sw <= bw + 1 };
+          });
+          pulse(1);
+          const he = hero(), sk = document.querySelector('#gSkills .g-skill[data-ds="1"]');
+          rep.pulse = { hero: he ? he.style.boxShadow : '', skill: sk ? sk.style.boxShadow : '' };
+          rep.pulse.ok = /18px/.test(rep.pulse.hero) && /0, 255, 102|#00ff66/i.test(rep.pulse.hero);
+        } catch (e) { errors.push('A:' + e.message); }
+        rep.cls.L1 = vLayout();
+        g.shield = sh0; g.hp = hpA;
+        if (!hadSeg && !((g.shield | 0) > 0)) { const s = document.querySelector('#baHeroHp .ba-shield'); if (s) s.remove(); } else shieldPaint();
+        /* B) กล่องทราย */
+        const LS = {}; for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); LS[k] = localStorage.getItem(k); }
+        const m = g.currentMonster, gS = vSnap(g, ['currentMonster']), mS = vSnap(m);
+        const keep = { bar: BA_BAR, brk: BA_BREAK_UNTIL, seal: AB_SEAL, live: BA_LIVE, dr: DR, n: Object.assign({}, N),
+                       arm: BA_V91_ARM.slice(), cd: BA_V91_CD.slice(), tip: (document.getElementById('gSkillTip') || {}).textContent };
+        const STUB = {}, spy = { ext: [], cleanse: 0, tips: [] };
+        /* อ่าน/เขียนชื่อระดับบนสุดผ่าน new Function (ขอบเขต global) — ไม่ใช้ eval ตรง
+           เพราะ terser จะเลิกย่อชื่อทั้ง IIFE ที่มี eval อยู่ */
+        function gGet(n) { try { return new Function('return typeof ' + n + " === 'function' ? " + n + ' : null')(); } catch (e) { return null; } }
+        function gSet(n, f) { try { new Function('f', n + ' = f')(f); } catch (e) {} }
+        function stub(name, fn) { const o = gGet(name); if (o) { STUB[name] = o; gSet(name, fn); } }
+        try {
+          ['saveStore', 'saveProgress', 'baPlSave', 'wbPush', 'fbPush', 'fbTouch', 'csTouch', 'csFlush', 'scheduleTurn', 'qAdd', 'qAfterProgress',
+           'clearQuestionTimer', 'startQuestionTimer', 'nextMonster', 'onMonsterDefeated', 'clearFloor', 'onHunterDown', 'renderChoices']
+            .forEach(function (n) { stub(n, function () {}); });
+          stub('extendQuestionTimer', function (ms) { spy.ext.push(ms); });
+          stub('baCbCleanse', function () { spy.cleanse++; });
+          stub('skillTip', function (t) { spy.tips.push(String(t)); });
+          g.monsterHp = g.monsterMaxHp = 2e6;
+          BA_BAR = { m: m, floor: g.floor, base: 1e6, max: 1e6, tier: 'boss', broken: false };
+          AB_SEAL = null; g.locked = false; g.practiceMode = false;
+          ['priest', 'guardian', 'assassin', 'slayer'].forEach(function (k) {
+            g.classId = k;
+            try { baPlEnsure(g); recalcStats(); baSyncCurrentClassSkills(true); } catch (e) { errors.push(k + ':init:' + e.message); }
+            [0, 2].forEach(function (i) {
+              const row = { cls: k, slot: 'S' + (i + 1), name: NAMES[k][i] };
+              try {
+                BA_V91_CD[i] = 0; BA_V91_ARM[i] = false; g.mp = 999; g.hp = Math.round(g.maxHp * 0.7);
+                if (g.currentMonster !== m) g.currentMonster = m;
+                const r = baResolveSkillEffects(baDsRoleOf(g), null, i, baPlSlotLv(g, i));
+                const h0 = g.monsterHp, hh0 = g.hp, n0 = (m.choices || []).length, e0 = spy.ext.length, c0 = spy.cleanse;
+                const t0 = performance.now(), ok = baV91Activate(i, g, r), ms = performance.now() - t0;
+                const bt = vBanner();
+                row.ok = !!ok; row.ms = Math.round(ms * 100) / 100; row.hpDrop = Math.round(h0 - g.monsterHp);
+                row.banner = bt === null ? null : bt.indexOf(NAMES[k][i]) >= 0;
+                row.extra = (k === 'priest' && i === 2) ? ((m.choices || []).length < n0 || n0 <= 1) && spy.cleanse > c0
+                          : (k === 'guardian' && i === 2) ? DR === 1 && g.hp > hh0
+                          : (k === 'assassin' || k === 'slayer') ? spy.ext.length > e0 : true;
+                row.pass = row.ok && row.banner !== false && row.extra && (i === 2 && k !== 'guardian' && k !== 'priest' ? row.hpDrop > 0 : true)
+                           && ((k === 'assassin' || k === 'slayer') ? row.hpDrop > 0 : true);
+                DR = 0;
+                if (m.choices && mS.choices) m.choices = JSON.parse(mS.choices.j);
+              } catch (e) { row.pass = false; row.err = e.message; errors.push(k + ':S' + (i + 1) + ':' + e.message); }
+              rep.casts.push(row);
+            });
+          });
+          /* พาสซีฟ S2 → แบนเนอร์ + ชีพจรเขียว */
+          try {
+            g.classId = 'guardian'; baPlEnsure(g); recalcStats(); baSyncCurrentClassSkills(true);
+            const res = afterRight(g, 'guardian', m, g.mp - 5, g.hp, false);
+            const he = hero(), sk = document.querySelector('#gSkills .g-skill[data-ds="1"]'), bt = vBanner() || '';
+            rep.passive = { res: res, banner: bt.indexOf('พาสซีฟ') >= 0, hero: he ? he.style.boxShadow : '', skill: sk ? sk.style.boxShadow : '' };
+            rep.passive.ok = res === 'passive' && rep.passive.banner && /18px/.test(rep.passive.hero) && /18px/.test(rep.passive.skill);
+          } catch (e) { errors.push('passive:' + e.message); }
+          /* Overheal Smite */
+          try {
+            g.classId = 'priest'; baPlEnsure(g); recalcStats(); g.hp = g.maxHp;
+            const h0 = g.monsterHp, res = afterRight(g, 'priest', m, g.mp, g.hp, true), bt = vBanner() || '';
+            rep.smite = { res: res, hpDrop: Math.round(h0 - g.monsterHp), banner: bt.indexOf('แสงลงทัณฑ์') >= 0 };
+            rep.smite.ok = res === 'smite' && rep.smite.hpDrop > 0 && rep.smite.banner;
+          } catch (e) { errors.push('smite:' + e.message); }
+        } finally {
+          Object.keys(STUB).forEach(function (n) { gSet(n, STUB[n]); });
+          try { vRestore(m, mS); g.currentMonster = m; vRestore(g, gS, ['currentMonster']); } catch (e) { errors.push('restoreG:' + e.message); }
+          BA_BAR = keep.bar; BA_BREAK_UNTIL = keep.brk; AB_SEAL = keep.seal; BA_LIVE = keep.live; DR = keep.dr;
+          Object.keys(N).forEach(function (k) { N[k] = keep.n[k] || 0; }); N.verify++;
+          try { baV91Reset(); } catch (e) {}
+          BA_V91_ARM = keep.arm; BA_V91_CD = keep.cd;
+          try {
+            Object.keys(LS).forEach(function (k) { if (localStorage.getItem(k) !== LS[k]) localStorage.setItem(k, LS[k]); });
+            for (let i = localStorage.length - 1; i >= 0; i--) { const k = localStorage.key(i); if (!(k in LS)) localStorage.removeItem(k); }
+          } catch (e) {}
+          const tip = document.getElementById('gSkillTip'); if (tip && keep.tip != null) tip.textContent = keep.tip;
+          try { recalcStats(); renderStats(); renderMonsterHp(); baBarPaint(); baSyncCurrentClassSkills(true); } catch (e) {}
+          try { if (typeof baDsHook === 'function') baDsHook('class'); } catch (e) {}
+          shieldPaint();
+        }
+        rep.cls.L0 = L0; rep.cls.L2 = vLayout();
+        rep.cls.ok = vSame(L0, rep.cls.L1) && vSame(L0, rep.cls.L2);
+        await new Promise(function (r) { setTimeout(r, BA_V929_PULSE_MS + 120); });
+        const he = hero(); rep.decay = !he || !/0, 255, 102|#00ff66/i.test(he.style.boxShadow);
+        rep.tips = spy.tips.slice(0, 12); rep.errors = errors;
+        rep.ok = !errors.length && rep.casts.every(function (c) { return c.pass; }) && rep.shield.full && rep.shield.full.ok
+               && rep.shield.half && rep.shield.half.ok && rep.pulse.ok && rep.passive.ok && rep.smite.ok && rep.cls.ok && rep.decay;
+        VERIFY = rep;
+        try { console.table(rep.casts); } catch (e) {}
+        return rep;
+      };
       if (typeof baBattleAudit === 'function') {
         const _au = baBattleAudit;
         baBattleAudit = function () {
           const o = _au.apply(this, arguments) || {};
-          o.kitV929 = { ver: '9.29', names: NAMES, dr: DR, n: Object.assign({}, N) };
+          o.kitV929 = { ver: '9.29', names: NAMES, dr: DR, n: Object.assign({}, N), verify: VERIFY };
           return o;
         };
       }

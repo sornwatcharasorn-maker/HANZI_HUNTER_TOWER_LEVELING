@@ -46672,7 +46672,10 @@
                        assassin: 'assassin', monarch: 'assassin', blade: 'slayer', slayer: 'slayer' };
       const BA_V929_DR = 0.35, BA_V929_SMITE = 10, BA_V929_ULT12 = 1200;
       const BA_V929_GLOW = '0 0 18px #00ff66', BA_V929_PULSE_MS = 600;
-      const N = { name: 0, inst: 0, smite: 0, dr: 0, shield: 0, pulse: 0, passive: 0, lock: 0, verify: 0 };
+      const N = { name: 0, inst: 0, smite: 0, dr: 0, shield: 0, pulse: 0, passive: 0, lock: 0, verify: 0, gcd: 0, absorb: 0 };
+      /* v9.29b · S1 ผู้พิทักษ์/ผู้พิทักษ์เหวลึก ติด CD 1 เทิร์นหลังร่าย (เดิม v9.18/K926 รีเซ็ตเป็น 0 = กดรัวได้ไม่จำกัด)
+         ร่ายยังทันทีเหมือนเดิม · ตัวนับลดที่ resolveAnswer ของ v9.1 → พร้อมใช้อีกครั้งในข้อถัดไป */
+      const BA_V929_GCD = 1;
       let VERIFY = null;
       let DR = 0;
       function cid(g) { try { return baPlClass(g).id; } catch (e) { return ''; } }
@@ -46811,6 +46814,7 @@
               banner('☠️ ตัดการฟื้นฟูเลือดบอส -75%', NAMES[k][0] + (d0 ? ' · -' + d0 : '')); acted = true;
             }
             lockDead(g, m);
+            if (k === 'guardian' && i === 0) { BA_V91_CD[0] = Math.max(BA_V91_CD[0] | 0, BA_V929_GCD); N.gcd++; acted = true; }
             if (acted) { N.inst++; baSyncCurrentClassSkills(true); }
           } catch (e) { try { baErr(e, 'v929:act'); } catch (x) {} }
           return ok;
@@ -46836,6 +46840,24 @@
       if (typeof baHurtHero === 'function') {
         const _h = baHurtHero;
         baHurtHero = function (amount) { return _h.call(this, DR ? Math.round(amount * BA_V929_DR) : amount); };
+      }
+      /* v9.29b · เกราะ (แถบฟ้า) ต้องรับดาเมจก่อน HP เสมอ — เดิม G.shield ถูกหักเฉพาะทางตอบผิดของ v4.0
+         ส่วนดาเมจจาก baHurtHero (หลอดโจมตีปกติ · สกิล/คำสาปบอส · Enrage · Doomsday) ทะลุเกราะลง HP ตรง
+         แถบฟ้าจึงค้างทับหลอดแดงทั้งที่ HP ลดลงเรื่อย ๆ · 1 ชั้นเกราะ = กันดาเมจ 1 ครั้ง (กติกา v4.0) */
+      if (typeof baHurtHero === 'function') {
+        const _hs = baHurtHero;
+        baHurtHero = function (amount) {
+          try {
+            const g = baG();
+            if (g && !g.practiceMode && (g.shield | 0) > 0 && amount > 0) {
+              g.shield = (g.shield | 0) - 1; N.absorb++;
+              try { renderStats(); } catch (e) {}
+              const t = baSpot('baHero'); if (t) baFloat('🛡️ BLOCK', 'heal', t);
+              return 0;
+            }
+          } catch (e) {}
+          return _hs.apply(this, arguments);
+        };
       }
       /* ── Overheal Smite · พาสซีฟ S2 · ลดตัวนับเทิร์น ── */
       if (typeof resolveAnswer === 'function') {
@@ -46864,6 +46886,8 @@
           const w = Math.min(100, sh);
           seg.style.left = Math.max(0, Math.min(hpPct, 100 - w)) + '%';
           seg.style.width = w + '%';
+          /* v9.29b · แถบฟ้าเหลือเป็นแถบบางที่ขอบล่าง (inline · absolute) — หลอดแดงยังเห็นเต็มเสมอ ไม่ถูกทับมิด */
+          seg.style.top = 'auto'; seg.style.height = '40%';
           if (sh > 0) N.shield++;
         } catch (e) {}
       }
@@ -47036,7 +47060,7 @@
         const _au = baBattleAudit;
         baBattleAudit = function () {
           const o = _au.apply(this, arguments) || {};
-          o.kitV929 = { ver: '9.29', names: NAMES, dr: DR, n: Object.assign({}, N), verify: VERIFY };
+          o.kitV929 = { ver: '9.29', gcd: BA_V929_GCD, cd0: BA_V91_CD[0] | 0, names: NAMES, dr: DR, n: Object.assign({}, N), verify: VERIFY };
           return o;
         };
       }

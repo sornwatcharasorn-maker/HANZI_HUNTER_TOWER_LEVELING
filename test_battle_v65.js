@@ -395,6 +395,7 @@ async function goFloor(page, f) {
   const fire = await page.evaluate(async () => {
     if (typeof BA_PR_UNTIL !== 'undefined') BA_PR_UNTIL = 0;
     G.streak = 0;   /* Shadow Ward ของ v6.9 หักดาเมจที่รับ 15% ตั้งแต่คอมโบ 5 */
+    G.shield = 0;   /* v9.29b: เกราะรับหมัดของหลอดโจมตีปกติก่อน HP แล้ว — วัดดาเมจดิบต้องไม่มีเกราะ */
     G.hp = G.maxHp;
     const hp0 = G.hp;
     BA_BAT = 99.9;

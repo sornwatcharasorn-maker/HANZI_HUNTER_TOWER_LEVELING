@@ -46995,6 +46995,143 @@
           return ok;
         };
       }
+      /* ── v9.31 · 5-STAR TIER UPGRADE (นักบวช · นักรบ · นักลอบสังหาร) — ห่อล้วน ไม่มี CSS/DOM ใหม่ ──
+         สถานะเป็นของรอบการเล่น ไม่เซฟ · ดาเมจจริงผ่าน trueDmg (ไม่ฆ่า) · ฟื้นผ่าน cdHeal · ไม่แตะ Math.random */
+      const V31 = { ovhPct: 0.5, flat: 1500, ls: 15, stag: 0.3, exe: 0.5, exeAt: 0.25, bleedT: 3, bleedAtk: 0.5, csMax: 3 };
+      const X = { ovh: 0, evade: 0, bleed: 0, sil: 0, inv: 0 };
+      const N31 = { ovh: 0, sil: 0, inv: 0, shred: 0, ls: 0, stag: 0, exe: 0, evade: 0, cs: 0, bleed: 0, tdmg: 0 };
+      function x31reset() { X.ovh = 0; X.evade = 0; X.bleed = 0; X.sil = 0; X.inv = 0; }
+      function shredFlat(g, n) {
+        try {
+          const left = bar(g) ? baBarLeft() : 0;
+          if (!(left > 0)) return 0;
+          const a = Math.min(Math.round(n), left);
+          if (a > 0) { g.monsterHp -= a; try { baBarSync(); } catch (e) {} paintFoe(); seal(); }
+          return a;
+        } catch (e) { return 0; }
+      }
+      /* เปิดสกิลช่อง 1/3 */
+      if (typeof baV91Activate === 'function') {
+        const _a31 = baV91Activate;
+        baV91Activate = function (i, g, r) {
+          const m = g ? g.currentMonster : null;
+          const ok = _a31.apply(this, arguments);
+          try {
+            if (!ok || !g || g.practiceMode || !m || g.currentMonster !== m) return ok;
+            const k = cid(g);
+            if (k === 'priest' && i === 2) { X.sil = 1; N31.sil++; banner('🔇 ผนึกเสียงบอส 1T', NAMES.priest[2]); }
+            else if (k === 'slayer' && i === 0 && live(g)) { const a = shredFlat(g, V31.flat); if (a) { N31.shred++; banner('🪓 ฉีกเกราะ -' + a, NAMES.slayer[0]); } }
+            else if (k === 'slayer' && i === 2 && live(g) && typeof BA_ST_N !== 'undefined' && !baStOn()) {
+              BA_ST_N += Math.max(1, Math.ceil(BA_ST_HITS * V31.stag)); N31.stag++;
+              if (BA_ST_N >= BA_ST_HITS) baStFire();
+            } else if (k === 'assassin' && i === 0) { X.evade = 1; banner('🌀 หลบการโจมตีถัดไป 100%', NAMES.assassin[0]); }
+            else if (k === 'assassin' && i === 2) { X.bleed = V31.bleedT; banner('🩸 เลือดไหล ' + V31.bleedT + ' เทิร์น', NAMES.assassin[2]); }
+          } catch (e) { try { baErr(e, 'v931:act'); } catch (x) {} }
+          return ok;
+        };
+      }
+      /* นักบวช S2: ฟื้นล้น 50% → ชั้นเกราะ */
+      if (typeof cdHeal === 'function') {
+        const _ch31 = cdHeal;
+        cdHeal = function (amount) {
+          const got = _ch31.apply(this, arguments);
+          try {
+            const g = baG();
+            if (g && !g.practiceMode && cid(g) === 'priest' && amount > 0 && fx(g, 1).heal > 0) {
+              const over = Math.round(amount) - got;
+              if (over > 0) {
+                X.ovh += over * V31.ovhPct; const per = Math.max(1, (g.maxHp || 1) * 0.25);
+                while (X.ovh >= per && (g.shield | 0) < maxShield()) { X.ovh -= per; g.shield = (g.shield | 0) + 1; N31.ovh++; }
+                if ((g.shield | 0) >= maxShield()) X.ovh = Math.min(X.ovh, per);
+              }
+            }
+          } catch (e) {}
+          return got;
+        };
+      }
+      /* หลบ / อมตะ 1 เทิร์น — ชั้นนอกสุดของ baHurtHero/wrongDamage */
+      if (typeof baHurtHero === 'function') {
+        const _hh31 = baHurtHero;
+        baHurtHero = function (amount) {
+          try {
+            const g = baG();
+            if (g && !g.practiceMode && amount > 0) {
+              if (X.inv > 0) { banner('🛡️ อมตะ', ''); return 0; }
+              if (X.evade > 0) { X.evade = 0; N31.evade++; banner('💨 หลบสำเร็จ', NAMES.assassin[0]); return 0; }
+            }
+          } catch (e) {}
+          return _hh31.apply(this, arguments);
+        };
+      }
+      if (typeof wrongDamage === 'function') {
+        const _wd31 = wrongDamage;
+        wrongDamage = function () {
+          const v = _wd31.apply(this, arguments);
+          try { if (X.inv > 0) return 0; if (X.evade > 0 && v > 0 && BA_LIVE) { X.evade = 0; N31.evade++; return 0; } } catch (e) {}
+          return v;
+        };
+      }
+      if (typeof baFighting === 'function') {
+        const _bf31 = baFighting;
+        baFighting = function () { return X.sil > 0 ? false : _bf31.apply(this, arguments); };
+      }
+      /* ตอบ: ดูดเลือดนักรบ · โล่คอมโบ/เลือดไหลของนักลอบสังหาร · นับถอยหลังเทิร์น */
+      if (typeof resolveAnswer === 'function') {
+        const _r31 = resolveAnswer;
+        resolveAnswer = function () {
+          const g = baG(), c0 = g ? (g.correct || 0) : 0, h0 = g ? g.monsterHp : 0, nc0 = N.crit || 0, m0 = g ? g.currentMonster : null;
+          const r = _r31.apply(this, arguments);
+          try {
+            if (g && !g.practiceMode) {
+              const k = cid(g), right = (g.correct || 0) > c0;
+              if (right) {
+                if (k === 'slayer' && (g.streak | 0) > 0 && fx(g, 1).atk > 0) {
+                  const d = Math.round(h0 - g.monsterHp), h = d > 0 ? cdHeal(d * V31.ls / 100) : 0;
+                  if (h > 0) { N31.ls++; try { renderStats(); } catch (e) {} }
+                }
+                if (k === 'assassin' && (N.crit || 0) > nc0 && (g.shield | 0) < V31.csMax) { g.shield = (g.shield | 0) + 1; N31.cs++; try { renderStats(); } catch (e) {} }
+                if (X.bleed > 0 && m0 && g.currentMonster === m0 && g.monsterHp > 1) {
+                  const t = trueDmg(g, hunterAtk() * V31.bleedAtk);
+                  if (t) { N31.tdmg += t; N31.bleed++; }
+                }
+              }
+              if (X.bleed > 0) X.bleed--;
+              if (X.sil > 0) X.sil--;
+              if (X.inv > 0) X.inv--;
+            }
+          } catch (e) { try { baErr(e, 'v931:ans'); } catch (x) {} }
+          return r;
+        };
+      }
+      /* ท่าไม้ตาย: นักบวชอมตะ · นักรบประหาร <25% · นักลอบสังหารดาเมจจริงทะลุเกราะ */
+      if (typeof baPlCast === 'function') {
+        const _pc31 = baPlCast;
+        baPlCast = function () {
+          const g = baG(), h0 = g ? g.monsterHp : 0, mx = g ? (g.monsterMaxHp || 1) : 1, m0 = g ? g.currentMonster : null;
+          const ok = _pc31.apply(this, arguments);
+          try {
+            if (ok && g && !g.practiceMode) {
+              const k = cid(g), d = Math.round(h0 - g.monsterHp);
+              if (k === 'priest') { X.inv = 1; N31.inv++; banner('✨ อมตะ 1 เทิร์น', NAMES.priest[3]); }
+              else if (k === 'slayer' && d > 0 && h0 / mx < V31.exeAt && g.monsterHp > 1 && g.currentMonster === m0) {
+                const t = trueDmg(g, d * V31.exe); if (t) { N31.exe++; banner('⚔️ ประหาร +' + t, NAMES.slayer[3]); }
+              } else if (k === 'assassin' && d > 0 && g.monsterHp > 0 && g.currentMonster === m0 && bar(g)) {
+                g.monsterHp += d;                  /* คืนดาเมจที่ลงเกราะ แล้วลงใหม่เป็นดาเมจจริง (หลอดแดง) */
+                const t = trueDmg(g, d); if (t) { N31.tdmg += t; banner('💀 ดาเมจจริง -' + t, NAMES.assassin[3]); }
+              }
+              try { renderStats(); } catch (e) {}
+            }
+          } catch (e) { try { baErr(e, 'v931:cast'); } catch (x) {} }
+          return ok;
+        };
+      }
+      ['exitGame', 'startGame'].forEach(function (n) {
+        const o = gGet31(n); if (!o) return;
+        gSet31(n, function () { x31reset(); return o.apply(this, arguments); });
+      });
+      try { if (typeof ba === 'object' && ba) ba.kit5Reset = x31reset; } catch (e) {}
+      function gGet31(n) { try { return new Function('return typeof ' + n + " === 'function' ? " + n + ' : null')(); } catch (e) { return null; } }
+      function gSet31(n, f) { try { new Function('f', n + ' = f')(f); } catch (e) {} }
       /* ── 4) ตัวตรวจในเกม — window.verifyV929Combat() ──
          เรียกจาก Console ระหว่างอยู่ในสนามรบ · ร่าย S1/S3 ของ 4 สายในกล่องทราย (sandbox) บนอสูรตัวจริง
          แล้วคืนทุกอย่างกลับ: G · อสูร · เกราะ · localStorage · ฟังก์ชันที่ถูกสตับ
@@ -47143,6 +47280,7 @@
         const _au = baBattleAudit;
         baBattleAudit = function () {
           const o = _au.apply(this, arguments) || {};
+          o.kit5star = { ver: '9.31', cfg: V31, x: Object.assign({}, X), n: Object.assign({}, N31) };
           o.kitV929 = { ver: '9.29', bal: BAL, gcd: BA_V929_GCD, cd0: BA_V91_CD[0] | 0, names: NAMES, dr: DR, n: Object.assign({}, N), verify: VERIFY };
           return o;
         };

@@ -46680,15 +46680,31 @@
          gS3: ดาเมจจริงของผู้พิทักษ์ S3 = ATK×atk + MaxHP×hp · หนีบไม่เกิน cap% ของหลอดอสูร */
       const BAL = {
         ult: { slayer: [900, 1000], assassin: [800, 900] },
-        gS3: { atk: 0.4, hp: 0.05, cap: 6 }
+        gS3: { atk: 0.4, hp: 0.05, cap: 6 },
+        bhp: { assassin: [70, 90], monarch: [70, 90], blade: [70, 90], slayer: [70, 90], guardian: [70, 90], guard: [70, 90] },
+        /* v9.32 · ต้นทุนมานาท่าไม้ตายของสายที่ MP สูงสุดต่ำ (INT ต่ำ) — เดิม 40% ทำให้ Slayer ร่ายไม่ติด */
+        ultMp: { slayer: 25 }
       };
       function ultLo(k) { return (BAL.ult[k] || [100])[0]; }
       function applyBal() {
         ROLES.assassin.concat(ROLES.slayer).forEach(function (r) {
           const u = BAL.ult[CLS_OF[r]]; if (u) atom(r, 3, 'dmg', u[0], u[1]);
         });
+        Object.keys(BAL.bhp || {}).forEach(function (r) { atom(r, 3, 'bhp', BAL.bhp[r][0], BAL.bhp[r][1]); });
         BA_DS_CK = ''; BA_DS_CV = null;
       }
+      try {
+        if (typeof baV9UltCost === 'function') {
+          const _v932Cost = baV9UltCost;
+          baV9UltCost = function (g) {
+            try {
+              const k = CLS_OF[baDsRoleOf(g)], pc = BAL.ultMp && BAL.ultMp[k];
+              if (pc) return Math.max(1, Math.round(maxMpOf(g) * pc / 100));
+            } catch (e) {}
+            return _v932Cost.apply(this, arguments);
+          };
+        }
+      } catch (e) {}
       function gS3Amt(g) {
         const v = hunterAtk() * BAL.gS3.atk + (g.maxHp || 0) * BAL.gS3.hp;
         return Math.min(v, (g.monsterMaxHp || 0) * BAL.gS3.cap / 100);
@@ -46797,6 +46813,7 @@
         const _a = baV91Activate;
         baV91Activate = function (i, g, r) {
           const m = g ? g.currentMonster : null, h0 = g ? g.monsterHp : 0;
+          const ch0 = (m && m.choices) ? m.choices.slice() : null, rm0 = m ? (m.removed | 0) : 0;
           const ok = _a.apply(this, arguments);
           try {
             if (!ok || !g || g.practiceMode || !m || g.currentMonster !== m) return ok;
@@ -46819,17 +46836,21 @@
               banner('🏰 ' + NAMES[k][2], 'ฟื้น 35% · ดาเมจที่รับ −65% · ระงับบอส 1T' + (t ? ' · ทะลุ -' + t : '')); acted = true;
             } else if (k === 'priest' && i === 2) {
               try { baCbCleanse(); } catch (e) {}
+              /* v9.32 · เหลือตัวเลือก "3 ข้อพอดี" (เฉลย + ผิด 2) — ชั้นในอาจตัดเกิน ให้คืนจากภาพก่อนร่าย */
               const mm = g.currentMonster;
-              if (mm && mm.choices && mm.answer) {
-                const w = mm.choices.filter(function (c) { return c !== mm.answer; }).slice(0, 3);
-                if (w.length) {
-                  mm.choices = mm.choices.filter(function (c) { return w.indexOf(c) < 0; });
-                  mm.removed = (mm.removed || 0) + w.length;
-                  try { renderChoices(); } catch (e) {}
-                }
+              if (mm && mm.choices && mm.answer && ch0 && ch0.length > 3) {
+                const keep = {}; keep[mm.answer] = 1;
+                const wrongNow = mm.choices.filter(function (c) { return c !== mm.answer; });
+                const pool = ch0.filter(function (c) { return c !== mm.answer && wrongNow.indexOf(c) < 0; });
+                const pick = wrongNow.slice(0, 2);
+                while (pick.length < 2 && pool.length) pick.push(pool.splice(baRand(pool.length), 1)[0]);
+                pick.forEach(function (c) { keep[c] = 1; });
+                mm.choices = ch0.filter(function (c) { return keep[c]; });
+                mm.removed = rm0 + (ch0.length - mm.choices.length);
+                try { renderChoices(); } catch (e) {}
               }
               shred(g, 25);
-              banner('✨ ล้างสถานะผิดปกติ', NAMES[k][2] + ' · ตัดตัวเลือกผิด 3 · สลายเกราะ'); acted = true;
+              banner('✨ ล้างสถานะผิดปกติ', NAMES[k][2] + ' · เหลือตัวเลือก 3 ข้อ · สลายเกราะ'); acted = true;
             }
             const d0 = Math.max(0, Math.round(h0 - g.monsterHp));
             if (!acted && i === 0 && k === 'guardian') {

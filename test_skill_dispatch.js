@@ -33,19 +33,19 @@ const WANT = {
   assassin:   [ [['win',3.5,3.5],['dmg',200,240]],
                 [['ultg',100,100],['tchn',2,2]],
                 [['time',4,4],['wdn',20,30]],
-                [['dmg',1200,1200],['bhp',8,15]] ],
+                [['dmg',800,900],['bhp',8,15]] ],
   monarch:    [ [['win',5,5],['dmg',280,340]],
                 [['ultg',100,100],['tchn',3,4]],
                 [['time',5,6],['wdn',35,45]],
-                [['dmg',1200,1200],['bhp',20,30]] ],
+                [['dmg',800,900],['bhp',20,30]] ],
   blade:      [ [['dmg',220,260]],
                 [['atk',5,10],['atkc',4,7]],
                 [['dmg',280,320],['score',50,100]],
-                [['dmg',1200,1200]] ],
+                [['dmg',900,1000]] ],
   slayer:     [ [['dmg',260,320]],
                 [['atk',10,18],['atkc',6,10]],
                 [['dmg',340,400],['score',80,150]],
-                [['dmg',1200,1200],['bhp',25,40]] ],
+                [['dmg',900,1000],['bhp',25,40]] ],
   guardian:   [ [['dmg',180,220],['hpsc',20,40]],
                 [['wdn',20,30],['barr',10,15],['mpr',10,10],['shr',5,5]],
                 [['wdn',30,45],['heal',35,35],['tdm',1,1],['sup',1,1]],
@@ -170,7 +170,7 @@ async function enterGame(page, id) {
       baResolveSkillEffects('guardian', 'c1', 3, 2).fx.heal
     ]);
     eq('Lv3 อยู่กึ่งกลาง (assassin S1 dmg)', mid[0], 220);
-    eq('Lv3 คงที่ (slayer S4 dmg 1200%)', mid[1], 1200);
+    eq('Lv3 อยู่กึ่งกลาง (slayer S4 dmg 900→1000%)', mid[1], 950);
     eq('Lv2 ไล่เชิงเส้น (guardian S4 heal)', mid[2], 38.75);
     /* ชื่อตำนานไทยของ v9.29 ครบทั้ง 8 role (C1/C2) + สารบัญ BA_PL_CLASSES */
     const names = await b.page.evaluate(lr => {
@@ -381,7 +381,7 @@ async function enterGame(page, id) {
       const sup = baPlUltAmt(G);
       return { atk: atk, sup: sup };
     });
-    eq('ท่าไม้ตายสายโจมตี = dmg/100 (1200% → 12)', ult.atk, 12);
+    eq('ท่าไม้ตายสายโจมตี = dmg/100 (assassin Lv5 900% → 9)', ult.atk, 9);
     eq('ท่าไม้ตายสายประคอง = heal % (Lv5 = 70)', ult.sup, 70);
 
     /* ข้อความบนแผงโปรไฟล์ต้องมาจากเมทริกซ์ก้อนเดียวกัน */
@@ -514,7 +514,7 @@ async function enterGame(page, id) {
       });
       return o;
     });
-    eq('S4 สายโจมตี = 1200% (×12) ทุกร่าง/ทุกระดับ', Object.values(u4).every(v => v === 12), true);
+    eq('S4 สายโจมตี v9.30 · assassin 800→900% · slayer 900→1000% ทุกร่าง', Object.keys(u4).every(k => Math.abs(u4[k] - ((k.indexOf('assassin') === 0 ? 8 : 9) + (/_5$/.test(k) ? 1 : 0))) < 1e-9), true);
     ok('ไม่มี pageerror', b.errs.length === 0, b.errs);
     await b.ctx.close();
   }

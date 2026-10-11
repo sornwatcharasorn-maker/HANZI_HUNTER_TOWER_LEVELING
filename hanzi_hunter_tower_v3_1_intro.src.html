@@ -46670,7 +46670,26 @@
       const ROLES = { priest: ['priest', 'soulmaster'], guardian: ['guardian', 'guard'], assassin: ['assassin', 'monarch'], slayer: ['blade', 'slayer'] };
       const CLS_OF = { priest: 'priest', soulmaster: 'priest', guardian: 'guardian', guard: 'guardian',
                        assassin: 'assassin', monarch: 'assassin', blade: 'slayer', slayer: 'slayer' };
-      const BA_V929_DR = 0.35, BA_V929_SMITE = 10, BA_V929_ULT12 = 1200;
+      const BA_V929_DR = 0.35, BA_V929_SMITE = 10;
+      /* v9.30 · BALANCE CONFIG — จุดจูนตัวเลขจุดเดียว (แก้ที่นี่ หรือจาก Console: ba.balance.x = … แล้ว ba.applyBalance())
+         ult: % ดาเมจท่าไม้ตายช่อง 4 ไล่ Lv1→Lv5 (เดิม 1200% คงที่ = บอสตายหมัดเดียว)
+         gS3: ดาเมจจริงของผู้พิทักษ์ S3 = ATK×atk + MaxHP×hp · หนีบไม่เกิน cap% ของหลอดอสูร */
+      const BAL = {
+        ult: { slayer: [900, 1000], assassin: [800, 900] },
+        gS3: { atk: 0.4, hp: 0.05, cap: 6 }
+      };
+      function ultLo(k) { return (BAL.ult[k] || [100])[0]; }
+      function applyBal() {
+        ROLES.assassin.concat(ROLES.slayer).forEach(function (r) {
+          const u = BAL.ult[CLS_OF[r]]; if (u) atom(r, 3, 'dmg', u[0], u[1]);
+        });
+        BA_DS_CK = ''; BA_DS_CV = null;
+      }
+      function gS3Amt(g) {
+        const v = hunterAtk() * BAL.gS3.atk + (g.maxHp || 0) * BAL.gS3.hp;
+        return Math.min(v, (g.monsterMaxHp || 0) * BAL.gS3.cap / 100);
+      }
+      try { if (typeof ba === 'object' && ba) { ba.balance = BAL; ba.applyBalance = applyBal; } } catch (e) {}
       const BA_V929_GLOW = '0 0 18px #00ff66', BA_V929_PULSE_MS = 600;
       const N = { name: 0, inst: 0, smite: 0, dr: 0, shield: 0, pulse: 0, passive: 0, lock: 0, verify: 0, gcd: 0, absorb: 0 };
       /* v9.29b · S1 ผู้พิทักษ์/ผู้พิทักษ์เหวลึก ติด CD 1 เทิร์นหลังร่าย (เดิม v9.18/K926 รีเซ็ตเป็น 0 = กดรัวได้ไม่จำกัด)
@@ -46698,10 +46717,7 @@
         });
         ROLES.guardian.forEach(function (r) { atom(r, 2, 'heal', 35, 35); });
         ROLES.priest.forEach(function (r) { atom(r, 2, 'cut', 3, 3); drop(r, 1, 'smi'); });
-        ROLES.assassin.concat(ROLES.slayer).forEach(function (r) {
-          if (r === 'assassin' || r === 'monarch' || r === 'blade' || r === 'slayer') atom(r, 3, 'dmg', BA_V929_ULT12, BA_V929_ULT12);
-        });
-        BA_DS_CK = ''; BA_DS_CV = null;
+        applyBal();
       } catch (e) { try { baErr(e, 'v929:init'); } catch (x) {} }
 
       function hero() { return document.getElementById('baHero'); }
@@ -46791,7 +46807,7 @@
               banner('🗡️ ' + NAMES[k][2], 'ชะลอเวลา +' + sec + ' วิ · ลดเกราะ ' + a); acted = true;
             } else if (k === 'guardian' && i === 2) {
               DR = 1; N.dr++;
-              const t = trueDmg(g, hunterAtk() * 0.5);
+              const t = trueDmg(g, gS3Amt(g));
               banner('🏰 ' + NAMES[k][2], 'ฟื้น 35% · ดาเมจที่รับ −65% · ระงับบอส 1T' + (t ? ' · ทะลุ -' + t : '')); acted = true;
             } else if (k === 'priest' && i === 2) {
               try { baCbCleanse(); } catch (e) {}
@@ -46904,8 +46920,9 @@
               const k = cid(g);
               if ((k === 'priest' || k === 'guardian') && (g.shield | 0) < 1) g.shield = 1;
               if (k === 'priest' || k === 'guardian') banner('🛡️ เกราะศักดิ์สิทธิ์', NAMES[k][3]);
-              if (k === 'assassin') banner('💀 ' + NAMES[k][3], 'ดาเมจจริง 1200% ทะลุเกราะ');
-              if (k === 'slayer') banner('💥 ' + NAMES[k][3], 'ดาเมจ 1200%');
+              const up = Math.round(fx(g, 3).dmg || ultLo(k));
+              if (k === 'assassin') banner('💀 ' + NAMES[k][3], 'ดาเมจจริง ' + up + '% ทะลุเกราะ');
+              if (k === 'slayer') banner('💥 ' + NAMES[k][3], 'ดาเมจ ' + up + '%');
               shieldPaint();
             }
           } catch (e) {}
@@ -47060,7 +47077,7 @@
         const _au = baBattleAudit;
         baBattleAudit = function () {
           const o = _au.apply(this, arguments) || {};
-          o.kitV929 = { ver: '9.29', gcd: BA_V929_GCD, cd0: BA_V91_CD[0] | 0, names: NAMES, dr: DR, n: Object.assign({}, N), verify: VERIFY };
+          o.kitV929 = { ver: '9.29', bal: BAL, gcd: BA_V929_GCD, cd0: BA_V91_CD[0] | 0, names: NAMES, dr: DR, n: Object.assign({}, N), verify: VERIFY };
           return o;
         };
       }

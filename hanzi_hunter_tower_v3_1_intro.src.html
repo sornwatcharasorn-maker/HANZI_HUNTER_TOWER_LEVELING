@@ -46671,6 +46671,10 @@
       const CLS_OF = { priest: 'priest', soulmaster: 'priest', guardian: 'guardian', guard: 'guardian',
                        assassin: 'assassin', monarch: 'assassin', blade: 'slayer', slayer: 'slayer' };
       const BA_V929_DR = 0.35, BA_V929_SMITE = 10;
+      /* v9.29c · SKILL AUDIT — ค่าที่สเปกกำหนด: ตัดฟื้นฟู 75% · พิพากษา 4T · ผู้พิทักษ์ S2 −45%
+         เกราะ S4: นักบวช 50% (2 ชั้น) · ผู้พิทักษ์ 100% (4 ชั้น) · ฉีกเกราะ S3 นักลอบสังหาร 45% */
+      const BA_V929_MWD = 75, BA_V929_JDG = 4, BA_V929_GWDN = 45, BA_V929_SH_MAX = 4,
+            BA_V929_SH_PRIEST = 2, BA_V929_SHRED_A = 45, BA_V929_SHRED_S = 25;
       /* v9.30 · BALANCE CONFIG — จุดจูนตัวเลขจุดเดียว (แก้ที่นี่ หรือจาก Console: ba.balance.x = … แล้ว ba.applyBalance())
          ult: % ดาเมจท่าไม้ตายช่อง 4 ไล่ Lv1→Lv5 (เดิม 1200% คงที่ = บอสตายหมัดเดียว)
          gS3: ดาเมจจริงของผู้พิทักษ์ S3 = ATK×atk + MaxHP×hp · หนีบไม่เกิน cap% ของหลอดอสูร */
@@ -46717,6 +46721,9 @@
         });
         ROLES.guardian.forEach(function (r) { atom(r, 2, 'heal', 35, 35); });
         ROLES.priest.forEach(function (r) { atom(r, 2, 'cut', 3, 3); drop(r, 1, 'smi'); });
+        /* v9.29c · ตัวเลขตามสเปกที่ยังค้างจาก K926 (ไม่ใช่การจูนบาลานซ์ — เป็นค่าที่สเปกกำหนดตรง ๆ) */
+        ROLES.priest.forEach(function (r) { atom(r, 0, 'mwd', BA_V929_MWD, BA_V929_MWD); atom(r, 3, 'jdg', BA_V929_JDG, BA_V929_JDG); });
+        ROLES.guardian.forEach(function (r) { atom(r, 1, 'wdn', BA_V929_GWDN, BA_V929_GWDN); });
         applyBal();
       } catch (e) { try { baErr(e, 'v929:init'); } catch (x) {} }
 
@@ -46803,8 +46810,9 @@
             } else if ((k === 'assassin' || k === 'slayer') && i === 2) {
               const sec = f.time || 3;
               try { extendQuestionTimer(Math.round(sec * 1000)); } catch (e) {}
-              hit(g, 2); const a = shred(g, 25);
-              banner('🗡️ ' + NAMES[k][2], 'ชะลอเวลา +' + sec + ' วิ · ลดเกราะ ' + a); acted = true;
+              const sp = k === 'assassin' ? BA_V929_SHRED_A : BA_V929_SHRED_S;
+              hit(g, 2); const a = shred(g, sp);
+              banner('🗡️ ' + NAMES[k][2], 'ชะลอเวลา +' + sec + ' วิ · ฉีกเกราะ ' + sp + '%' + (a ? ' (-' + a + ')' : '')); acted = true;
             } else if (k === 'guardian' && i === 2) {
               DR = 1; N.dr++;
               const t = trueDmg(g, gS3Amt(g));
@@ -46827,7 +46835,7 @@
             if (!acted && i === 0 && k === 'guardian') {
               banner('🛡️ ' + NAMES[k][0], 'โจมตีทันที' + (d0 ? ' -' + d0 : '')); acted = true;
             } else if (!acted && i === 0 && k === 'priest') {
-              banner('☠️ ตัดการฟื้นฟูเลือดบอส -75%', NAMES[k][0] + (d0 ? ' · -' + d0 : '')); acted = true;
+              banner('☠️ ตัดการฟื้นฟูเลือดบอส -' + Math.round(f.mwd || BA_V929_MWD) + '%', NAMES[k][0] + ' · ' + Math.round(f.mwt || 3) + 'T' + (d0 ? ' · -' + d0 : '')); acted = true;
             }
             lockDead(g, m);
             if (k === 'guardian' && i === 0) { BA_V91_CD[0] = Math.max(BA_V91_CD[0] | 0, BA_V929_GCD); N.gcd++; acted = true; }
@@ -46844,6 +46852,13 @@
         } else if (g.mp > mp0 || g.hp > hp0) {
           const dm = Math.round(g.mp - mp0), dh = Math.round(g.hp - hp0);
           banner('พาสซีฟ: ' + (dm > 0 ? '+' + dm + ' MP' : '') + (dm > 0 && dh > 0 ? '/' : '') + (dh > 0 ? '+' + dh + ' HP' : ''), NAMES[k] ? NAMES[k][1] : '');
+          pulse(1); N.passive++; return 'passive';
+        }
+        /* v9.29c · MP/HP เต็มแล้วชีพจร S2 ต้องยังเรือง — เดิมเงียบทั้งที่พาสซีฟทำงาน */
+        if (NAMES[k]) {
+          const f1 = fx(g, 1);
+          if (k === 'slayer') banner('พาสซีฟ: ATK +' + Math.round((f1.atk || 0) + (f1.atkc || 0) * Math.max(0, g.streak | 0)) + '%', NAMES[k][1]);
+          else if (k === 'assassin') banner('พาสซีฟ: เนตรมรณะ', NAMES[k][1] + ' · คริต 100% ในหน้าต่าง ' + (fx(g, 0).win || 3.5) + ' วิ');
           pulse(1); N.passive++; return 'passive';
         }
         return '';
@@ -46889,6 +46904,52 @@
           return r;
         };
       }
+      /* ── v9.29c · เพดานเกราะ 4 ชั้น = แถบ 100% (25%/ชั้นของ shieldPaint) ──
+         เดิม maxShield() = 3 ของ v4.0 → เกราะ 100% ของผู้พิทักษ์ S4 ถูกหนีบเหลือ 75% ทุกครั้งที่ barr ทำงาน */
+      try { if (typeof maxShield === 'function') maxShield = function () { return BA_V929_SH_MAX; }; } catch (e) {}
+      /* ── v9.29c · นักลอบสังหาร S2: คริต 100% ภายในหน้าต่างเวลา S1 (win) + คริตนับ Stagger 2 เท่า ──
+         เคารพศูนย์แข็ง (ห้ามคริตทุกทาง) — ชั้นในคืน 0 = คืน 0 เสมอ */
+      if (typeof critChance === 'function') {
+        const _cc = critChance;
+        critChance = function () {
+          const v = _cc.apply(this, arguments);
+          try {
+            if (!(v > 0) || !BA_LIVE) return v;
+            const g = baG(); if (!g || g.practiceMode || cid(g) !== 'assassin') return v;
+            const w = (fx(g, 0).win || 3.5) * 1000;
+            if (g.questionStart && Date.now() - g.questionStart <= w) { N.crit = (N.crit || 0) + 1; return 100; }
+          } catch (e) {}
+          return v;
+        };
+      }
+      if (typeof baStCount === 'function') {
+        const _sc = baStCount;
+        baStCount = function (correct, spent, crit) {
+          const r = _sc.apply(this, arguments);
+          try {
+            const g = baG();
+            if (correct && crit && g && cid(g) === 'assassin' && BA_ST_N > 0 && !baStOn()) {
+              BA_ST_N++; N.stag = (N.stag || 0) + 1;
+              if (BA_ST_N >= BA_ST_HITS) baStFire();
+            }
+          } catch (e) {}
+          return r;
+        };
+      }
+      /* ── v9.29c · ผู้พิทักษ์ S2: ลดดาเมจที่รับ −45% ทุกทาง (เดิม wdn ลดเฉพาะดาเมจตอบผิดของ hdBaseDamage) ── */
+      if (typeof baHurtHero === 'function') {
+        const _gh = baHurtHero;
+        baHurtHero = function (amount) {
+          try {
+            const g = baG();
+            if (g && !g.practiceMode && amount > 0 && cid(g) === 'guardian') {
+              const w = fx(g, 1).wdn || 0;
+              if (w > 0) { amount = Math.max(1, Math.round(amount * (1 - w / 100))); N.gwdn = (N.gwdn || 0) + 1; }
+            }
+          } catch (e) {}
+          return _gh.call(this, amount);
+        };
+      }
       /* ── 3) แถบเกราะผู้เล่น — ยืม .ba-shield บนแถบ HP ฮีโร่ ── */
       function shieldPaint() {
         try {
@@ -46918,8 +46979,13 @@
           try {
             if (ok && g) {
               const k = cid(g);
-              if ((k === 'priest' || k === 'guardian') && (g.shield | 0) < 1) g.shield = 1;
-              if (k === 'priest' || k === 'guardian') banner('🛡️ เกราะศักดิ์สิทธิ์', NAMES[k][3]);
+              const want = k === 'guardian' ? maxShield() : (k === 'priest' ? BA_V929_SH_PRIEST : 0);
+              if (want && (g.shield | 0) < want) g.shield = want;
+              if (k === 'priest') banner('🛡️ เกราะศักดิ์สิทธิ์ 50%', NAMES[k][3] + ' · พิพากษา ' + Math.round(fx(g, 3).jdg || BA_V929_JDG) + 'T คริต+ทะลุ');
+              if (k === 'guardian') {
+                const sb = Math.round(fx(g, 3).sbst || 0);
+                banner('🛡️ ปราการเต็ม 100%', NAMES[k][3] + (sb ? ' · ดาเมจจริง ' + sb + '%' : ''));
+              }
               const up = Math.round(fx(g, 3).dmg || ultLo(k));
               if (k === 'assassin') banner('💀 ' + NAMES[k][3], 'ดาเมจจริง ' + up + '% ทะลุเกราะ');
               if (k === 'slayer') banner('💥 ' + NAMES[k][3], 'ดาเมจ ' + up + '%');

@@ -53,7 +53,9 @@ const FAKE = (base) => `
       /* /students/<user>/<field>.json → แตกเป็นชิ้นเพื่อรองรับการอ่านลึกถึงคีย์ย่อย */
       const p = u.slice(S.base.length).replace(/\\?.*$/, '').replace(/\\.json$/, '');
       const seg = p.split('/').filter(Boolean);        /* [node, user?, field?] */
-      const user  = seg[1] ? decodeURIComponent(seg[1]) : null;
+      /* จำลอง RTDB จริง: คนละโหนด = คนละที่เก็บ (เดิมทุกโหนดใช้แถวเดียวกัน → /wordbank ทับ /students ได้) */
+      const user0 = seg[1] ? decodeURIComponent(seg[1]) : null;
+      const user  = user0 && seg[0] !== 'students' ? seg[0] + '/' + user0 : user0;
       const field = seg[2] ? decodeURIComponent(seg[2]) : null;
       const body  = o.body ? JSON.parse(o.body) : null;
 

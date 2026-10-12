@@ -10777,6 +10777,36 @@ IIFE `baInstallK926` at the end of the source; wraps only (`baV91Cost/Reset/Acti
 Inside `baInstallV929` (outermost IIFE). Adds `window.verifyV929Combat()` (async console helper: shield overlay, S2 neon pulse, S1/S3 instant casts for 4 classes in a sandbox, banners, CLS snapshot; result in `baBattleAudit().kitV929.verify`). Fixes: shield width clamp, non-stacking pulse (WeakMap), `hit()` restores `BA_LIVE`/barrier in `finally`, `shred` ≥ 0, `lockDead` on cast kill, per-cast `acted` flag, stale-monster guard. Changelog: `PATCH_V929_VERIFY.md`. Test: `test_v929_verify.js` (37/0).
 - Stubs of top-level functions use `new Function('f', name+' = f')`, **never direct `eval`** (direct eval disables terser mangling for the whole IIFE).
 
+#### Patch v9.35 · CROSS-DEVICE GAP FILL
+
+ห่อ `wbPayload`/`wbRestore` (ท่าเดียวกับ v9.14) เติมของที่ไม่ข้ามเครื่องก่อนหน้า: `tq.done.L` (union) · `tq.L.sboss`/`nopot` · `quest.done.L` (union เฉพาะ id ประเภท L) · `dq` (เฉพาะวันเดียวกัน) · `cd.drafts/vow/picks/cleared` (max) · `se.elx` (เอาค่าน้อยกว่า กันถังเด้งเต็มตอนสลับเครื่อง) · `wordStats.totalMs/recent` · ไม่เพิ่ม CSS/DOM/ฟิลด์บัญชี · audit: `baBattleAudit().gapFill935` · ทดสอบ: สองเบราว์เซอร์แชร์ RTDB ปลอม (มือถือ/คอม) · ไฟล์แจก 1,980,586 ไบต์
+
+#### Patch v9.36 · CLASS MID-SESSION PULL & STALE-PUSH GUARD (อาชีพข้ามเครื่องไม่เหมือนกัน)
+
+IIFE `baInstallV936` ท้ายต้นฉบับ (ก่อนบล็อก v9.34 เพื่อให้ v9.34 ยังเป็นชั้นนอกสุดของ `resolveAnswer`) · ห่อล้วน ไม่แก้ชั้นเก่า · ไม่เพิ่ม CSS/DOM/ฟิลด์บัญชี · ไม่แตะ `Math.random` · ไฟล์แจกโต ~3.8KB
+
+**อาการ:** เปลี่ยนอาชีพบนเครื่อง A แล้วเครื่อง B ที่เคยเล่นไว้ยังเป็นอาชีพเก่า — เคยซิงก์ได้แต่ตอนนี้ไม่ตรงกัน
+
+**สาเหตุจริง (v9.24 ทำ LWW ตอนล็อกอินถูกแล้ว แต่ยังมีสองรู):**
+
+| # | รู | ผล |
+|---|---|---|
+| 1 | `wbPush` เป็น PUT ทั้งก้อนแบบไม่มีเงื่อนไข (ออกเกม · หลังผสาน · เปลี่ยนสาย) | เครื่องที่ค้างสายเก่ากด "ออกเกม" แล้วเขียนทับ `classId`/`classAt` ที่ใหม่กว่าบนคลาวด์ → ล็อกอินครั้งหน้าทุกเครื่องได้สายเก่า |
+| 2 | `wbRestore` ทำงานแค่ใน `startGame` | เซสชันที่เปิดค้างไม่มีวันรู้ว่าอีกเครื่องเปลี่ยนสายไปแล้ว |
+
+**ทางแก้:**
+
+- **Guard ที่ `wbPush` (ชั้นนอกสุด):** ก่อน PUT ทุกครั้ง GET คีย์เดียว `/wordbank/<u>/classAt` (ไม่กี่ไบต์) ถ้าคลาวด์ใหม่กว่า → `pullFull` รับสายเข้า `G` ก่อน แล้วค่อยส่งต่อของเดิม จึงไม่มีทางส่งสายเก่าทับสายใหม่ · ระหว่าง `wbRestore` (`RESTORING > 0`) ปล่อยผ่านตรง ๆ เพราะ v9.24 ทำ LWW อยู่แล้ว · ถ้า `G` ถูกสลับเป็นผู้เล่นอื่นระหว่างรอเน็ต ยิง PUT จากก้อนที่จดไว้เอง ไม่ให้ข้อมูลคนใหม่ไปลงคีย์คนเก่า
+- **Poll ตอนเล่นค้าง:** `visibilitychange` (กลับมาเห็นแท็บ) · `focus` · `setInterval` 60 วิ → ทำเฉพาะตอนอยู่ในเกม ไม่ซ่อนแท็บ และไม่อยู่ระหว่าง restore · กันสแปม 4 วิ **นับจาก poll ครั้งก่อนเท่านั้น ห้ามผูกกับเวลาเข้าเกม** (ร่างแรกผูกกับเวลา restore แล้วสลับแท็บกลับมาภายใน 10 วิหลังล็อกอินไม่เช็กเลย)
+- **`adopt` รับเฉพาะ:** `classId` `classAt` `gender` `class_change_count`(max) `freeAlloc` `ult` `skills`(ผ่าน `baV912MergeSkills`) **และ `gold`/`ab.shards`** (ค่าเปลี่ยนสายที่อีกเครื่องจ่ายไปแล้ว — ไม่รับ = เครื่องนี้ยิงทอง/💎 ก้อนเดิมกลับขึ้นไปตอนออกเกม = ได้ค่าเปลี่ยนสายคืนฟรี) · **ไม่แตะ** items/floor/level/exp/wordStats (เครื่องอื่นอาจเล่นอยู่พร้อมกัน ข้อมูลสะสมผสานตอนล็อกอินเหมือนเดิม)
+- **`rebindLive`:** **เขียน classId/classAt ลง store ก่อน** `baPlSave` ไม่งั้น wrapper ของ v9.24 เห็น "สายใน G ≠ ใน store" แล้วปั๊ม `classAt = ตอนนี้` เหมือนผู้เล่นเปลี่ยนเอง → ทับเวลาจริงของอีกเครื่องแล้วเด้งกลับขึ้นคลาวด์ (กับดักข้อ 24 อีกหน้า) · จากนั้น `baPlEnsure` → `recalcStats` → เซฟ → `baV91Reset` → วาดสถานะ/ไอเทม/สกิล/สไปรต์/แผงโปรไฟล์ใหม่ พร้อมแบนเนอร์ `🔄 SYNC`
+
+**ขีดจำกัดที่รู้ตัวไว้:** เทียบ `classAt` ด้วยนาฬิกาเครื่อง (clock skew ของสองเครื่องทำให้ "ใหม่กว่า" เพี้ยนได้ ยอมรับเท่ากับ v9.24) · ทอง/💎 ถ้าสองเครื่องเล่นพร้อมกันจริง ๆ ค่าที่ adopt คือ LWW ของวินาทีนั้น · ต้องมี v5.3/v5.4 `fbOn()` เปิดอยู่ (ค่าเริ่มต้นเปิดเอง) ไม่งั้นเงียบทั้งชั้น
+
+**Audit:** `baBattleAudit().classPull936 = { ver, restoring, n:{ poll, stale, pull, adopt, guard, live } }` · ทางเข้าเทสต์ `window.baV936Poll()` (ข้ามตัวกันสแปม)
+
+**ทดสอบ:** ฟิกซ์เจอร์แปดสถานการณ์สองบริบท (มือถือ 390×844 + คอม 1280×800 ใช้คลาวด์ปลอมร่วมกันผ่าน `exposeBinding`) — เปลี่ยนสายแล้วล็อกอินเครื่องอื่น · ปิดแท็บไม่ออกเกม · เครื่องเก่าออกเกมต้องไม่ทับ · เซสชันค้างตามสายใหม่โดยไม่ล็อกอินใหม่ · classAt บนคลาวด์ไม่ถอยหลัง · **ชุดเทสต์เดิมสองชุด (`test_cloud_auth` · `test_cross_device_vocab`) ต้องแก้ fake RTDB ให้แยกโหนด:** เดิมทุกโหนด (`/students` `/wordbank`) ใช้แถวเดียวกันตามชื่อผู้เล่น พอ guard หน่วง wordbank PUT ไป 1 รอบ GET มันตกหลัง students PUT แล้วทับแถวทั้งก้อน — ใน RTDB จริงสองโหนดไม่ชนกันเลย (ตกทั้ง 24 + 12 เคสที่ฐานเดิมผ่านครบ · แก้ fake แล้วผ่านครบ 48/0 และ 31/0) **เขียน fake RTDB ใหม่ให้เก็บแยกโหนดเสมอ** (`students` = คีย์เดิม · โหนดอื่น = `<โหนด>/<ผู้เล่น>`)
+
 ## กับดักที่เคยทำพังมาแล้ว
 
 ### 1. คิว toast วนไม่รู้จบ → หน้าเกมค้างสนิท

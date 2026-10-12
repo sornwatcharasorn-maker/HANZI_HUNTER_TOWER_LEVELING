@@ -47309,6 +47309,286 @@
     })();
 
   
+    /* Patch v9.35 · CROSS-DEVICE GAP FILL — tq.done.L · dq · cd · se.elx · wordStats.totalMs/recent
+       ห่อ wbPayload/wbRestore (ท่าเดียวกับ v9.14) · merge ทางเดียว: union / Math.max / ทิ้งถ้าไม่ใช่วันเดียวกัน */
+    (function baInstallV935() {
+    const N935 = { merge: 0 };
+    function e935(e, w) { try { if (typeof gcErrPush === 'function') gcErrPush('v9.35 ' + w + ': ' + (e && e.message || e)); } catch (x) {} }
+    function mx(d, s, k) { const v = Math.floor(+s[k] || 0); if (v > (d[k] || 0)) { d[k] = v; return 1; } return 0; }
+    function un(d, s) {
+      let n = 0;
+      if (!Array.isArray(s)) return 0;
+      s.forEach(function (x) { if (typeof x === 'string' && d.indexOf(x) < 0) { d.push(x); n++; } });
+      return n;
+    }
+    function mergeV935(g, doc) {
+      let n = 0;
+      const dirty = {};
+      try {   /* wordStats: เวลาตอบสะสม + ประวัติล่าสุด (v9.9 ผสานแค่ seen/wrong) */
+        if (doc.wordStats && g.wordStats) Object.keys(doc.wordStats).forEach(function (id) {
+          const s = doc.wordStats[id], d = g.wordStats[id];
+          if (!s || !d || typeof s !== 'object') return;
+          if ((+s.totalMs || 0) > (d.totalMs || 0)) { d.totalMs = Math.floor(+s.totalMs); n++; }
+          if (Array.isArray(s.recent) && s.recent.length > (Array.isArray(d.recent) ? d.recent.length : 0)) { d.recent = s.recent.slice(-10); n++; }
+        });
+      } catch (e) { e935(e, 'ws'); }
+      try {   /* เควส 3 สายหลัก: เฉพาะสาย 3 ตลอดชีพ */
+        const t = doc.tq, l = g.tq;
+        if (t && l && t.done && l.done && Array.isArray(l.done.L)) {
+          const k = un(l.done.L, t.done.L); n += k; if (k) dirty.tq = 1;
+        }
+        if (t && l && t.L && l.L) {
+          const k = mx(l.L, t.L, 'sboss') + (Array.isArray(l.L.nopot) && Array.isArray(t.L.nopot) ? un(l.L.nopot, t.L.nopot.map(String)) : 0);
+          n += k; if (k) dirty.tq = 1;
+        }
+      } catch (e) { e935(e, 'tq'); }
+      try {   /* เควสตลอดชีพ v4.2/v9.22 (L) — union เฉพาะ id ที่มีจริง */
+        if (Array.isArray(doc.ql) && g.quest && g.quest.done && Array.isArray(g.quest.done.L)) {
+          let k = 0;
+          doc.ql.forEach(function (id) {
+            const d = (typeof qById === 'function') ? qById(id) : null;
+            if (d && d.cat === 'L' && g.quest.done.L.indexOf(id) < 0) { g.quest.done.L.push(id); k++; }
+          });
+          n += k; if (k) dirty.q = 1;
+        }
+      } catch (e) { e935(e, 'ql'); }
+      try {   /* เควสประจำวันของเหวลึก: วันเดียวกันเท่านั้น */
+        const t = doc.dq, l = g.dq;
+        if (t && l && t.day && t.day === l.day) {
+          let k = un(l.done = l.done || [], t.done);
+          if (t.c && l.c) Object.keys(t.c).forEach(function (c) { k += mx(l.c, t.c, c); });
+          n += k; if (k) dirty.dq = 1;
+        }
+      } catch (e) { e935(e, 'dq'); }
+      try {   /* การ์ด: สถิติสะสม */
+        const t = doc.cd, l = g.cd;
+        if (t && l) {
+          let k = mx(l, t, 'drafts') + mx(l, t, 'vow');
+          ['picks', 'cleared'].forEach(function (f) {
+            if (t[f] && typeof t[f] === 'object') { l[f] = l[f] || {}; Object.keys(t[f]).forEach(function (id) { k += mx(l[f], t[f], id); }); }
+          });
+          n += k; if (k) dirty.cd = 1;
+        }
+      } catch (e) { e935(e, 'cd'); }
+      try {   /* ถังคริสตัล: ใช้แล้วต้องไม่เด้งกลับเต็มเมื่อสลับเครื่อง → เอาค่าน้อยกว่าเมื่อทั้งคู่มีของ */
+        const t = doc.se, l = g.se;
+        if (t && l && (+t.elx || 0) > 0 && (l.elx || 0) > 0 && t.elx < l.elx) { l.elx = Math.floor(t.elx); n++; dirty.se = 1; }
+      } catch (e) { e935(e, 'se'); }
+      return { n: n, dirty: dirty };
+    }
+    if (typeof wbPayload === 'function') {
+      const _p935 = wbPayload;
+      wbPayload = function (g) {
+        const p = _p935.apply(this, arguments);
+        try {
+          if (p && typeof p === 'object' && g) {
+            if (g.tq) p.tq = { done: { L: (g.tq.done && g.tq.done.L) || [] }, L: { sboss: (g.tq.L && g.tq.L.sboss) || 0, nopot: (g.tq.L && g.tq.L.nopot) || [] } };
+            if (g.quest && g.quest.done && Array.isArray(g.quest.done.L)) p.ql = g.quest.done.L.slice();
+            if (g.dq) p.dq = JSON.parse(JSON.stringify(g.dq));
+            if (g.cd) p.cd = { drafts: g.cd.drafts || 0, vow: g.cd.vow || 0, picks: g.cd.picks || {}, cleared: g.cd.cleared || {} };
+            if (g.se) p.se = { elx: g.se.elx || 0 };
+          }
+        } catch (e) { e935(e, 'payload'); }
+        return p;
+      };
+    }
+    if (typeof wbRestore === 'function') {
+      const _r935 = wbRestore;
+      wbRestore = async function (user) {
+        try {
+          if (!user || typeof fbOn !== 'function' || !fbOn()) return _r935.apply(this, arguments);
+          let doc = null;
+          try { doc = await fbFetch(wbUrl('/' + encodeURIComponent(user))); } catch (e) {}
+          const r = await _r935.apply(this, arguments);
+          try {
+            const g = (typeof G !== 'undefined') ? G : null;
+            if (doc && typeof doc === 'object' && g && CURRENT_USER === user) {
+              const m = mergeV935(g, doc);
+              if (m.n > 0) {
+                N935.merge += m.n;
+                try { if (m.dirty.tq && typeof tqSave === 'function') tqSave(); } catch (e2) {}
+                try { if (m.dirty.q && typeof qSave === 'function') qSave(); } catch (e2) {}
+                try { if (m.dirty.dq && typeof baQdSave === 'function') baQdSave(); } catch (e2) {}
+                try { if (m.dirty.cd && typeof cdSave === 'function') cdSave(); } catch (e2) {}
+                try { if (m.dirty.se && typeof baSeSave === 'function') baSeSave(); } catch (e2) {}
+                try { if (typeof saveProgress === 'function') saveProgress(); } catch (e2) {}
+                try { if (typeof recalcStats === 'function') recalcStats(); } catch (e2) {}
+                try { if (typeof renderStats === 'function') renderStats(); } catch (e2) {}
+                try { wbPush(user); } catch (e2) {}
+              }
+            }
+          } catch (e) { e935(e, 'restore'); }
+          return r;
+        } catch (e) { e935(e, 'wbRestore'); return _r935.apply(this, arguments); }
+      };
+    }
+    if (typeof baBattleAudit === 'function') {
+      const _a935 = baBattleAudit;
+      baBattleAudit = function () {
+        const r = _a935.apply(this, arguments);
+        try { r.gapFill935 = { ver: 'v9.35', n: Object.assign({}, N935) }; } catch (e) {}
+        return r;
+      };
+    }
+    })();
+
+    /* Patch v9.36 · CLASS MID-SESSION PULL & STALE-PUSH GUARD
+       อาการ: เครื่อง A เปลี่ยนสาย แต่เครื่อง B ยังค้างสายเก่า / สายบนคลาวด์ถูกทับกลับเป็นของเก่า
+       ต้นเหตุ 1: wbPush (v9.9) เป็น PUT ทับทั้งก้อนไม่เช็กอะไร — เครื่องที่ค้างสายเก่าแล้ว "ออกเกม"
+                  จึงยิง classId/classAt เก่าขึ้นไปทับสายใหม่ของอีกเครื่อง
+       ต้นเหตุ 2: wbRestore (v9.24) รันเฉพาะตอน startGame — เซสชันที่เปิดค้างไม่เคยรู้ว่าสายเปลี่ยน
+       ทางแก้ (ห่อล้วน ไม่มี CSS/DOM ใหม่):
+       1) wbPush ชั้นนอกสุด: GET /wordbank/<u>/classAt (ไม่กี่ไบต์) ก่อนทุกครั้ง · ถ้าคลาวด์ใหม่กว่า
+          → รับสายจากคลาวด์เข้า G ก่อนแล้วค่อย PUT (ไม่ยิงสายเก่าทับ)
+       2) เซสชันที่เปิดอยู่เช็ก classAt เมื่อกลับมาที่แท็บ/โฟกัส/ทุก 60 วิ — ใหม่กว่า = รับสาย+ค่าที่
+          สายเปลี่ยนต้องใช้ (ทอง/💎 หลังจ่ายค่าเปลี่ยน · skills · freeAlloc · ult) แล้วรีบายด์ทันที
+       ไม่แตะ items/floor/level/exp กลางเซสชัน (เครื่องที่กำลังเล่นอยู่อาจมีความคืบหน้าใหม่กว่า) */
+    (function baInstallV936() {
+      const N936 = { poll: 0, stale: 0, pull: 0, adopt: 0, guard: 0, live: 0 };
+      let RESTORING = 0, PULLING = false, LAST = 0;
+      function num(v) { v = Number(v); return isFinite(v) ? v : 0; }
+      function e936(e, w) { try { if (typeof gcErrPush === 'function') gcErrPush('classPull', (w || '') + ': ' + ((e && e.message) || e), 'v9.36', e && e.stack); } catch (x) {} }
+      function on() { try { return typeof fbOn === 'function' && fbOn(); } catch (e) { return false; } }
+      function inGame(user) {
+        try { return typeof CURRENT_USER !== 'undefined' && CURRENT_USER === user && !!baG() &&
+                     document.getElementById('gameScreen').classList.contains('active'); }
+        catch (e) { return false; }
+      }
+
+      function rebindLive(g, user) {
+        /* เขียนสายใหม่ลง store ก่อน — ไม่งั้น baPlSave ของ v9.24 จะเห็นว่า "สายใน G ≠ ใน store"
+           แล้วปั๊ม classAt = ตอนนี้ (เหมือนผู้เล่นเปลี่ยนเอง) ทับเวลาจริงของอีกเครื่อง */
+        try { const st = loadStore(), a = st[user]; if (a) { a.classId = g.classId; a.classAt = g.classAt; saveStore(st); } } catch (e) {}
+        try { baPlEnsure(g); } catch (e) {}
+        try { recalcStats(); } catch (e) {}
+        try { if (g.hp > g.maxHp) g.hp = g.maxHp; } catch (e) {}
+        try { saveProgress(); } catch (e) {}
+        try { baPlSave(); } catch (e) {}
+        try { if (typeof abSave === 'function') abSave(); } catch (e) {}
+        try { if (typeof baV91Reset === 'function') baV91Reset(); } catch (e) {}
+        try { renderStats(); } catch (e) {}
+        try { renderItems(); } catch (e) {}
+        try { renderSkills(); } catch (e) {}
+        try { baSyncCurrentClassSkills(true); } catch (e) {}
+        try { if (typeof baDsHook === 'function') baDsHook('class'); } catch (e) {}
+        try { baPlUltPaint(); } catch (e) {}
+        try { const b = document.getElementById('baPlBoard'); if (b && b.classList.contains('active')) baPlRender(); } catch (e) {}
+      }
+
+      /* รับสายจาก doc เข้า g — คืนจำนวนฟิลด์ที่เปลี่ยน (0 = ไม่ใหม่กว่า/ไม่ถูกต้อง) */
+      function adopt(user, g, doc) {
+        const dCa = num(doc && doc.classAt);
+        if (!g || !doc || !(dCa > num(g.classAt))) return 0;
+        if (!doc.classId || !BA_PL_BY_ID[doc.classId]) return 0;
+        let n = 0;
+        if (doc.classId !== g.classId) { g.classId = doc.classId; n++; }
+        g.classAt = dCa; n++;
+        if (doc.gender === 'male' || doc.gender === 'female') g.gender = doc.gender;
+        g.class_change_count = Math.max(g.class_change_count | 0, doc.class_change_count | 0);
+        if (doc.freeAlloc && typeof doc.freeAlloc === 'object') g.freeAlloc = Object.assign({}, doc.freeAlloc);
+        if (doc.ult && typeof doc.ult === 'object') g.ult = Object.assign({}, doc.ult);
+        try { if (typeof baV912MergeSkills === 'function') baV912MergeSkills(g, doc.skills); } catch (e) {}
+        /* ค่าเปลี่ยนสายที่อีกเครื่องจ่ายไปแล้ว — ถ้าไม่รับ เครื่องนี้จะยิงทอง/💎 ก้อนเดิมกลับขึ้นไป
+           ตอนออกเกม = ได้ค่าเปลี่ยนสายคืนฟรี */
+        if (typeof doc.gold === 'number') g.gold = Math.max(0, doc.gold);
+        if (doc.ab && typeof doc.ab.shards === 'number' && g.ab) g.ab.shards = Math.max(0, doc.ab.shards);
+        N936.adopt++;
+        if (inGame(user)) {
+          N936.live++;
+          rebindLive(g, user);
+          try { baBannerText('🔄 SYNC', baPlName(g)); } catch (e) {}
+        }
+        return n;
+      }
+
+      async function pullFull(user, g) {
+        if (PULLING) return 0;
+        PULLING = true;
+        try {
+          const doc = await fbFetch(wbUrl('/' + encodeURIComponent(user)));
+          if (!doc || typeof doc !== 'object') return 0;
+          if (typeof CURRENT_USER !== 'undefined' && CURRENT_USER && CURRENT_USER !== user) return 0;
+          N936.pull++;
+          return adopt(user, g, doc);
+        } catch (e) { e936(e, 'pull'); return 0; }
+        finally { PULLING = false; }
+      }
+
+      /* เช็กเบา ๆ ก่อน: ดึงแค่คีย์ classAt (ไม่กี่ไบต์) ใหม่กว่าถึงดึงทั้งก้อน */
+      async function remoteNewer(user, g) {
+        let v = null;
+        try { v = await fbFetch(wbUrl('/' + encodeURIComponent(user) + '/classAt')); } catch (e) { return false; }
+        return num(v) > num(g.classAt);
+      }
+
+      /* ── 1) กัน wbPush ยิงสายเก่าทับ ── */
+      if (typeof wbPush === 'function') {
+        const _pu = wbPush;
+        wbPush = function (user) {
+          let g0 = null;
+          try { g0 = (typeof G !== 'undefined') ? G : null; } catch (e) {}
+          if (!user || !g0 || RESTORING > 0 || !on()) return _pu.apply(this, arguments);
+          const args = arguments, self = this;
+          N936.guard++;
+          (async function () {
+            try { if (await remoteNewer(user, g0)) { N936.stale++; await pullFull(user, g0); } }
+            catch (e) { e936(e, 'guard'); }
+            try {
+              /* G ยังเป็นก้อนเดิม = ส่งต่อให้ของเดิม (รักษา HOLD ของ v9.24) · ถ้าสลับผู้เล่นไปแล้ว
+                 ระหว่างรอเน็ต ต้องยิงจากก้อนที่จดไว้เอง ไม่งั้นข้อมูลคนใหม่จะไปลงคีย์คนเก่า */
+              if (typeof G !== 'undefined' && G === g0) _pu.apply(self, args);
+              else fbFetch(wbUrl('/' + encodeURIComponent(user)), {
+                method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(wbPayload(g0))
+              }).catch(function (e) { e936(e, 'put'); });
+            } catch (e) { e936(e, 'send'); }
+          })();
+          return true;
+        };
+      }
+
+      /* ระหว่าง wbRestore ทำงาน (เข้าเกม) ปล่อยผ่านตรง ๆ — v9.24 จัดการ LWW ของสายเองอยู่แล้ว */
+      if (typeof wbRestore === 'function') {
+        const _wr = wbRestore;
+        wbRestore = async function () {
+          RESTORING++;
+          try { return await _wr.apply(this, arguments); }
+          finally { RESTORING--; }
+        };
+      }
+
+      /* ── 2) เซสชันที่เปิดค้างตามสายจากอีกเครื่อง ── */
+      async function poll(why) {
+        try {
+          if (!on() || RESTORING > 0 || PULLING) return;
+          if (typeof document !== 'undefined' && document.hidden) return;
+          const user = (typeof CURRENT_USER !== 'undefined') ? CURRENT_USER : '';
+          if (!user || !inGame(user)) return;
+          const now = Date.now();
+          if (now - LAST < 4000) return;      /* กันสแปมเท่านั้น — ไม่ผูกกับเวลาเข้าเกม (สลับแท็บกลับมาทันทีหลังล็อกอินก็ต้องเช็ก) */
+          LAST = now; N936.poll++;
+          const g = baG();
+          if (g && await remoteNewer(user, g) && inGame(user) && baG() === g) await pullFull(user, g);
+        } catch (e) { e936(e, 'poll:' + why); }
+      }
+      try {
+        document.addEventListener('visibilitychange', function () { if (!document.hidden) poll('vis'); });
+        window.addEventListener('focus', function () { poll('focus'); });
+        setInterval(function () { poll('tick'); }, 60000);
+      } catch (e) { e936(e, 'install'); }
+
+      /* ทางเข้าสาธารณะสำหรับเทสต์/คอนโซล */
+      window.baV936Poll = function () { LAST = 0; return poll('manual'); };
+
+      if (typeof baBattleAudit === 'function') {
+        const _a936 = baBattleAudit;
+        baBattleAudit = function () {
+          const r = _a936.apply(this, arguments);
+          try { r.classPull936 = { ver: 'v9.36', restoring: RESTORING, n: Object.assign({}, N936) }; } catch (e) {}
+          return r;
+        };
+      }
+    })();
+
     /* Patch v9.34 · F20 BOSS PER-QUESTION HP CAP — ต้องอยู่ท้ายสุดเพื่อห่อนอกสุดของ resolveAnswer */
     (function baInstallV934() {
     /* v9.34 · เพดานเลือดบอสชั้น 20 ต่อ "หนึ่งรอบคำถาม" (รวมสกิลที่ร่ายก่อนตอบ + ท่าไม้ตาย + ดาเมจตรง)

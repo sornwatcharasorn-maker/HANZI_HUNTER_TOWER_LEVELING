@@ -47308,6 +47308,55 @@
       }
     })();
 
+  
+    /* Patch v9.34 · F20 BOSS PER-QUESTION HP CAP — ต้องอยู่ท้ายสุดเพื่อห่อนอกสุดของ resolveAnswer */
+    (function baInstallV934() {
+    /* v9.34 · เพดานเลือดบอสชั้น 20 ต่อ "หนึ่งรอบคำถาม" (รวมสกิลที่ร่ายก่อนตอบ + ท่าไม้ตาย + ดาเมจตรง)
+       ทุกคลาสต้องใช้ 13-14 ข้อ · วัดเลือดตอนขึ้นข้อ เทียบหลังตัดสินข้อ · ไม่แตะสูตรสกิลของใคร */
+    const BA_V934_CAP = 0.066;
+    let CAPB = null, CAPM = null;
+    try {
+      if (typeof resolveAnswer === 'function') {
+        const _v934Rs = resolveAnswer;
+        resolveAnswer = function () {
+          const g0 = baG();
+          const m0 = g0 && g0.currentMonster, mx0 = g0 ? (g0.monsterMaxHp || 0) : 0;
+          /* ฐานเลือด = เลือดหลังตัดสินข้อก่อนหน้า · มอนสเตอร์ตัวใหม่ = เต็มหลอด (กันค่าต่ำก่อนตั้งเกราะ) */
+          let base = (m0 && m0 === CAPM && CAPB != null) ? CAPB : (g0 ? Math.max(g0.monsterHp, mx0) : 0);
+          if (m0 && m0 !== CAPM && g0) base = Math.max(g0.monsterHp, mx0);
+          const c0 = g0 ? (g0.correct | 0) : 0;
+          const r = _v934Rs.apply(this, arguments);
+          try {
+            const g = baG();
+            if (g && g.currentMonster === m0 && m0) {
+              if ((g.monsterMaxHp || 0) > mx0) base += g.monsterMaxHp - mx0;   /* เกราะระลอกสอง */
+              if (typeof baWvF20 === 'function' && baWvF20() && !g.practiceMode) {
+                if ((g.correct | 0) === c0 && g.monsterHp > 0) {  /* ตอบผิด: ผ่อนการฟื้นของบอสชั้น 20 */
+                  const hc = Math.round((g.monsterMaxHp || 0) * 0.05);
+                  if (g.monsterHp > base + hc) { g.monsterHp = base + hc; try { baBarSync(); } catch (e) {} try { renderMonsterHp(); } catch (e) {} }
+                }
+                const cap = Math.max(1, Math.round((g.monsterMaxHp || 0) * BA_V934_CAP));
+                if (base - g.monsterHp > cap) {
+                  const wasDead = g.monsterHp <= 0;
+                  g.monsterHp = base - cap;
+                  try { renderMonsterHp(); } catch (e) {}
+                  if (wasDead && typeof baRsUnkill === 'function') baRsUnkill(cap);
+                } else if ((g.correct | 0) > c0 && g.monsterHp > 0 && base - g.monsterHp < cap) {
+                  /* ตอบถูกแต่ดาเมจน้อยกว่าเพดาน → เติมให้ถึงเพดาน = ทุกคลาสลงบอสเท่ากันต่อข้อ (บังคับ 13-14 ข้อ) */
+                  g.monsterHp = Math.max(0, base - cap);
+                  try { baBarSync(); } catch (e) {}
+                  try { renderMonsterHp(); } catch (e) {}
+                  if (g.monsterHp <= 0 && typeof cdQueueDefeat === 'function') cdQueueDefeat();
+                }
+              }
+              CAPM = m0; CAPB = g.monsterHp;
+            }
+          } catch (e) {}
+          return r;
+        };
+      }
+    } catch (e) {}
+    })();
   </script>
 </body>
 </html>

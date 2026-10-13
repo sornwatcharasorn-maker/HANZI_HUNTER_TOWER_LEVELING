@@ -47589,6 +47589,170 @@
       }
     })();
 
+    /* ============================================================
+       Patch v9.38 · PILLAR LATCH (ผนึกผ่านแล้วผ่านเลย) + RETROACTIVE BACKFILL
+       ============================================================
+       ต้นเหตุ: เสาทั้ง 12 อ่านค่าสดจากฟิลด์ปัจจุบัน ผนึกที่เคยปิดแล้วจึงหลุดได้เมื่อค่าตก
+       (เลเวลถูกรีเซ็ต · แกนถูกคืน · ความแม่นยำร่วง) และตัวนับ kill/combo/quest/pure ของ
+       v9.20 เริ่มนับตั้งแต่ v9.20 ไม่มีประวัติก่อนหน้า
+       ทางแก้ (ห่อล้วน ไม่มี CSS/DOM/Math.random):
+       1) ห่อ BA_MN_PILL[i].get ทุกต้น: ค่าดิบครบเป้า → ตั้งบิต i ใน account.mnLt (12 บิต)
+          บิตติดแล้วคืน [d,d] เสมอ ทุกผู้อ่าน (baMnStat · ตารางครู · telemetry) เห็นตรงกัน
+          ความแม่นยำต้องตอบ ≥ 20 ข้อก่อนถึงจะล็อก (กัน 1/1 = 100%) · แถวสด (lrMirror) ไม่ล็อกเอง
+       2) ล็อกอินครั้งแรกหลังอัปเดต (a.mnBf ว่าง) เติม mn2 ย้อนหลังด้วย max จากประวัติที่พิสูจน์ได้:
+          bestStreak>=20 → combo 1 · เควสที่รับแล้ว → quest · คำที่เคยผิดแล้วถูก 2 ครั้งล่าสุด → pure
+          ชั้นที่เคลียร์ → kill (ขอบล่าง เพราะเกมไม่เคยเก็บยอดฆ่ารวม)
+       3) fbPayload ต่อฟิลด์ที่ 7 (mask) ท้าย pl · lrApply บนแถวสดของครู OR เข้า mnLt
+       ══════════════════════════════════════════════════════════════════════ */
+    (function baLt938Install() {
+      function le(e, w) { try { baErr(e, 'lt938:' + w); } catch (x) {} }
+      const MASK = 4095;
+      const N = { latch: 0, bf: 0, save: 0, mirror: 0 };
+      let READY = false, PEND = false;
+      const ni = function (v) { v = Math.round(+v); return (v === v && v > 0) ? v : 0; };
+
+      function isMirror(a) { return !!(a && typeof LR_MIRROR === 'string' && a[LR_MIRROR]); }
+
+      BA_MN_PILL.forEach(function (p, i) {
+        const raw = p.get, bit = 1 << i;
+        p.get = function (g) {
+          const v = raw.apply(this, arguments);
+          try {
+            if (g && typeof g === 'object' && v && v.length > 1) {
+              const d = Math.max(1, Math.round(v[1] || 1));
+              if ((ni(g.mnLt) & bit)) return [d, d];
+              if (!isMirror(g) && Math.round(v[0] || 0) >= d) {
+                if (p.id === 'acc' && ((g.correct || 0) + (g.wrong || 0)) < 20) return v;
+                g.mnLt = (ni(g.mnLt) | bit) & MASK; N.latch++;
+              }
+            }
+          } catch (e) { le(e, 'get'); }
+          return v;
+        };
+      });
+
+      function scan(g) {
+        BA_MN_PILL.forEach(function (p) { try { p.get(g); } catch (e) {} });
+        return ni(g && g.mnLt) & MASK;
+      }
+
+      function backfill(g) {
+        const m = baMn2Ensure(g); if (!m) return;
+        const len = function (x) { return Array.isArray(x) ? x.length : 0; };
+        if (Math.max(g.bestStreak || 0, g.best || 0) >= 20) m.combo = Math.max(m.combo, 1);
+        const q = g.quest && g.quest.done || {}, t = g.tq && g.tq.done || {}, d = g.dq && g.dq.done;
+        m.quest = Math.max(m.quest, len(q.d) + len(q.w) + len(q.L) + len(t.d) + len(t.L) + len(d));
+        let pure = 0;
+        Object.keys(g.wordStats || {}).forEach(function (k) {
+          const w = g.wordStats[k], r = w && w.recent;
+          if (w && (w.wrong | 0) > 0 && Array.isArray(r) && r.length >= 2 && r[r.length - 1] === true && r[r.length - 2] === true) pure++;
+        });
+        m.pure = Math.max(m.pure, pure);
+        const tc = g.towerClears | 0;
+        const fl = tc > 0 ? tc * FLOOR_MAX + Math.max(0, (g.floor | 0) - 1) : Math.max(0, (g.maxFloor | 0) - 1);
+        m.kill = Math.max(m.kill, fl);
+        N.bf++;
+      }
+
+      function save() {
+        if (!READY) return;
+        try {
+          const g = baG();
+          if (!g || typeof CURRENT_USER === 'undefined' || !CURRENT_USER) return;
+          const st = loadStore(), a = st[CURRENT_USER];
+          if (!a) return;
+          const mask = (ni(a.mnLt) | ni(g.mnLt)) & MASK;
+          if (mask === ni(a.mnLt) && !PEND) return;
+          g.mnLt = mask; a.mnLt = mask;
+          if (PEND) { a.mnBf = 1; a.mn2 = { kill: g.mn2.kill | 0, combo: g.mn2.combo | 0, quest: g.mn2.quest | 0, pure: g.mn2.pure | 0 }; PEND = false; }
+          saveStore(st); N.save++;
+        } catch (e) { le(e, 'save'); }
+      }
+
+      if (typeof migrateAccount === 'function') {
+        const _m = migrateAccount;
+        migrateAccount = function (a) {
+          const r = _m.apply(this, arguments);
+          try { const x = r || a; if (x && typeof x === 'object') x.mnLt = ni(x.mnLt) & MASK; } catch (e) { le(e, 'mig'); }
+          return r;
+        };
+      }
+      if (typeof startGame === 'function') {
+        const _s = startGame;
+        startGame = function () {
+          READY = false; PEND = false;
+          const r = _s.apply(this, arguments);
+          try {
+            const g = baG();
+            if (g && typeof CURRENT_USER !== 'undefined' && CURRENT_USER) {
+              const a = loadStore()[CURRENT_USER] || {};
+              g.mnLt = ni(a.mnLt) & MASK;
+              if (!a.mnBf) { backfill(g); PEND = true; }
+              scan(g);
+              READY = true;
+              save();
+            }
+          } catch (e) { le(e, 'start'); }
+          return r;
+        };
+      }
+      if (typeof saveProgress === 'function') {
+        const _p = saveProgress;
+        saveProgress = function () {
+          const r = _p.apply(this, arguments);
+          try { save(); } catch (e) { le(e, 'prog'); }
+          return r;
+        };
+      }
+      if (typeof exitGame === 'function') {
+        const _x = exitGame;
+        exitGame = function () {
+          try { const g = baG(); if (g && READY) { scan(g); save(); } } catch (e) { le(e, 'exit'); }
+          READY = false;
+          return _x.apply(this, arguments);
+        };
+      }
+      if (typeof fbPayload === 'function') {
+        const _f = fbPayload;
+        fbPayload = function (user, a) {
+          const p = _f.apply(this, arguments) || {};
+          try { if (a && typeof p.pl === 'string' && !isMirror(a)) p.pl += '|' + scan(a); } catch (e) { le(e, 'pay'); }
+          return p;
+        };
+      }
+      if (typeof lrApply === 'function') {
+        const _l = lrApply;
+        lrApply = function (a, r) {
+          let n = _l.apply(this, arguments) || 0;
+          try {
+            if (a && r && isMirror(a)) {
+              let pl = (typeof r.pl === 'string' && r.pl) ? r.pl : '';
+              if (!pl) { try { pl = (JSON.parse(localStorage.getItem('yao_pl_last') || '{}') || {})[String(r.u || a.user || '')] || ''; } catch (e) {} }
+              const f = String(pl).split('|');
+              if (f.length >= 7) {
+                const m = (ni(a.mnLt) | ni(f[6])) & MASK;
+                if (m !== ni(a.mnLt)) { a.mnLt = m; n++; N.mirror++; }
+              }
+            }
+          } catch (e) { le(e, 'lr'); }
+          return n;
+        };
+      }
+      if (typeof baBattleAudit === 'function') {
+        const _a = baBattleAudit;
+        baBattleAudit = function () {
+          const r = _a.apply(this, arguments);
+          try {
+            const g = baG(), mk = ni(g && g.mnLt) & MASK;
+            r.latch938 = { ver: 'v9.38', mask: mk, ready: READY, pending: PEND,
+              pass: BA_MN_PILL.filter(function (p, i) { return mk & (1 << i); }).map(function (p) { return p.id; }),
+              n: Object.assign({}, N) };
+          } catch (e) {}
+          return r;
+        };
+      }
+    })();
+
     /* Patch v9.34 · F20 BOSS PER-QUESTION HP CAP — ต้องอยู่ท้ายสุดเพื่อห่อนอกสุดของ resolveAnswer */
     (function baInstallV934() {
     /* v9.34 · เพดานเลือดบอสชั้น 20 ต่อ "หนึ่งรอบคำถาม" (รวมสกิลที่ร่ายก่อนตอบ + ท่าไม้ตาย + ดาเมจตรง)

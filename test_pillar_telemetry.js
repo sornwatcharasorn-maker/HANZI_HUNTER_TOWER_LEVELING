@@ -71,7 +71,7 @@ const STUB = `(function(){ window.fetch = function(){ return Promise.reject(new 
   say('═══ 3 · แถวสดหลายครั้ง: ค่าลดลง (รีเซ็ต) ต้องตามลงด้วย ไม่ค้างค่าเก่า ═══');
   const reset = await page.evaluate(([p]) => {
     const g = lrGhost('pt02', p); lrApply(g, p);
-    const q = Object.assign({}, p, { pl: p.pl.replace(/^[^|]*/, AB_CORES.map(c => c.key + '0').join(',')).replace(/\|[^|]*\|[^|]*\|[^|]*\|[^|]*\|[^|]*$/, '|0|0|0,0,0,0|0|0') });
+    const q = Object.assign({}, p, { pl: p.pl.replace(/^[^|]*/, AB_CORES.map(c => c.key + '0').join(',')).replace(/\|[^|]*\|[^|]*\|[^|]*\|[^|]*\|[^|]*\|[^|]*$/, '|0|0|0,0,0,0|0|0|0') });
     lrApply(g, q);
     return BA_MN_PILL.filter(x => x.id !== 'codex' && x.id !== 'level' && x.id !== 'acc').map(x => [x.id, x.get(g)[0]]);
   }, [enc.p]);
@@ -79,8 +79,8 @@ const STUB = `(function(){ window.fetch = function(){ return Promise.reject(new 
 
   say('═══ 4 · บัญชีจริงบนเครื่อง: max-merge ห้ามถอยหลัง ═══');
   const keep = await page.evaluate(([p]) => {
-    const a = loadStore().pt01; const before = BA_MN_PILL.map(q => q.get(a)[0]);
-    const low = Object.assign({}, p, { pl: AB_CORES.map(c => c.key + '0').join(',') + '|0|0|0,0,0,0|0|0' });
+    const a = loadStore().pt01; BA_MN_PILL.forEach(q => q.get(a)); const before = BA_MN_PILL.map(q => q.get(a)[0]);  /* v9.38: อ่านรอบแรกเพื่อให้ latch ติดก่อน (ค่าที่ผ่านแล้วถูกหนีบที่เป้า) */
+    const low = Object.assign({}, p, { pl: AB_CORES.map(c => c.key + '0').join(',') + '|0|0|0,0,0,0|0|0|0' });
     lrApply(a, low);
     return { before, after: BA_MN_PILL.map(q => q.get(a)[0]) };
   }, [enc.p]);

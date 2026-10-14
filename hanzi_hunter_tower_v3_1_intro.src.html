@@ -48025,6 +48025,72 @@
       }
     })();
 
+    // ══════════════════════════════════════════════════
+    // Patch · HUNTER FILE LIVE-ROW HONESTY (แฟ้มฮันเตอร์ของแถวสด ห้ามโชว์ค่าเริ่มต้นเป็นข้อมูลจริง)
+    // ══════════════════════════════════════════════════
+    /* แถวสด (lrMirror) ปั้นจาก payload ของ v5.3 ซึ่งไม่มี: ความคืบหน้าในชั้น · เข้าเกท · เวลาเล่น ·
+       สมัครเมื่อ · บอส · ไอเทม · โล่ · คูลดาวน์ — blankAccount เติม 0/ว่างให้ จึงเคยโชว์เหมือนข้อมูลจริง
+       ตอนนี้แก้ที่ DOM หลัง gcPaint วาดเสร็จ (ไม่แตะ gcPaint* ของ v4.3) · HP ใช้ค่าที่นักเรียนรายงาน
+       (a.lrHp / a.lrMaxHp) เพราะ migrateAccount หนีบ a.hp ตาม maxHp ที่คำนวณในเครื่องครู */
+    (function hfInstall() {
+      const NA = '<span style="color:#8aa0b4">— ไม่มีในสัญญาณสด</span>';
+      function hfErr(e, w) { try { gcErrPush('hf:' + w + ' ' + (e && e.message || e)); } catch (x) {} }
+
+      if (typeof lrApply === 'function') {
+        const _hfApply = lrApply;
+        lrApply = function (a, r) {
+          const n = _hfApply.apply(this, arguments);
+          try {
+            const hp = Math.round(Number(r && r.hp));
+            if (hp >= 0 && hp === hp && a.lrHp !== hp) { a.lrHp = hp; return (n || 0) + 1; }
+          } catch (e) { hfErr(e, 'apply'); }
+          return n;
+        };
+      }
+      if (Array.isArray(BA_FN_STRIP) && BA_FN_STRIP.indexOf('lrHp') < 0) BA_FN_STRIP.push('lrHp');
+
+      function setV(cell, html) { const v = cell.querySelector('.gc-v'); if (v) v.innerHTML = html; }
+      function patch(a) {
+        const body = document.getElementById('gcBody');
+        if (!body) return;
+        body.querySelectorAll('.gc-cell').forEach(function (c) {
+          const k = (c.querySelector('.gc-k') || {}).textContent || '';
+          if (/ชั้นที่ค้างอยู่/.test(k)) setV(c, (a.floor || 1) + ' · ปราบแล้ว ' + NA);
+          else if (/เข้าเกทครั้งล่าสุด|เข้าเกททั้งหมด|เวลาเล่นสะสม|สมัครเมื่อ|คูลดาวน์ค้าง/.test(k)) setV(c, NA);
+          else if (/บอส \/ พิชิตหอคอย/.test(k)) setV(c, NA + ((a.towerClears > 0) ? ' · ' + a.towerClears + ' รอบ' : ''));
+          else if (/ความคืบหน้าในชั้น/.test(k)) setV(c, NA);
+          else if (/โล่/.test(k)) setV(c, NA);
+          else if (/^.{0,3}HP$/.test(k.trim()) || /❤️ HP/.test(k)) {
+            const hp = (a.lrHp != null) ? a.lrHp : Math.round(a.hp || 0);
+            setV(c, hp + (a.lrMaxHp ? ' / ' + a.lrMaxHp : ''));
+          } else if (/🔮 MP/.test(k)) setV(c, Math.round(a.mp || 0) + ' <span style="color:#8aa0b4">(ไม่ทราบค่าสูงสุด)</span>');
+        });
+        /* ข้อความว่างของไทม์ไลน์ ไม่เกี่ยวกับแถวสด */
+        body.querySelectorAll('.gc-empty').forEach(function (e) {
+          if (/ยังไม่มีกิจกรรมบันทึกไว้/.test(e.textContent))
+            e.innerHTML = '📡 แถวสดไม่มีไทม์ไลน์กิจกรรม — เครื่องนักเรียนไม่ได้ส่งประวัติมา';
+        });
+        if (GC_TAB === 'bag' && !body.querySelector('.hf-note'))
+          body.insertAdjacentHTML('afterbegin',
+            '<div class="lr-note hf-note">🎒 จำนวนที่เห็นคือ <b>เฉพาะที่ GM เสกในเครื่องครู</b> — ' +
+            'สัญญาณสดไม่ได้ส่งไอเทมจริงของนักเรียนมา</div>');
+      }
+
+      if (typeof gcPaint === 'function') {
+        const _hfPaint = gcPaint;
+        gcPaint = function () {
+          const r = _hfPaint.apply(this, arguments);
+          try {
+            if (GC_TAB !== 'err' && GC_SEL) {
+              const a = loadStore()[GC_SEL];
+              if (a && a[LR_MIRROR]) patch(a);
+            }
+          } catch (e) { hfErr(e, 'paint'); }
+          return r;
+        };
+      }
+    })();
+
   </script>
 </body>
 </html>

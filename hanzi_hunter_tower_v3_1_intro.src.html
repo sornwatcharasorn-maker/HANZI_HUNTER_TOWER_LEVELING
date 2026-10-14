@@ -47887,6 +47887,7 @@
         st.textContent = '#baPtForce{z-index:1005}#baPtForce .g-modal-inner{border-color:#ff7a7a;box-shadow:0 0 32px rgba(255,122,122,.4)}' +
           '.ba-pt-t{font-size:15px;font-weight:800;color:#ffc845;margin-bottom:8px}.ba-pt-d{font-size:12px;color:#c4d0dc;line-height:1.6;margin-bottom:10px}' +
           '.ba-pt-i{width:100%;box-sizing:border-box;margin-bottom:8px;padding:10px 12px;background:rgba(255,255,255,.05);border:1px solid rgba(255,200,69,.4);border-radius:8px;color:#f2f6fa;font-size:14px}' +
+          '.ba-pt-eye{background:none;border:0;color:#ffc845;font-size:12px;cursor:pointer;padding:2px 0;margin-bottom:6px}' +
           '.ba-pt-e{min-height:16px;font-size:12px;color:#ff7a7a;margin-bottom:8px}.ba-pt-b{width:100%;padding:11px;border-radius:8px;border:0;font-weight:800;background:#2ef2d0;color:#04231f;font-size:14px}';
         document.head.appendChild(st);
       }
@@ -47899,16 +47900,23 @@
           '<div class="ba-pt-d">GM รีเซ็ตรหัสผ่านของคุณเป็นรหัสชั่วคราว<br>กรุณากำหนดรหัสผ่านลับของคุณเองก่อนเริ่มเล่น (อย่างน้อย ' + BA_PT_MIN + ' ตัว) — รหัสชั่วคราวจะใช้เข้าไม่ได้อีก</div>' +
           '<input id="baPtP1" class="ba-pt-i" type="password" autocomplete="new-password" placeholder="รหัสผ่านลับใหม่">' +
           '<input id="baPtP2" class="ba-pt-i" type="password" autocomplete="new-password" placeholder="ยืนยันรหัสผ่านลับใหม่">' +
+          '<button id="baPtEye" class="ba-pt-eye" type="button">👁️ แสดงรหัส</button>' +
           '<div id="baPtErr" class="ba-pt-e"></div><button id="baPtOk" class="ba-pt-b" type="button">✅ บันทึกรหัสใหม่</button></div>';
         document.body.appendChild(el);
         document.getElementById('baPtOk').addEventListener('click', function () { baPwForceSubmit(); });
+        document.getElementById('baPtEye').addEventListener('click', function () {
+          const show = document.getElementById('baPtP1').type === 'password';
+          ['baPtP1', 'baPtP2'].forEach(function (i) { const x = document.getElementById(i); if (x) x.type = show ? 'text' : 'password'; });
+          this.textContent = show ? '🙈 ซ่อนรหัส' : '👁️ แสดงรหัส';
+        });
         el.addEventListener('keydown', function (e) { if (e.key === 'Enter') baPwForceSubmit(); });
         return el;
       }
       function ptShow() {
         const el = ptDom();
         el.classList.add('active'); BA_PT_N.show++;
-        ['baPtP1', 'baPtP2'].forEach(function (i) { const x = document.getElementById(i); if (x) x.value = ''; });
+        ['baPtP1', 'baPtP2'].forEach(function (i) { const x = document.getElementById(i); if (x) { x.value = ''; x.type = 'password'; } });
+        const eb = document.getElementById('baPtEye'); if (eb) eb.textContent = '👁️ แสดงรหัส';
         document.getElementById('baPtErr').textContent = '';
         try { acSync(true); } catch (e) {}
         setTimeout(function () { const x = document.getElementById('baPtP1'); if (x) x.focus(); }, 50);

@@ -47808,6 +47808,175 @@
       }
     } catch (e) {}
     })();
+
+    // ═══════════════════════════════════════════════════
+    //  Patch v9.39 · GM TEMP PASSWORD → FORCED SELF-SET PASSWORD
+    //  GM รีเซ็ตรหัส (เช่น 1234) → นักเรียนเข้าด้วยรหัสนั้นครั้งแรก →
+    //  หน้าต่างบังคับตั้งรหัสใหม่เอง (ปิดไม่ได้) → รหัสชั่วคราวใช้ไม่ได้อีก
+    //  ห่อล้วน ไม่แก้ชั้นล่าง · ธง a.pwTemp ในบัญชี + คีย์ pwTemp บนคลาวด์
+    // ═══════════════════════════════════════════════════
+    (function baPwForceInstall() {
+      const BA_PT_VER = 'v9.39';
+      const BA_PT_MIN = 4;
+      const BA_PT_N = { set: 0, show: 0, done: 0, push: 0, mirror: 0 };
+      const BA_PT_ROW = {};                 /* pwTemp ที่เห็นจากคลาวด์ตอนล็อกอินล่าสุด */
+      function ptErr(e, w) { try { gcErrPush('pwForce:' + w, e); } catch (x) {} }
+      function ptCloud() { try { return typeof caOn === 'function' && caOn(); } catch (e) { return false; } }
+      function ptHash(u, pw) { try { return caHash(u, pw); } catch (e) { return ''; } }
+
+      /* 1) GM เปลี่ยนรหัส → ติดธง (ห่อ fn ของ withStudent เพื่อเทียบ pw ก่อน/หลัง) */
+      if (typeof withStudent === 'function') {
+        const _wsPt = withStudent;
+        withStudent = function (user, fn) {
+          let changed = null;
+          const wrapped = (typeof fn === 'function') ? function (a, s) {
+            const before = a.pw;
+            const r = fn.apply(this, arguments);
+            if (a.pw !== before && a.pw) { a.pwTemp = true; changed = { pw: a.pw, mirror: !!a.lrMirror }; BA_PT_N.set++; }
+            return r;
+          } : fn;
+          const r = _wsPt.call(this, user, wrapped);
+          try {
+            if (changed && ptCloud()) {
+              const body = { pwTemp: true, pwAt: Date.now() };
+              if (changed.mirror) {         /* แถวสดของ v5.7 caPwhOf คืนว่าง → ต้องส่งแฮชเอง */
+                const h = ptHash(user, changed.pw);
+                if (h) { body.pwh = h; try { CA_PWH[user] = h; } catch (e) {} BA_PT_N.mirror++; }
+              }
+              try { const lv = FB_LIVE && FB_LIVE[user]; if (lv && typeof lv === 'object') { lv.pwTemp = true; if (body.pwh) lv.pwh = body.pwh; } } catch (e) {}
+              BA_PT_N.push++;
+              fbFetch(fbUrl('/' + encodeURIComponent(user)), { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(function (e) { ptErr(e, 'gmPatch'); });
+            }
+          } catch (e) { ptErr(e, 'ws'); }
+          return r;
+        };
+      }
+
+      /* 2) PUT ของนักเรียนทับทั้งแถว → ต้องแนบ pwTemp กลับไปเองมิฉะนั้นธงหาย */
+      if (typeof fbFetch === 'function') {
+        const _fbPt = fbFetch;
+        fbFetch = function (url, opt) {
+          try {
+            const u = (typeof caIsRowPut === 'function') ? caIsRowPut(url, opt) : '';
+            if (u && opt && typeof opt.body === 'string') {
+              const loc = loadStore()[u];
+              if (loc && loc.pwTemp === true) {
+                const b = JSON.parse(opt.body); b.pwTemp = true;
+                opt = Object.assign({}, opt, { body: JSON.stringify(b) });
+              }
+            }
+          } catch (e) { ptErr(e, 'put'); }
+          return _fbPt.call(this, url, opt);
+        };
+      }
+
+      /* 3) จำ pwTemp จากแถวคลาวด์ที่อ่านตอนล็อกอิน (ข้ามเครื่อง) */
+      if (typeof caGetRow === 'function') {
+        const _rowPt = caGetRow;
+        caGetRow = async function (u) {
+          const row = await _rowPt.apply(this, arguments);
+          try { BA_PT_ROW[u] = !!(row && row.pwTemp === true); } catch (e) {}
+          return row;
+        };
+      }
+
+      /* 4) หน้าต่างบังคับตั้งรหัสใหม่ */
+      function ptStyle() {
+        if (document.getElementById('baPtStyle')) return;
+        const st = document.createElement('style'); st.id = 'baPtStyle';
+        st.textContent = '#baPtForce{z-index:1005}#baPtForce .g-modal-inner{border-color:#ff7a7a;box-shadow:0 0 32px rgba(255,122,122,.4)}' +
+          '.ba-pt-t{font-size:15px;font-weight:800;color:#ffc845;margin-bottom:8px}.ba-pt-d{font-size:12px;color:#c4d0dc;line-height:1.6;margin-bottom:10px}' +
+          '.ba-pt-i{width:100%;box-sizing:border-box;margin-bottom:8px;padding:10px 12px;background:rgba(255,255,255,.05);border:1px solid rgba(255,200,69,.4);border-radius:8px;color:#f2f6fa;font-size:14px}' +
+          '.ba-pt-e{min-height:16px;font-size:12px;color:#ff7a7a;margin-bottom:8px}.ba-pt-b{width:100%;padding:11px;border-radius:8px;border:0;font-weight:800;background:#2ef2d0;color:#04231f;font-size:14px}';
+        document.head.appendChild(st);
+      }
+      function ptDom() {
+        ptStyle();
+        let el = document.getElementById('baPtForce');
+        if (el) return el;
+        el = document.createElement('div'); el.id = 'baPtForce'; el.className = 'g-modal';
+        el.innerHTML = '<div class="g-modal-inner"><div class="ba-pt-t">🔑 ตั้งรหัสผ่านลับใหม่</div>' +
+          '<div class="ba-pt-d">GM รีเซ็ตรหัสผ่านของคุณเป็นรหัสชั่วคราว<br>กรุณากำหนดรหัสผ่านลับของคุณเองก่อนเริ่มเล่น (อย่างน้อย ' + BA_PT_MIN + ' ตัว) — รหัสชั่วคราวจะใช้เข้าไม่ได้อีก</div>' +
+          '<input id="baPtP1" class="ba-pt-i" type="password" autocomplete="new-password" placeholder="รหัสผ่านลับใหม่">' +
+          '<input id="baPtP2" class="ba-pt-i" type="password" autocomplete="new-password" placeholder="ยืนยันรหัสผ่านลับใหม่">' +
+          '<div id="baPtErr" class="ba-pt-e"></div><button id="baPtOk" class="ba-pt-b" type="button">✅ บันทึกรหัสใหม่</button></div>';
+        document.body.appendChild(el);
+        document.getElementById('baPtOk').addEventListener('click', function () { baPwForceSubmit(); });
+        el.addEventListener('keydown', function (e) { if (e.key === 'Enter') baPwForceSubmit(); });
+        return el;
+      }
+      function ptShow() {
+        const el = ptDom();
+        el.classList.add('active'); BA_PT_N.show++;
+        ['baPtP1', 'baPtP2'].forEach(function (i) { const x = document.getElementById(i); if (x) x.value = ''; });
+        document.getElementById('baPtErr').textContent = '';
+        try { acSync(true); } catch (e) {}
+        setTimeout(function () { const x = document.getElementById('baPtP1'); if (x) x.focus(); }, 50);
+      }
+      window.baPwForceSubmit = function () {
+        const u = CURRENT_USER; const err = document.getElementById('baPtErr');
+        const p1 = (document.getElementById('baPtP1').value || '').trim();
+        const p2 = (document.getElementById('baPtP2').value || '').trim();
+        const s = loadStore(); const a = s[u];
+        if (!a) { err.textContent = 'ไม่พบบัญชี'; return; }
+        if (p1.length < BA_PT_MIN) { err.textContent = '⚠️ รหัสผ่านลับต้องมีอย่างน้อย ' + BA_PT_MIN + ' ตัว'; return; }
+        if (p1 !== p2) { err.textContent = '⚠️ รหัสผ่านทั้งสองช่องไม่ตรงกัน'; return; }
+        if (p1 === a.pw) { err.textContent = '⚠️ ต้องตั้งรหัสใหม่ที่ไม่ซ้ำกับรหัสชั่วคราว'; return; }
+        a.pw = p1; delete a.pwTemp; s[u] = a; saveStore(s);
+        BA_PT_N.done++;
+        const h = ptHash(u, p1);
+        try { if (h) CA_PWH[u] = h; } catch (e) {}
+        if (ptCloud() && h) {
+          const prev = (typeof CA_KICK !== 'undefined') ? CA_KICK : false;
+          try { CA_KICK = true; } catch (e) {}
+          try { const lv = FB_LIVE && FB_LIVE[u]; if (lv && typeof lv === 'object') { lv.pwh = h; delete lv.pwTemp; } } catch (e) {}
+          fbFetch(fbUrl('/' + encodeURIComponent(u)), { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pwh: h, pwAt: Date.now(), pwTemp: null }) })
+            .catch(function (e) { ptErr(e, 'selfPatch'); })
+            .then(function () { try { CA_KICK = prev; } catch (e) {} });
+        }
+        document.getElementById('baPtForce').classList.remove('active');
+        try { acSync(true); } catch (e) {}
+        try { snShowToast({ tag: 'AUTH', tone: 'good' }, '🔑 ตั้งรหัสผ่านลับใหม่แล้ว', 'ครั้งต่อไปเข้าด้วยรหัสใหม่ของคุณ'); } catch (e) {}
+      };
+
+      /* 5) หลังเข้าเกม: ถ้าบัญชีติดธง (ในเครื่องหรือบนคลาวด์) → บังคับตั้งรหัส */
+      if (typeof startGame === 'function') {
+        const _sgPt = startGame;
+        startGame = function (user) {
+          const r = _sgPt.apply(this, arguments);
+          try {
+            const s = loadStore(), a = s[user];
+            if (a && !a.lrMirror) {
+              if (BA_PT_ROW[user] === true && !a.pwTemp) { a.pwTemp = true; saveStore(s); }
+              if (a.pwTemp === true) ptShow();
+            }
+            delete BA_PT_ROW[user];
+          } catch (e) { ptErr(e, 'start'); }
+          return r;
+        };
+      }
+      if (typeof exitGame === 'function') {
+        const _exPt = exitGame;
+        exitGame = function () {
+          const r = _exPt.apply(this, arguments);
+          try { const el = document.getElementById('baPtForce'); if (el) el.classList.remove('active'); } catch (e) {}
+          return r;
+        };
+      }
+
+      /* 6) รีเซ็ตความคืบหน้า (full) ต้องไม่ล้างธงรหัสชั่วคราวทิ้ง */
+      try { if (Array.isArray(BA_MR_KEEP) && BA_MR_KEEP.indexOf('pwTemp') < 0) BA_MR_KEEP.push('pwTemp'); } catch (e) {}
+
+      if (typeof baBattleAudit === 'function') {
+        const _auPt = baBattleAudit;
+        baBattleAudit = function () {
+          const o = _auPt.apply(this, arguments);
+          try { o.pwForce = { ver: BA_PT_VER, min: BA_PT_MIN, open: !!(document.getElementById('baPtForce') && document.getElementById('baPtForce').classList.contains('active')), n: Object.assign({}, BA_PT_N) }; } catch (e) {}
+          return o;
+        };
+      }
+    })();
+
   </script>
 </body>
 </html>

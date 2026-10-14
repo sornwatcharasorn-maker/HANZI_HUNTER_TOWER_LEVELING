@@ -79,6 +79,7 @@ async function setNew(page, a, b) {
   await page.evaluate(([a, b]) => { document.getElementById('baPtP1').value = a; document.getElementById('baPtP2').value = b; document.getElementById('baPtOk').click(); }, [a, b]);
   await page.waitForTimeout(300);
 }
+const badge = (page, u) => page.evaluate(k => { const r = document.querySelector('#baUni [data-ba-u="' + k + '"]'); const tr = r ? r.closest('tr') : null; if (!tr) return 'norow'; const b = tr.querySelector('.ba-pt-flag'); return b ? (b.classList.contains('wait') ? 'wait' : b.classList.contains('done') ? 'done' : 'other') : 'none'; }, u);
 async function leave(page) { await page.evaluate(() => { try { exitGame(); } catch (e) {} }); await page.waitForTimeout(500); await page.evaluate(() => { try { enterGate(); } catch (e) {} }); await page.waitForTimeout(500); }
 
 (async () => {
@@ -115,6 +116,8 @@ async function leave(page) { await page.evaluate(() => { try { exitGame(); } cat
   say('── 2 · เข้าด้วยรหัสชั่วคราว → หน้าบังคับตั้งรหัสใหม่ ──');
   await seed(p, 'bee', 'abcd');
   await gmDo(p, 'gmResetPw', 'bee', '1234');
+  await p.waitForTimeout(300);
+  ok('GM: ไอดีที่เพิ่งรีเซ็ต มีป้าย 🚨 ยังไม่ตั้งรหัสใหม่', (await badge(p, 'bee')) === 'wait', await badge(p, 'bee'));
   await p.evaluate(() => closeGm());
   await p.waitForTimeout(300);
   await login(p, 'bee', 'abcd');
@@ -156,6 +159,7 @@ async function leave(page) { await page.evaluate(() => { try { exitGame(); } cat
   await pg.waitForTimeout(400);
   const row = await pg.evaluate(() => window.__DB.live1);
   ok('รีเซ็ตแถวสด → คลาวด์ได้ pwh ใหม่ + pwTemp', row && row.pwTemp === true && typeof row.pwh === 'string' && row.pwh !== 'OLDHASH', row);
+  ok('GM: แถวสดที่รีเซ็ต มีป้าย 🚨', (await badge(pg, 'live1')) === 'wait', await badge(pg, 'live1'));
   const hash = await pg.evaluate(() => caHash('live1', '1234'));
   ok('pwh บนคลาวด์ = แฮชของ 1234', row && row.pwh === hash, { row, hash });
 
@@ -176,6 +180,12 @@ async function leave(page) { await page.evaluate(() => { try { exitGame(); } cat
   const row3 = await st.evaluate(() => window.__DB.live1);
   ok('หัวใจ (PUT) หลังตั้งรหัส: pwh คงที่ ไม่มีธงกลับมา', row3 && row3.pwh === h2 && !row3.pwTemp, row3);
   ok('ไม่ถูกเตะออกจากเกม', await playing(st));
+  ok('คลาวด์มี pwSet หลังตั้งรหัส', !!(row3 && row3.pwSet), row3);
+  await pg.evaluate(r => { FB_LIVE.live1 = Object.assign({}, r, { at: Date.now() }); fbPaint(); gmRender(); }, row3);
+  await pg.waitForTimeout(400);
+  ok('GM: นักเรียนตั้งรหัสใหม่แล้ว → ป้ายเปลี่ยนเป็น ✅', (await badge(pg, 'live1')) === 'done', await badge(pg, 'live1'));
+  await gmDo(pg, 'gmResetPw', 'live1', '1234'); await pg.waitForTimeout(400);
+  ok('GM: รีเซ็ตซ้ำ → กลับเป็น 🚨', (await badge(pg, 'live1')) === 'wait', await badge(pg, 'live1'));
   await leave(st);
   await login(st, 'live1', '1234'); ok('คลาวด์: 1234 ใช้ไม่ได้อีก', !(await playing(st)));
   await login(st, 'live1', 'mine5678'); ok('คลาวด์: รหัสใหม่เข้าได้ ไม่มีหน้าตั้งซ้ำ', (await playing(st)) && !(await modalOn(st)));

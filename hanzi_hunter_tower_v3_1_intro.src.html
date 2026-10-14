@@ -47832,18 +47832,18 @@
           const wrapped = (typeof fn === 'function') ? function (a, s) {
             const before = a.pw;
             const r = fn.apply(this, arguments);
-            if (a.pw !== before && a.pw) { a.pwTemp = true; changed = { pw: a.pw, mirror: !!a.lrMirror }; BA_PT_N.set++; }
+            if (a.pw && (a.pw !== before || /\.pw\s*=[^=]/.test(String(fn)))) { a.pwTemp = true; delete a.pwSetAt; changed = { pw: a.pw, mirror: !!a.lrMirror }; BA_PT_N.set++; }
             return r;
           } : fn;
           const r = _wsPt.call(this, user, wrapped);
           try {
             if (changed && ptCloud()) {
-              const body = { pwTemp: true, pwAt: Date.now() };
+              const body = { pwTemp: true, pwAt: Date.now(), pwSet: null };
               if (changed.mirror) {         /* แถวสดของ v5.7 caPwhOf คืนว่าง → ต้องส่งแฮชเอง */
                 const h = ptHash(user, changed.pw);
                 if (h) { body.pwh = h; try { CA_PWH[user] = h; } catch (e) {} BA_PT_N.mirror++; }
               }
-              try { const lv = FB_LIVE && FB_LIVE[user]; if (lv && typeof lv === 'object') { lv.pwTemp = true; if (body.pwh) lv.pwh = body.pwh; } } catch (e) {}
+              try { const lv = FB_LIVE && FB_LIVE[user]; if (lv && typeof lv === 'object') { lv.pwTemp = true; delete lv.pwSet; if (body.pwh) lv.pwh = body.pwh; } } catch (e) {}
               BA_PT_N.push++;
               fbFetch(fbUrl('/' + encodeURIComponent(user)), { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(function (e) { ptErr(e, 'gmPatch'); });
             }
@@ -47863,6 +47863,9 @@
               if (loc && loc.pwTemp === true) {
                 const b = JSON.parse(opt.body); b.pwTemp = true;
                 opt = Object.assign({}, opt, { body: JSON.stringify(b) });
+              } else if (loc && loc.pwSetAt) {
+                const b2 = JSON.parse(opt.body); b2.pwSet = loc.pwSetAt;
+                opt = Object.assign({}, opt, { body: JSON.stringify(b2) });
               }
             }
           } catch (e) { ptErr(e, 'put'); }
@@ -47930,15 +47933,15 @@
         if (p1.length < BA_PT_MIN) { err.textContent = '⚠️ รหัสผ่านลับต้องมีอย่างน้อย ' + BA_PT_MIN + ' ตัว'; return; }
         if (p1 !== p2) { err.textContent = '⚠️ รหัสผ่านทั้งสองช่องไม่ตรงกัน'; return; }
         if (p1 === a.pw) { err.textContent = '⚠️ ต้องตั้งรหัสใหม่ที่ไม่ซ้ำกับรหัสชั่วคราว'; return; }
-        a.pw = p1; delete a.pwTemp; s[u] = a; saveStore(s);
+        const setAt = Date.now(); a.pw = p1; delete a.pwTemp; a.pwSetAt = setAt; s[u] = a; saveStore(s);
         BA_PT_N.done++;
         const h = ptHash(u, p1);
         try { if (h) CA_PWH[u] = h; } catch (e) {}
         if (ptCloud() && h) {
           const prev = (typeof CA_KICK !== 'undefined') ? CA_KICK : false;
           try { CA_KICK = true; } catch (e) {}
-          try { const lv = FB_LIVE && FB_LIVE[u]; if (lv && typeof lv === 'object') { lv.pwh = h; delete lv.pwTemp; } } catch (e) {}
-          fbFetch(fbUrl('/' + encodeURIComponent(u)), { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pwh: h, pwAt: Date.now(), pwTemp: null }) })
+          try { const lv = FB_LIVE && FB_LIVE[u]; if (lv && typeof lv === 'object') { lv.pwh = h; delete lv.pwTemp; lv.pwSet = setAt; } } catch (e) {}
+          fbFetch(fbUrl('/' + encodeURIComponent(u)), { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pwh: h, pwAt: setAt, pwSet: setAt, pwTemp: null }) })
             .catch(function (e) { ptErr(e, 'selfPatch'); })
             .then(function () { try { CA_KICK = prev; } catch (e) {} });
         }
@@ -47956,7 +47959,7 @@
             const s = loadStore(), a = s[user];
             if (a && !a.lrMirror) {
               if (BA_PT_ROW[user] === true && !a.pwTemp) { a.pwTemp = true; saveStore(s); }
-              if (a.pwTemp === true) ptShow();
+              if (a.pwTemp === true) { delete a.pwSetAt; ptShow(); }
             }
             delete BA_PT_ROW[user];
           } catch (e) { ptErr(e, 'start'); }
@@ -47973,7 +47976,44 @@
       }
 
       /* 6) รีเซ็ตความคืบหน้า (full) ต้องไม่ล้างธงรหัสชั่วคราวทิ้ง */
-      try { if (Array.isArray(BA_MR_KEEP) && BA_MR_KEEP.indexOf('pwTemp') < 0) BA_MR_KEEP.push('pwTemp'); } catch (e) {}
+      try { if (Array.isArray(BA_MR_KEEP) && BA_MR_KEEP.indexOf('pwTemp') < 0) BA_MR_KEEP.push('pwTemp'); if (Array.isArray(BA_MR_KEEP) && BA_MR_KEEP.indexOf('pwSetAt') < 0) BA_MR_KEEP.push('pwSetAt'); } catch (e) {}
+
+      /* 7) ไอคอนสถานะรหัสผ่านในตารางครู: 🚨 รีเซ็ตแล้วยังไม่ตั้งใหม่ · ✅ ตั้งใหม่เรียบร้อย */
+      function ptState(u) {
+        let live = null, a = null;
+        try { live = baLiveMap()[u] || null; } catch (e) {}
+        try { a = loadStore()[u] || null; } catch (e) {}
+        if (live && live.pwTemp === true) return { k: 'wait' };
+        if (live && live.pwSet) return { k: 'done', t: +live.pwSet };
+        if (a && a.pwTemp === true) return { k: 'wait' };
+        if (a && a.pwSetAt) return { k: 'done', t: +a.pwSetAt };
+        return null;
+      }
+      function ptBadge(u) {
+        const st = ptState(u); if (!st) return '';
+        if (st.k === 'wait') return '<div class="ba-pt-flag wait" title="GM รีเซ็ตรหัสแล้ว นักเรียนยังไม่ได้ตั้งรหัสใหม่">🚨 รีเซ็ตรหัสแล้ว · ยังไม่ตั้งรหัสใหม่</div>';
+        let when = '';
+        try { when = ' · ' + new Date(st.t).toLocaleString('th-TH', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }); } catch (e) {}
+        return '<div class="ba-pt-flag done" title="นักเรียนตั้งรหัสผ่านใหม่เรียบร้อยแล้ว">✅ ตั้งรหัสใหม่เรียบร้อย' + when + '</div>';
+      }
+      if (typeof baUniRowHtml === 'function') {
+        const _uiPt = baUniRowHtml;
+        baUniRowHtml = function (r) {
+          const h = _uiPt.apply(this, arguments);
+          try {
+            if (!document.getElementById('baPtFlagStyle')) {
+              const st = document.createElement('style'); st.id = 'baPtFlagStyle';
+              st.textContent = '.ba-pt-flag{margin:4px 0;padding:3px 6px;border-radius:6px;font-size:11px;font-weight:800;line-height:1.3}' +
+                '.ba-pt-flag.wait{background:#ff2d2d;color:#fff;border:1px solid #ffb3b3;box-shadow:0 0 8px rgba(255,45,45,.7)}' +
+                '.ba-pt-flag.done{background:rgba(46,242,208,.14);color:#2ef2d0;border:1px solid rgba(46,242,208,.5)}';
+              document.head.appendChild(st);
+            }
+            const b = ptBadge(r && r.u);
+            if (b) return h.replace('<span class="gm-sub">@', b + '<span class="gm-sub">@');
+          } catch (e) { ptErr(e, 'badge'); }
+          return h;
+        };
+      }
 
       if (typeof baBattleAudit === 'function') {
         const _auPt = baBattleAudit;

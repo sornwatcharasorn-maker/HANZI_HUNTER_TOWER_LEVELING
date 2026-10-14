@@ -30428,6 +30428,7 @@
 
     const BA_UNI_VER  = '7.8';
     const BA_UNI_MAXW = 1150;   /* เพดานความกว้างตามสเปก — กว้างกว่านี้ครูต้องเลื่อนจอ */
+    const BA_UNI_ONLINE_MS = 30000;  /* เงียบเกินนี้ = ออฟไลน์ (หัวใจนักเรียนยิงทุก 5 วิ · เผื่อ 6 จังหวะ) */
     const BA_UNI_WEAK = 6;      /* โชว์คำที่ผิดซ้ำสูงสุดกี่คำต่อคน (ล็อกความกว้างคอลัมน์ 7) */
     const BA_UNI_N = { paint: 0, rows: 0, act: 0 };
 
@@ -30541,7 +30542,8 @@
           best:   Math.max(baUniInt(p.best), baUniInt(a.best)),
           title:  p.title || a.equippedTitle || '',
           weak:   weak.slice(0, BA_UNI_WEAK),
-          live:   !!live[u],
+          live:   !!live[u] && (Date.now() - (r.at || 0)) < BA_UNI_ONLINE_MS,
+          stale:  !!live[u] && (Date.now() - (r.at || 0)) >= BA_UNI_ONLINE_MS,
           shards: baUniInt((a.ab && a.ab.shards) || 0)
         }));
       });
@@ -30597,7 +30599,7 @@
             '<span class="gm-name">' + esc(r.name || r.u) + '</span>' +
             '<span class="ba-uni-rm">' + esc(r.room || '—') + '</span>' +
             '<span class="ba-uni-st ' + (r.frozen ? 'frz' : r.live ? 'live' : 'loc') + '">' +
-              (r.frozen ? '❄️ ระงับ' : r.live ? '📡 สด' : 'Active') + '</span>' +
+              (r.frozen ? '❄️ ระงับ' : r.live ? '📡 สด' : r.stale ? '💤 ออฟไลน์' : 'Active') + '</span>' +
           '</div>' +
           '<span class="gm-sub">@' + esc(r.u) + ' · ' + esc(fbAgo(r.at)) + '</span>' +
           '<div class="gc-row-btns ba-uni-qb">' +
@@ -30660,12 +30662,17 @@
       if (!body) return 0;
       const rows = baUniRows();
       BA_UNI_N.paint++;
-      body.innerHTML = rows.map(baUniRowHtml).join('');
+      const html = rows.map(baUniRowHtml).join('');
+      if (body.getAttribute('data-sig') !== html) {   /* ไม่เปลี่ยน = ไม่แตะ DOM (กันปุ่มหลุดกลางคลิก) */
+        body.innerHTML = html;
+        body.setAttribute('data-sig', html);
+      }
       const none = document.getElementById('baUniNone');
       if (none) none.style.display = rows.length ? 'none' : 'block';
       const sub = document.getElementById('baUniSub');
       if (sub) {
-        sub.textContent = rows.length + ' ฮันเตอร์' +
+        const onl = rows.filter(function (x) { return x.live; }).length;
+        sub.textContent = rows.length + ' ฮันเตอร์ · 📡 ออนไลน์ ' + onl +
           ((typeof GC_ROOM === 'string' && GC_ROOM) ? ' · กลุ่ม ' + GC_ROOM : ' · ทุกกลุ่ม') +
           ' · เรียงตาม ' + ((typeof BA_SORT === 'string') ? BA_SORT : 'live');
       }

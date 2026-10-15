@@ -48091,6 +48091,49 @@
       }
     })();
 
+    /* ══ Patch v9.40 · ECONOMY BALANCE (ดรอปไอเทม · ของรางวัลเควสรายสัปดาห์) ══
+       ปัญหา: ดรอปมอนสเตอร์ธรรมดามีม้วนคัมภีร์ (ขายคืน 1,250) และอัตราดรอป = LUK*0.45+15
+       ที่ LUK สูงเกิน 50% ต่อตัว → ขายดรอปได้มากกว่าทองเคลียร์ชั้น (150) หลายเท่า
+       เควสรายสัปดาห์ให้ไอเทมมูลค่า ~7,000 ทอง/สัปดาห์ เทียบทองเควส ~485
+       แก้: เพดานดรอป 25% · มอนธรรมดาดรอปได้แค่ยา · ม้วน/หยุดเวลา เฉพาะบอส ·
+       ลดมูลค่าไอเทมรางวัลรายสัปดาห์ (ไม่แตะตัวเลขทอง/EXP/💎) ห่อล้วน ไม่แก้ชั้นเก่า */
+    (function baEbInstall() {
+      const BA_EB_DROP_CAP = 25;
+      const BA_EB_SWAP = { W3: 'mystery', W4: 'mystery', W6: 'freeze', W9: 'potion' };
+      const baEbN = { cap: 0, swap: 0 };
+      if (typeof dropChance === 'function') {
+        const _ebDrop = dropChance;
+        dropChance = function () {
+          const v = _ebDrop.apply(this, arguments);
+          if (v > BA_EB_DROP_CAP) { baEbN.cap++; return BA_EB_DROP_CAP; }
+          return v;
+        };
+      }
+      if (typeof rollDrop === 'function') {
+        rollDrop = function (boss) {
+          if (!boss && Math.random() * 100 >= dropChance()) return null;
+          const keys = (boss ? ['potion', 'scroll', 'freeze'] : ['potion']).filter(unlocked);
+          if (!keys.length || bagFull()) return null;
+          const key = keys[Math.floor(Math.random() * keys.length)];
+          if (!addItem(key, 1)) return null;
+          return itemOf(key);
+        };
+      }
+      try {
+        Q_DEFS.forEach(function (q) {
+          if (BA_EB_SWAP[q.id] && itemOf(BA_EB_SWAP[q.id])) { q.item = BA_EB_SWAP[q.id]; baEbN.swap++; }
+        });
+      } catch (e) { try { gcErrPush(e, 'baEb'); } catch (x) {} }
+      if (typeof baBattleAudit === 'function') {
+        const _ebAudit = baBattleAudit;
+        baBattleAudit = function () {
+          const a = _ebAudit.apply(this, arguments);
+          try { a.econV940 = { ver: '9.40', dropCap: BA_EB_DROP_CAP, swap: BA_EB_SWAP, n: Object.assign({}, baEbN) }; } catch (e) {}
+          return a;
+        };
+      }
+    })();
+
   </script>
 </body>
 </html>

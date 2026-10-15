@@ -48219,6 +48219,50 @@
       }
     })();
 
-  </script>
+  
+  /* Patch v9.40 · TITLE BONUS RESTORE & WEAK-WORD CLEAR (ห่อล้วน)
+     1) computeStats ถูก baPlStats (v8.5) เขียนทับ จึงไม่บวกโบนัสฉายาอีกเลย — ตอนนี้บวกคืน
+        (เฉพาะแรงค์ถึงเกณฑ์ FEATURE_RANK.titles เหมือน v4.0) หนีบ 999 ตามชั้นนั้น
+     2) จุดอ่อน: คำที่ตอบถูกติดกัน 3 ครั้งหลังสุดถือว่าเคลียร์แล้ว ไม่โผล่ในแฟ้มจุดอ่อน
+        (ไม่แตะ wrong เพราะ v9.6/เควสอ่านอยู่) */
+  (function baV940() {
+    'use strict';
+    try {
+      if (typeof computeStats === 'function') {
+        const _c940 = computeStats;
+        computeStats = function (src) {
+          const out = _c940.apply(this, arguments);
+          try {
+            if (src && typeof src === 'object' && out && rankIndexOfSrc(src) >= rankIndex(FEATURE_RANK.titles)) {
+              const b = titleBonus(src.equippedTitle);
+              Object.keys(b).forEach(function (k) {
+                if (typeof out[k] === 'number') out[k] = Math.max(1, Math.min(999, Math.round(out[k] + b[k])));
+              });
+            }
+          } catch (e) {}
+          return out;
+        };
+      }
+      if (typeof weakWordsOf === 'function') {
+        const _w940 = weakWordsOf;
+        weakWordsOf = function (src, limit) {
+          const rows = _w940.call(this, src, 0);
+          const ws = (src && src.wordStats) || {};
+          const kept = rows.filter(function (r) {
+            const w = ws[r.id], rc = (w && w.recent) || [];
+            return !(rc.length >= 3 && rc.slice(-3).every(Boolean));
+          });
+          return limit ? kept.slice(0, limit) : kept;
+        };
+      }
+      const _a940 = typeof baBattleAudit === 'function' ? baBattleAudit : null;
+      if (_a940) baBattleAudit = function () {
+        const r = _a940.apply(this, arguments);
+        try { r.v940 = { ver: 'v9.40', titleBonus: typeof titleBonus === 'function' }; } catch (e) {}
+        return r;
+      };
+    } catch (e) { try { gcErrPush && gcErrPush(e); } catch (x) {} }
+  })();
+    </script>
 </body>
 </html>

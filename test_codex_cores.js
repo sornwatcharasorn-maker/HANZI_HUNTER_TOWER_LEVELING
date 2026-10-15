@@ -79,10 +79,10 @@ function head(s) { say('\n── ' + s + ' ' + '─'.repeat(Math.max(0, 58 - s.l
     ok(JSON.stringify(a.keys) === JSON.stringify(['mp', 'time', 'gold', 'hp', 'atk', 'shield', 'crit']),
       'ลำดับคีย์ถูกต้อง (สามเส้นเดิมของ v4.6 อยู่หน้าเสมอ) — ' + a.keys.join(','));
     ok(a.max === 6, 'ขั้นสูงสุดยังเป็น 6 เท่าเดิม');
-    ok(a.caps.hp === 400, 'เพดานแกนชีวิต +400 — ได้ +' + a.caps.hp);
-    ok(a.caps.atk === 40, 'เพดานแกนพิฆาต +40% — ได้ +' + a.caps.atk);
-    ok(a.caps.shield === 24, 'เพดานแกนเกราะ −24% — ได้ −' + a.caps.shield);
-    ok(a.caps.crit === 20, 'เพดานแกนสังหาร +20% — ได้ +' + a.caps.crit);
+    ok(a.caps.hp === 1200, 'เพดานแกนชีวิต +1200 — ได้ +' + a.caps.hp);
+    ok(a.caps.atk === 100, 'เพดานแกนพิฆาต +100% — ได้ +' + a.caps.atk);
+    ok(a.caps.shield === 40, 'เพดานแกนเกราะ −40% — ได้ −' + a.caps.shield);
+    ok(a.caps.crit === 60, 'เพดานแกนสังหาร +60% — ได้ +' + a.caps.crit);
 
     const t = await ev(() => AB_CORES.map(c => [c.key, typeof c.icon, typeof c.name, typeof c.desc,
       typeof c.eff, typeof c.cap, c.eff(AB_CORE_MAX)]));
@@ -145,18 +145,18 @@ function head(s) { say('\n── ' + s + ' ' + '─'.repeat(Math.max(0, 58 - s.l
     const after = await ev(() => ({ shards: G.ab.shards, lv: G.ab.core.hp, maxHp: G.maxHp,
                                     eff: baBattleAudit().core7.eff.hp }));
     ok(after.lv === before.lv + 1, 'ขั้นแกนชีวิตเดินหน้าไป 1 ขั้น');
-    ok(before.shards - after.shards === 8, 'หัก 💎 ตามตาราง AB_CORE_COST ขั้นแรก (8) — หักไป ' +
+    ok(before.shards - after.shards === 40, 'หัก 💎 ตามตาราง AB_CORE_COST ขั้นแรก (40) — หักไป ' +
       (before.shards - after.shards));
-    ok(after.eff === 70, 'ขั้น 1 ให้ HP +70 ตามตาราง — ได้ +' + after.eff);
-    ok(after.maxHp === before.maxHp + 70, 'หลอดเลือดยืดจริงทันทีโดยไม่ต้องออกจากเกม (' +
+    ok(after.eff === 200, 'ขั้น 1 ให้ HP +200 ตามตาราง — ได้ +' + after.eff);
+    ok(after.maxHp === before.maxHp + 200, 'หลอดเลือดยืดจริงทันทีโดยไม่ต้องออกจากเกม (' +
       before.maxHp + ' → ' + after.maxHp + ')');
 
     /* ไล่ให้เต็มขั้นแล้วต้องตันที่เพดานเป๊ะ */
-    await ev(() => { for (let i = 0; i < 8; i++) abBuyCore('hp'); });
+    await ev(() => { for (let i = 0; i < 8; i++) { G.ab.shards = 5000; abBuyCore('hp'); }; });
     const full = await ev(() => ({ lv: G.ab.core.hp, eff: baBattleAudit().core7.eff.hp, maxHp: G.maxHp }));
     ok(full.lv === 6, 'อัปต่อไม่เกินขั้น 6');
-    ok(full.eff === 400, 'เต็มขั้นได้ HP +400 พอดี — ได้ +' + full.eff);
-    ok(full.maxHp === before.maxHp + 400, 'หลอดเลือดยืดครบ +400');
+    ok(full.eff === 1200, 'เต็มขั้นได้ HP +1200 พอดี — ได้ +' + full.eff);
+    ok(full.maxHp === before.maxHp + 1200, 'หลอดเลือดยืดครบ +1200');
   }
 
   // ══ บล็อก 4 · แกนพิฆาต — มีผลเฉพาะตอนตัดสินข้อ ═══════════════════════
@@ -173,11 +173,11 @@ function head(s) { say('\n── ' + s + ' ' + '─'.repeat(Math.max(0, 58 - s.l
        ผลของแกนพิฆาตล้วน ๆ ตามที่บล็อกนี้ตั้งใจวัด */
     await ev(() => { G.questionStart = 0; });
     const live = await ev(() => { BA_LIVE = true; const v = hunterAtk(); BA_LIVE = false; return v; });
-    ok(live === Math.max(1, Math.round(base * 1.4)),
-      'ระหว่างตัดสินข้อได้ +40% เต็มเพดาน — คาด ' + Math.round(base * 1.4) + ' ได้ ' + live);
+    ok(live === Math.max(1, Math.round(base * 2.0)),
+      'ระหว่างตัดสินข้อได้ +100% เต็มเพดาน — คาด ' + Math.round(base * 2.0) + ' ได้ ' + live);
 
     const half = await ev(() => { G.ab.core.atk = 3; BA_LIVE = true; const v = hunterAtk(); BA_LIVE = false; return v; });
-    ok(half === Math.max(1, Math.round(base * 1.21)), 'ขั้น 3 ได้ +21% ตามตาราง — ได้ ' + half);
+    ok(half === Math.max(1, Math.round(base * 1.5)), 'ขั้น 3 ได้ +50% ตามตาราง — ได้ ' + half);
 
     /* HP อสูรต้องไม่ขยับตามขั้นแกน */
     const hp0 = await ev(() => { G.ab.core.atk = 0; renderStats(); return monsterHpFor(G.floor); });
@@ -192,18 +192,18 @@ function head(s) { say('\n── ' + s + ' ' + '─'.repeat(Math.max(0, 58 - s.l
     const raw = await ev(() => wrongDamage());
     await ev(() => { G.ab.core.shield = 6; renderStats(); });
     const cut = await ev(() => wrongDamage());
-    ok(cut === Math.max(1, Math.round(raw * 0.76)),
-      'ตอบผิดเสีย HP น้อยลง 24% — คาด ' + Math.max(1, Math.round(raw * 0.76)) + ' ได้ ' + cut);
+    ok(cut === Math.max(1, Math.round(raw * 0.60)),
+      'ตอบผิดเสีย HP น้อยลง 40% — คาด ' + Math.max(1, Math.round(raw * 0.60)) + ' ได้ ' + cut);
 
     const mid = await ev(() => { G.ab.core.shield = 3; renderStats(); return wrongDamage(); });
-    ok(mid === Math.max(1, Math.round(raw * 0.88)), 'ขั้น 3 ลด 12% ตามตาราง — ได้ ' + mid);
+    ok(mid === Math.max(1, Math.round(raw * 0.80)), 'ขั้น 3 ลด 20% ตามตาราง — ได้ ' + mid);
 
     /* baHurtHero คือทางเดียวที่สกิลอสูร/ทัพเงา/คำสาปใช้ทำร้ายฮีโร่ */
     const hurt = await ev(() => {
       G.ab.core.shield = 6; G.hp = G.maxHp; G.shield = 0; G.practiceMode = false;
       const b = G.hp; baHurtHero(100); const lost = b - G.hp; G.hp = G.maxHp; return lost;
     });
-    ok(hurt === 76, 'baHurtHero(100) เสียจริง 76 (ลด 24%) — ได้ ' + hurt);
+    ok(hurt === 60, 'baHurtHero(100) เสียจริง 60 (ลด 40%) — ได้ ' + hurt);
     await ev(() => { G.ab.core.shield = 0; renderStats(); });
   }
 
@@ -235,13 +235,13 @@ function head(s) { say('\n── ' + s + ' ' + '─'.repeat(Math.max(0, 58 - s.l
       G.ab.core.crit = 6; renderStats();
       const b = G.monsterHp; baStrike(1000, true, false); return b - G.monsterHp;
     });
-    ok(full === 200, 'แกนสังหารเต็มขั้น = คริตลงเพิ่ม 20% ของยอดที่ลงจริง — ได้ ' + full);
+    ok(full === 600, 'แกนสังหารเต็มขั้น = คริตลงเพิ่ม 60% ของยอดที่ลงจริง — ได้ ' + full);
 
     const nocrit = await ev(() => { const b = G.monsterHp; baStrike(1000, false, false); return b - G.monsterHp; });
     ok(nocrit === 0, 'หมัดธรรมดาไม่ได้โบนัสสักหน่วย — ได้ ' + nocrit);
 
     const sup = await ev(() => { const b = G.monsterHp; baStrike(1000, false, true); return b - G.monsterHp; });
-    ok(sup === 200, 'ท่าไม้ตายนับเป็นคริตด้วย — ได้ ' + sup);
+    ok(sup === 600, 'ท่าไม้ตายนับเป็นคริตด้วย — ได้ ' + sup);
 
     /* หนีบไม่ให้ฆ่า (กับดักข้อ 19) */
     const clamp = await ev(() => {
@@ -461,7 +461,7 @@ function head(s) { say('\n── ' + s + ' ' + '─'.repeat(Math.max(0, 58 - s.l
     ok(r.lv.hp === 4 && r.lv.atk === 3 && r.lv.shield === 2 && r.lv.crit === 5,
       'ขั้นแกนใหม่ทั้งสี่เส้นยังอยู่ครบหลังล็อกอินใหม่ — ' + JSON.stringify(r.lv));
     ok(r.lv.mp === 0 && r.lv.time === 0 && r.lv.gold === 0, 'สามเส้นเดิมไม่ถูกรบกวน');
-    ok(r.eff.hp === 280 && r.eff.crit === 17, 'ผลของขั้นที่เซฟไว้คำนวณถูก (HP +' +
+    ok(r.eff.hp === 800 && r.eff.crit === 50, 'ผลของขั้นที่เซฟไว้คำนวณถูก (HP +' +
       r.eff.hp + ' · คริต +' + r.eff.crit + '%)');
 
     const store = await evA((u) => {

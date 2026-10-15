@@ -15,6 +15,16 @@ const { chromium } = require('playwright');
 const fs = require('fs');
 const path = require('path');
 
+/* เปลี่ยนสายในเทสต์: ชั้น gat (v9.x) หักทอง+💎 และชั้น swc ขอยืนยันผ่าน #gmModal
+   ต้องเติมทุนก่อน แล้วกดยืนยัน ไม่งั้นสลับเงียบ ๆ ไม่สำเร็จ แล้วเคสตกด้วยเหตุผลผิด */
+const SWITCH_JS = `window.__sw = function(id){
+  G.gold = (G.gold||0) + 1e7; G.ab = G.ab || {}; G.ab.shards = 99999;
+  const r = baPlSwitch(id);
+  const b = document.getElementById('gmModalOk'), m = document.getElementById('gmModal');
+  if (b && m && m.classList.contains('active')) b.click();
+  return r;
+};`;
+
 const FILE = path.resolve(__dirname, 'hanzi_hunter_tower_v3_1_intro.html');
 const LOG  = path.resolve(__dirname, 'skill_anim_log.txt');
 
@@ -69,6 +79,7 @@ async function boot(browser, w, h) {
   const errs = [];
   page.on('pageerror', e => errs.push(String((e && e.message) || e)));
   await page.route('**fonts.googleapis.com**', r => r.abort());
+  await page.addInitScript(SWITCH_JS);
   await page.addInitScript(() => {
     window.fetch = () => Promise.resolve({
       ok: true, status: 200,
@@ -369,9 +380,20 @@ const cls = page => page.evaluate(() => {
       const k0 = baBattleAudit().skillAnim.key;
       baPlPipSet(G, BA_PL_PIP_MAX);
       G.monsterHp = 999999; G.monsterMaxHp = 999999;
-      const done = baPlCast();
+      /* วัดความยาวล็อกตรงจังหวะที่ baTriggerSkillAnim ตั้งค่า — baPlCast ของชั้นบน ๆ
+         ใช้เวลาประมวลผลเองราว 80ms ถ้าอ่าน left หลังคืนค่าจะดูสั้นกว่าจริง */
+      let lockAt = null;
+      const _trg = baTriggerSkillAnim;
+      baTriggerSkillAnim = function () {
+        const r = _trg.apply(this, arguments);
+        const x = baBattleAudit().skillAnim;
+        if (lockAt === null && x.key === 's4') lockAt = x.left;
+        return r;
+      };
+      let done;
+      try { done = baPlCast(); } finally { baTriggerSkillAnim = _trg; }
       const a = baBattleAudit().skillAnim;
-      return { failed: failed, k0: k0, done: done, key: a.key, left: a.left };
+      return { failed: failed, k0: k0, done: done, key: a.key, left: lockAt === null ? a.left : lockAt };
     });
     ok('เกจยังไม่เต็ม → ไม่ปล่อยและไม่เล่นท่า', ult.failed === false && ult.k0 === '', ult);
     ok('ปล่อยท่าไม้ตายสำเร็จ → เล่นท่าช่อง 4', ult.done === true && ult.key === 's4', ult);
@@ -442,7 +464,7 @@ const cls = page => page.evaluate(() => {
     const b = await boot(browser);
     await enterGame(b.page, 'anm6');
     const other = await b.page.evaluate(() => {
-      baPlSwitch('priest');
+      __sw('priest');
       const backup = JSON.parse(JSON.stringify(ba.assetRegistry.priest.c1.anim));
       Object.keys(ba.assetRegistry.priest.c1.anim).forEach(k => {
         ba.assetRegistry.priest.c1.anim[k].u = '';
@@ -472,7 +494,7 @@ const cls = page => page.evaluate(() => {
     const b = await boot(browser);
     await enterGame(b.page, 'anm61');
     const other = await b.page.evaluate(() => {
-      baPlSwitch('guardian');
+      __sw('guardian');
       baAnimRevert();
       const on = baBattleAudit().skillAnim.on;
       G.questionStart = Date.now() - 6000;

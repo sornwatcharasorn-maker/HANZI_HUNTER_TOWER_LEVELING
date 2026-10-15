@@ -48134,6 +48134,91 @@
       }
     })();
 
+
+    /* ══════════════════════════════════════════════════════════════════
+       Patch v9.41 · ABYSS / MAIN TOWER PROGRESS SEPARATION
+       (อยู่ในเนมสเปซ ba เดิม · ห่อล้วน ไม่แก้ชั้นเก่า)
+
+       ปัญหา: ลำดับทัพเงา (ax.idx) แยกจากชั้นแล้วตั้งแต่ v8.3 แต่ตัวนับของหอคอยจริง
+       (G.floor · floorProgress · maxFloor · towerClears · bossClears · ทอง) ยังใช้ร่วม
+       กับเหวลึก — ปราบทัพเงาแล้ว clearFloor ดันชั้นหอคอย/จ่ายรางวัลชั้น และตกรอบแล้ว
+       onHunterDown ลากชั้นหอคอยไปต้นโซน + หักทอง 20%
+
+       ทางแก้: ตอน baOdMode() เป็นจริง
+         1) onMonsterDefeated — จดตัวนับหอคอย แล้วคืนค่าหลังของเดิมจบ · clearFloor ที่
+            ถูกเรียกจากข้างในถูกแทนด้วย "ไปตัวถัดไป" (ไม่จ่ายรางวัลชั้น ไม่เปิดประตูวาป)
+         2) onHunterDown — จดชั้น/ความคืบหน้า/ทองไว้ก่อน แล้วคืนค่าหลังของเดิมจบ
+            (v8.1 ปิดรันให้แล้วในสายใน ผู้เล่นกลับมาหอคอยที่ชั้นเดิม)
+       ไม่เพิ่มฟิลด์ในบัญชี · ไม่เพิ่ม DOM/CSS/ภาพ · ไม่แตะ Math.random
+       ══════════════════════════════════════════════════════════════════ */
+    (function baSepInstall() {
+      const BA_SEP_VER = '9.41';
+      let BA_SEP_FX = false;
+      const BA_SEP_N = { slay: 0, stubbed: 0, down: 0 };
+      function baSepErr(e, w) { try { baErr(e, 'sep:' + w); } catch (x) {} }
+      function snap(g) {
+        return { floor: g.floor, prog: g.floorProgress, maxF: g.maxFloor,
+                 tc: g.towerClears, bc: g.bossClears, gold: g.gold };
+      }
+      function restore(g, s, withGold) {
+        g.floor = s.floor; g.floorProgress = s.prog; g.maxFloor = s.maxF;
+        g.towerClears = s.tc; g.bossClears = s.bc;
+        if (withGold) g.gold = s.gold;
+      }
+      function inAbyss() {
+        try { return !!(typeof baOdMode === 'function' && baOdMode()); } catch (e) { return false; }
+      }
+
+      if (typeof clearFloor === 'function') {
+        const _sepClear = clearFloor;
+        clearFloor = function () {
+          if (BA_SEP_FX && inAbyss()) {
+            BA_SEP_N.stubbed++;
+            try { scheduleTurn(nextMonster, 1100); } catch (e) { baSepErr(e, 'stub'); }
+            return;
+          }
+          return _sepClear.apply(this, arguments);
+        };
+      }
+
+      if (typeof onMonsterDefeated === 'function') {
+        const _sepSlay = onMonsterDefeated;
+        onMonsterDefeated = function () {
+          const g = baG();
+          if (!g || !inAbyss()) return _sepSlay.apply(this, arguments);
+          const s = snap(g);
+          BA_SEP_FX = true;
+          try { return _sepSlay.apply(this, arguments); }
+          finally {
+            BA_SEP_FX = false;
+            try { restore(g, s, false); BA_SEP_N.slay++; renderFloor(); } catch (e) { baSepErr(e, 'slay'); }
+          }
+        };
+      }
+
+      if (typeof onHunterDown === 'function') {
+        const _sepDown = onHunterDown;
+        onHunterDown = function () {
+          const g = baG();
+          if (!g || !inAbyss()) return _sepDown.apply(this, arguments);
+          const s = snap(g);
+          try { return _sepDown.apply(this, arguments); }
+          finally {
+            try { restore(g, s, true); BA_SEP_N.down++; renderFloor(); renderStats(); } catch (e) { baSepErr(e, 'down'); }
+          }
+        };
+      }
+
+      if (typeof baBattleAudit === 'function') {
+        const _sepAudit = baBattleAudit;
+        baBattleAudit = function () {
+          const a = _sepAudit.apply(this, arguments);
+          try { a.abyssSep = { ver: BA_SEP_VER, on: inAbyss(), n: Object.assign({}, BA_SEP_N) }; } catch (e) {}
+          return a;
+        };
+      }
+    })();
+
   </script>
 </body>
 </html>

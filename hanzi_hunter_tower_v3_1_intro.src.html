@@ -31128,7 +31128,17 @@
         if ((r.lbAt || 0) >= (o.lbAt || 0)) out[u] = r;
       });
       try { const me = baLbMine(); if (me) out[me.user] = me; } catch (e) {}
-      return Object.keys(out).map(function (u) { return out[u]; });
+      /* Patch v9.42 · ตัดค่า "รอบ" ที่เป็นไปไม่ได้ออกจากกระดาน (ไม่ลบแถวคน)
+         รอบเพิ่มเฉพาะตอนผ่านชั้น FLOOR_MAX และ 1 รอบ = ล้มมอนสเตอร์ MONSTERS_PER_FLOOR×FLOOR_MAX ตัว
+         ต้องตอบถูกอย่างน้อยเท่านั้นข้อ — ขัดกัน = ถือว่าไม่น่าเชื่อถือ แสดงรอบเป็น 0 + ป้ายเตือน */
+      return Object.keys(out).map(function (u) {
+        const r = out[u], lp = r.towerClears || 0;
+        if (lp > 0 && ((r.maxFloor || 1) < FLOOR_MAX ||
+            (r.correct || 0) + (r.wrong || 0) < lp * MONSTERS_PER_FLOOR * FLOOR_MAX)) {
+          return Object.assign({}, r, { towerClears: 0, lbSus: true });
+        }
+        return r;
+      });
     }
 
     // ══ 3) Flex Showcase — วาดกระดาน ══════════════════════════════════════════
@@ -31140,7 +31150,7 @@
          แท็บหอคอยตัดสิน "รอบก่อน แล้วค่อยชั้น" — คนที่วนจบหอคอยแล้วต้องอยู่เหนือเสมอ */
       const mode = LB_MODES.find(function (m) { return m.key === BOARD_MODE; }) || LB_MODES[0];
       const cmp = mode.key === 'floor'
-        ? function (a, b) { return (b.towerClears || 0) - (a.towerClears || 0) || mode.cmp(a, b); }
+        ? function (a, b) { return mode.cmp(a, b) || (b.towerClears || 0) - (a.towerClears || 0); } /* v9.42: ชั้นสูงสุดก่อน ตรงกับข้อความบนกระดาน */
         : mode.cmp;
       const all = baLbAll(), room = baLbRoom();
       const ranked = all.filter(mode.eligible).sort(cmp).slice(0, BA_LB_MAX);
@@ -31152,6 +31162,7 @@
         const me = a.user === CURRENT_USER, rk = baLvRank(a.level), ti = titleOf(a.equippedTitle);
         let bar = '<span class="bl-b" style="color:' + (BA_LB_RKC[rk.key] || '#8a97b5') + '">' +
                   esc(rk.label) + '</span>';
+        if (a.lbSus) bar += '<span class="bl-b" style="color:#f59e0b">⚠️ ข้อมูลรอบขัดกัน</span>';
         if (a.towerClears) bar += '<span class="bl-b bl-lp">🔁 รอบที่ ' + a.towerClears + '</span>';
         if (a.best)        bar += '<span class="bl-b bl-st">🔥 ' + a.best + ' ข้อ</span>';
         if (a.buff)        bar += '<span class="bl-b bl-bf">' + esc(a.buff) + '</span>';
@@ -34331,6 +34342,12 @@
       return Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2);
     }
 
+    /* เคลียร์ครบแต่ไม่มีเวลา (รันข้ามเซสชัน/ล็อกอินใหม่ → T0 หาย) ยังต้องขึ้นโพเดียม — เรียงต่อท้ายคนที่มีเวลา */
+    function baAxCmp(a, b) {
+      if ((a.ms > 0) !== (b.ms > 0)) return a.ms > 0 ? -1 : 1;
+      return a.ms - b.ms || b.clears - a.clears;
+    }
+
     async function baAxPublish() {
       if (!baAxCloud()) return false;
       const g = baG(), x = baAxMine();
@@ -34355,11 +34372,11 @@
         const out = [];
         if (d && typeof d === 'object') Object.keys(d).forEach(function (k) {
           const o = d[k];
-          if (!o || typeof o !== 'object' || !(o.ms > 0)) return;
+          if (!o || typeof o !== 'object' || !(o.ms > 0 || o.clears > 0)) return;
           out.push({ id: String(o.id || k), name: String(o.name || o.id || k),
                      ms: o.ms | 0, soul: o.soul | 0, clears: o.clears | 0, at: o.at | 0 });
         });
-        out.sort(function (a, b) { return a.ms - b.ms || b.clears - a.clears; });
+        out.sort(baAxCmp);
         BA_AX_POD = out;
         baAxAlertScan(out);
       } catch (e) { baAxErr(e, 'pull'); }
@@ -34417,11 +34434,11 @@
       const g = baG(), x = baAxMine(), out = [];
       const seen = {};
       BA_AX_POD.forEach(function (r) { if (!seen[r.id]) { seen[r.id] = 1; out.push(r); } });
-      if (g && x && x.best > 0 && CURRENT_USER && !seen[CURRENT_USER]) {
+      if (g && x && (x.best > 0 || x.clears > 0) && CURRENT_USER && !seen[CURRENT_USER]) {
         out.push({ id: CURRENT_USER, name: g.name || CURRENT_USER, ms: x.best,
                    soul: baAxSoulN(), clears: x.clears | 0, at: Date.now() });
       }
-      out.sort(function (a, b) { return a.ms - b.ms || b.clears - a.clears; });
+      out.sort(baAxCmp);
       return out;
     }
 
@@ -34457,13 +34474,14 @@
             (me ? ' <span class="g-lb-me">คุณ</span>' : '') + '</div>' +
             '<div class="g-lb-title">🃏 วิญญาณ ' + (r.soul | 0) + '/' + BA_AX_SOUL_N +
             ' · 🕳️ เคลียร์ ' + (r.clears | 0) + ' รอบ</div></div>' +
-          '<div class="g-lb-val">⏱️ ' + baAxMs(r.ms) + '</div></div>';
+          '<div class="g-lb-val">⏱️ ' + (r.ms > 0 ? baAxMs(r.ms) : '—') + '</div></div>';
       }).join('');
       const x = baAxMine();
       body.innerHTML = (html || '<div class="g-lb-note">ยังไม่มีใครพิชิตเหวลึกครบทั้ง ' +
                         BA_AX_SOUL_N + ' ตัวในห้องนี้</div>') +
         '<div class="g-lb-note">🔑 กุญแจวันนี้เหลือ ' + baAxKeysLeft() + '/' + BA_AX_KEYS +
         ' · 🃏 คลังวิญญาณของคุณ ' + baAxSoulN() + '/' + BA_AX_SOUL_N +
+        (x && x.idx ? ' · 🌌 ทัพเงาตัวที่ ' + Math.min(BA_AX_SOUL_N, x.idx | 0) + '/' + BA_AX_SOUL_N : '') +
         (x && x.floor ? ' · 📍 จุดเซฟชั้น ' + x.floor : '') +
         (x && x.best ? ' · ⏱️ สถิติของคุณ ' + baAxMs(x.best) : '') + '</div>';
     }
@@ -34703,7 +34721,7 @@
         '#gameScreen.ba-ax-od #baArena{box-shadow:inset 0 0 0 2px rgba(46,242,208,.62),' +
           'inset 0 0 34px rgba(0,180,190,.28)}' +
         '.g-lb-tab.ba-ax-tab{border-color:rgba(124,58,237,.5)}' +
-        '.g-lb-tab.ba-ax-tab.on{border-color:rgba(168,85,247,.9);color:#d9c6ff}';
+        '.g-lb-tab.ba-ax-tab.on{border-color:rgba(168,85,247,.9);color:#0d131d}';
       (document.head || document.documentElement).appendChild(st);
     }
 

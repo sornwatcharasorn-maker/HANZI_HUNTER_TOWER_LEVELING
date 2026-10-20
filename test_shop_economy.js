@@ -32,10 +32,10 @@ const head = t => say('\n── ' + t + ' ' + '─'.repeat(Math.max(0, 62 - t.le
 const WANT = [
   { key: 'potion',    icon: '🧪', price: 650,  name: 'น้ำยาสมานแผลฮันเตอร์', en: 'Large HP Potion' },
   { key: 'freeze',    icon: '⏳', price: 1200, name: 'ทรายหยุดเวลา',        en: 'Time Sandglass' },
-  { key: 'mystery',   icon: '📦', price: 1200, name: 'กล่องเสบียงเตรียมรบ',  en: 'Hunter Vanguard Cache' },
-  { key: 'glass',     icon: '🔍', price: 2200, name: 'แว่นเนตรหยั่งรู้',     en: 'Clarity Lens' },
-  { key: 'scroll',    icon: '📜', price: 2500, name: 'ม้วนคัมภีร์ตัดชอยส์',  en: 'Scroll of Elimination' },
-  { key: 'focus',     icon: '🔮', price: 3600, name: 'คริสตัลฟื้นฟูอัตโนมัติ', en: 'Abyssal Auto-Elixir' },
+  { key: 'mystery',   icon: '📦', price: 900, name: 'กล่องเสบียงเตรียมรบ',  en: 'Hunter Vanguard Cache' },
+  { key: 'glass',     icon: '🔍', price: 1600, name: 'แว่นเนตรหยั่งรู้',     en: 'Clarity Lens' },
+  { key: 'scroll',    icon: '📜', price: 1500, name: 'ม้วนคัมภีร์ตัดชอยส์',  en: 'Scroll of Elimination' },
+  { key: 'focus',     icon: '🔮', price: 3000, name: 'คริสตัลฟื้นฟูอัตโนมัติ', en: 'Abyssal Auto-Elixir' },
   { key: 'insurance', icon: '🛡️', price: 5000, name: 'ตราประทับชุบชีวิต',    en: 'Hunter Insurance' }
 ];
 

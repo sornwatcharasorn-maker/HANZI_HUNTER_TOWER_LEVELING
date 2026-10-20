@@ -145,7 +145,7 @@ function head(s) { say('\n── ' + s + ' ' + '─'.repeat(Math.max(0, 58 - s.l
     const after = await ev(() => ({ shards: G.ab.shards, lv: G.ab.core.hp, maxHp: G.maxHp,
                                     eff: baBattleAudit().core7.eff.hp }));
     ok(after.lv === before.lv + 1, 'ขั้นแกนชีวิตเดินหน้าไป 1 ขั้น');
-    ok(before.shards - after.shards === 40, 'หัก 💎 ตามตาราง AB_CORE_COST ขั้นแรก (40) — หักไป ' +
+    ok(before.shards - after.shards === 60, 'หัก 💎 ตามตาราง AB_CORE_COST ขั้นแรก (60) — หักไป ' +
       (before.shards - after.shards));
     ok(after.eff === 200, 'ขั้น 1 ให้ HP +200 ตามตาราง — ได้ +' + after.eff);
     ok(after.maxHp === before.maxHp + 200, 'หลอดเลือดยืดจริงทันทีโดยไม่ต้องออกจากเกม (' +

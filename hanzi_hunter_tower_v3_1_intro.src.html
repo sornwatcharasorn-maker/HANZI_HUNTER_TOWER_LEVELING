@@ -46314,14 +46314,14 @@
       kSet('guard', 1, 0, [['wdn', 35, 45], ['barr', 20, 30], ['mpr', 12, 15], ['shr', 6, 8]]);
       kSet('guard', 2, null, [['wdn', 50, 65], ['heal', 20, 35], ['tdm', 1, 1], ['sup', 1, 1]]);
       kSet('guard', 3, null, [['heal', 60, 80], ['barr', 70, 100], ['sbst', 20, 25]]);
-      kSet('priest', 0, 3, [['dmg', 200, 230], ['mwd', 60, 60], ['mwt', 3, 3]]);
-      kSet('priest', 1, 0, [['heal', 8, 15], ['smi', 400, 600]]);
-      kSet('priest', 2, null, [['mist', 0, 0], ['cut', 2, 2], ['spg', 3, 5]]);
-      kSet('priest', 3, null, [['heal', 55, 70], ['jdg', 3, 3]]);
-      kSet('soulmaster', 0, 3, [['dmg', 260, 300], ['mwd', 60, 75], ['mwt', 3, 3]]);
-      kSet('soulmaster', 1, 0, [['heal', 15, 25], ['score', 10, 20], ['smi', 700, 1000]]);
-      kSet('soulmaster', 2, null, [['mist', 0, 0], ['cut', 2, 3], ['acut', 20, 30], ['spg', 5, 8]]);
-      kSet('soulmaster', 3, null, [['heal', 80, 100], ['barr', 30, 50], ['jdg', 3, 4]]);
+      kSet('priest', 0, 3, [['dmg', 150, 180], ['mwd', 40, 40], ['mwt', 3, 3]]);
+      kSet('priest', 1, 0, [['heal', 5, 10], ['smi', 200, 300]]);
+      kSet('priest', 2, null, [['mist', 0, 0], ['cut', 1, 1], ['spg', 2, 3]]);
+      kSet('priest', 3, null, [['heal', 40, 55], ['jdg', 2, 2]]);
+      kSet('soulmaster', 0, 3, [['dmg', 200, 240], ['mwd', 40, 50], ['mwt', 3, 3]]);
+      kSet('soulmaster', 1, 0, [['heal', 10, 18], ['score', 10, 20], ['smi', 350, 500]]);
+      kSet('soulmaster', 2, null, [['mist', 0, 0], ['cut', 1, 2], ['acut', 10, 20], ['spg', 3, 5]]);
+      kSet('soulmaster', 3, null, [['heal', 60, 80], ['barr', 20, 35], ['jdg', 2, 3]]);
       BA_DS_CK = ''; BA_DS_CV = null;
 
       function kFx(g, i) {
@@ -46698,11 +46698,11 @@
       const ROLES = { priest: ['priest', 'soulmaster'], guardian: ['guardian', 'guard'], assassin: ['assassin', 'monarch'], slayer: ['blade', 'slayer'] };
       const CLS_OF = { priest: 'priest', soulmaster: 'priest', guardian: 'guardian', guard: 'guardian',
                        assassin: 'assassin', monarch: 'assassin', blade: 'slayer', slayer: 'slayer' };
-      const BA_V929_DR = 0.35, BA_V929_SMITE = 10;
+      const BA_V929_DR = 0.35, BA_V929_SMITE = 4;
       /* v9.29c · SKILL AUDIT — ค่าที่สเปกกำหนด: ตัดฟื้นฟู 75% · พิพากษา 4T · ผู้พิทักษ์ S2 −45%
          เกราะ S4: นักบวช 50% (2 ชั้น) · ผู้พิทักษ์ 100% (4 ชั้น) · ฉีกเกราะ S3 นักลอบสังหาร 45% */
-      const BA_V929_MWD = 75, BA_V929_JDG = 4, BA_V929_GWDN = 45, BA_V929_SH_MAX = 4,
-            BA_V929_SH_PRIEST = 2, BA_V929_SHRED_A = 45, BA_V929_SHRED_S = 25;
+      const BA_V929_MWD = 50, BA_V929_JDG = 3, BA_V929_GWDN = 45, BA_V929_SH_MAX = 4,
+            BA_V929_SH_PRIEST = 1, BA_V929_SHRED_A = 45, BA_V929_SHRED_S = 25;
       /* v9.30 · BALANCE CONFIG — จุดจูนตัวเลขจุดเดียว (แก้ที่นี่ หรือจาก Console: ba.balance.x = … แล้ว ba.applyBalance())
          ult: % ดาเมจท่าไม้ตายช่อง 4 ไล่ Lv1→Lv5 (เดิม 1200% คงที่ = บอสตายหมัดเดียว)
          gS3: ดาเมจจริงของผู้พิทักษ์ S3 = ATK×atk + MaxHP×hp · หนีบไม่เกิน cap% ของหลอดอสูร */
@@ -46764,7 +46764,7 @@
           if (c && c.slots) for (let i = 0; i < 4; i++) if (c.slots[i]) c.slots[i].n = NAMES[k][i];
         });
         ROLES.guardian.forEach(function (r) { atom(r, 2, 'heal', 35, 35); });
-        ROLES.priest.forEach(function (r) { atom(r, 2, 'cut', 3, 3); drop(r, 1, 'smi'); });
+        ROLES.priest.forEach(function (r) { atom(r, 2, 'cut', 2, 2); drop(r, 1, 'smi'); });
         /* v9.29c · ตัวเลขตามสเปกที่ยังค้างจาก K926 (ไม่ใช่การจูนบาลานซ์ — เป็นค่าที่สเปกกำหนดตรง ๆ) */
         ROLES.priest.forEach(function (r) { atom(r, 0, 'mwd', BA_V929_MWD, BA_V929_MWD); atom(r, 3, 'jdg', BA_V929_JDG, BA_V929_JDG); });
         ROLES.guardian.forEach(function (r) { atom(r, 1, 'wdn', BA_V929_GWDN, BA_V929_GWDN); });
@@ -46897,7 +46897,7 @@
       function afterRight(g, k, m0, mp0, hp0, full) {
         if (k === 'priest' && full && m0 && g.currentMonster === m0 && g.monsterHp > 1) {
           const t = trueDmg(g, hunterAtk() * BA_V929_SMITE);
-          if (t) { banner('☀️ แสงลงทัณฑ์ศักดิ์สิทธิ์', 'HP เต็ม · ดาเมจศักดิ์สิทธิ์ 1000% -' + t); pulse(1); N.smite++; return 'smite'; }
+          if (t) { banner('☀️ แสงลงทัณฑ์ศักดิ์สิทธิ์', 'HP เต็ม · ดาเมจศักดิ์สิทธิ์ ' + (BA_V929_SMITE * 100) + '% -' + t); pulse(1); N.smite++; return 'smite'; }
         } else if (g.mp > mp0 || g.hp > hp0) {
           const dm = Math.round(g.mp - mp0), dh = Math.round(g.hp - hp0);
           banner('พาสซีฟ: ' + (dm > 0 ? '+' + dm + ' MP' : '') + (dm > 0 && dh > 0 ? '/' : '') + (dh > 0 ? '+' + dh + ' HP' : ''), NAMES[k] ? NAMES[k][1] : '');
@@ -47030,7 +47030,7 @@
               const k = cid(g);
               const want = k === 'guardian' ? maxShield() : (k === 'priest' ? BA_V929_SH_PRIEST : 0);
               if (want && (g.shield | 0) < want) g.shield = want;
-              if (k === 'priest') banner('🛡️ เกราะศักดิ์สิทธิ์ 50%', NAMES[k][3] + ' · พิพากษา ' + Math.round(fx(g, 3).jdg || BA_V929_JDG) + 'T คริต+ทะลุ');
+              if (k === 'priest') banner('🛡️ เกราะศักดิ์สิทธิ์ ' + (BA_V929_SH_PRIEST * 25) + '%', NAMES[k][3] + ' · พิพากษา ' + Math.round(fx(g, 3).jdg || BA_V929_JDG) + 'T คริต+ทะลุ');
               if (k === 'guardian') {
                 const sb = Math.round(fx(g, 3).sbst || 0);
                 banner('🛡️ ปราการเต็ม 100%', NAMES[k][3] + (sb ? ' · ดาเมจจริง ' + sb + '%' : ''));

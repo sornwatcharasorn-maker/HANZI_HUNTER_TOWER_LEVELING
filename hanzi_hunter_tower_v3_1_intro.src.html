@@ -37069,6 +37069,8 @@
          2xEXP%  = LUK*0.2   ตรงกับ expDoubleChance() ของ v4.0 (luk/5)
        ที่เหลือห่อแบบ "อัตราส่วน" (สูตรคูณ) หรือ "ส่วนต่าง" (สูตรบวก)
        เพื่อให้ตัวคูณ/ตัวบวกของชั้นบนทุกชั้นซ้อนทับต่อได้ (ดูเหตุผลข้อ 1 หัวชั้น) */
+    /* ค่าบนแผงโปรไฟล์ต้องเท่าค่าที่ทำงานจริง (ตัวคูณเลเวล · เพดานดรอป 25% ของ v9.40 ฯลฯ) */
+    function baPlLive(fn, dflt) { try { const v = fn(); return isFinite(v) ? v : dflt; } catch (e) { return dflt; } }
     function baPlS(g) { return (g && g.stats) || { str: 10, vit: 10, agi: 10, int: 10, luk: 10 }; }
 
     /* ATK = 1000*(1+STR*0.005) — พจน์ STR ตรงกับของ v4.0 (1+str/200) เป๊ะ
@@ -37657,16 +37659,16 @@
       /* ── ค่าที่ได้จากค่าพลัง (สูตรทั้งสิบของสเปก) ── */
       const sec = Math.min(BA_PL_SEC_CAP, Math.floor(s.agi / BA_PL_SEC_K));
       h += '<div class="g-sec-title">⚔️ ผลที่ได้จริง</div><div class="ba-pl-dv">' +
-        '<span>⚔️ ATK <b>' + baNum(BA_PL_ATK_B * (1 + s.str * BA_PL_ATK_K)) + '</b></span>' +
+        '<span>⚔️ ATK <b>' + baNum(baPlLive(window.baV941Atk || hunterAtk, BA_PL_ATK_B * (1 + s.str * BA_PL_ATK_K))) + '</b></span>' +
         '<span>❤️ HP <b>' + baNum(g.maxHp || 0) + '</b></span>' +
         '<span>💥 ตอบผิด <b>-' + baNum(Math.max(BA_PL_WD_MIN, BA_PL_WD_B - s.vit * BA_PL_WD_K)) + '</b></span>' +
         '<span>⏱️ เวลา <b>+' + sec + ' วิ</b></span>' +
         '<span>⚡ คริต <b>' + (s.agi * BA_PL_CRIT_K).toFixed(1) + '%</b></span>' +
         '<span>💚 ฟื้น/ชั้น <b>' + baNum(Math.floor(s.int * BA_PL_HEAL_K)) + '</b></span>' +
         '<span>✂️ ตัดตัวเลือก <b>' + Math.min(BA_PL_CUT_CAP, s.int * BA_PL_CUT_K).toFixed(1) + '%</b></span>' +
-        '<span>🎁 ดรอป <b>' + (s.luk * BA_PL_DROP_K).toFixed(1) + '%</b></span>' +
+        '<span>🎁 ดรอป <b>' + baPlLive(dropChance, s.luk * BA_PL_DROP_K).toFixed(1) + '%</b></span>' +
         '<span>⭐ EXP×2 <b>' + (s.luk * BA_PL_EXP2_K).toFixed(1) + '%</b></span>' +
-        '<span>🪙 ทอง <b>+' + Math.floor(s.luk * BA_PL_GOLD_K) + '%</b></span>' +
+        '<span>🪙 ทอง <b>+' + Math.round(baPlLive(function () { return (goldMul() - 1) * 100; }, Math.floor(s.luk * BA_PL_GOLD_K))) + '%</b></span>' +
         '</div>';
 
       /* ── เปลี่ยนสายอาชีพ ── */
@@ -48281,6 +48283,218 @@
       };
     } catch (e) { try { gcErrPush && gcErrPush(e); } catch (x) {} }
   })();
+    /* ════════════════════════════════════════════════════════════════════
+       Patch v9.41 · STAT BALANCE (A คลาสหลัก · B affinity · C diminishing · D LUK)
+       ห่อล้วน ไม่แก้ชั้นเก่า · ไม่มี CSS/DOM/ฟิลด์บัญชี · ไม่แตะ Math.random (ใช้ baRand)
+       STR เดิมตายสนิท: HP อสูร = hits × hunterAtk() ตัวเดียวกัน → STR พองเลือดตาม
+       ทางแก้: ถอด STR ออกจาก hunterAtk นอก BA_LIVE แล้วคูณเฉพาะระหว่างตัดสินข้อ
+       dr(e,a,h)=a·e/(e+h) แทนเพดานแข็ง · ค่าหลักของสายได้ ×W (affinity) */
+    (function baV941Install() {
+      const K = { W: 1.5,
+        strA: 2.36, strH: 600, hpA: 2780, hpH: 600, wdA: .6, wdH: 408,
+        crA: 68, crH: 600, cmA: 1.5, cmH: 328, tmA: 6, tmH: 400,
+        hlA: .4, hlH: 436, rgA: .08, rgH: 356, cuA: 40, cuH: 241,
+        gdA: 100, gdH: 210, dpA: 13.7, dpH: 239, xdA: 30, xdH: 291,
+        lkA: 10, lkH: 500, lkM: .2 };
+      const PRIM = { assassin: 'agi', slayer: 'str', guardian: 'vit', priest: 'int' };
+      const N = { atk: 0, crit: 0, luck: 0, regen: 0 };
+      function dr(e, a, h) { e = Math.max(0, e); return a * e / (e + h); }
+      function S(g) { try { return baPlS(g || baG()) || {}; } catch (e) { return {}; } }
+      function eff(g, k) {
+        const s = S(g); let v = +s[k] || 0;
+        try { if (PRIM[baPlClass(g || baG()).id] === k) v *= K.W; } catch (e) {}
+        return v;
+      }
+      function err(e, w) { try { gcErrPush && gcErrPush(e); } catch (x) {} }
+      function atkBase(out, g) {
+        const f = 1 + (+S(g).str || 0) * BA_PL_ATK_K;
+        return f > 0 ? out / f : out;
+      }
+      function atkMul(g) { return 1 + dr(eff(g, 'str'), K.strA, K.strH); }
+
+      if (typeof hunterAtk === 'function') {
+        const _a = hunterAtk;
+        hunterAtk = function () {
+          const out = _a.apply(this, arguments);
+          try {
+            const g = baG(); if (!g) return out;
+            const b = atkBase(out, g);
+            return Math.max(1, Math.round(BA_LIVE ? b * atkMul(g) : b));
+          } catch (e) { err(e); }
+          return out;
+        };
+        window.baV941Atk = function () {
+          const g = baG(); const o = hunterAtk();
+          return Math.max(1, Math.round(o * (BA_LIVE ? 1 : atkMul(g))));
+        };
+      }
+      if (typeof maxHpFor === 'function') {
+        const _h = maxHpFor;
+        maxHpFor = function () {
+          const out = _h.apply(this, arguments);
+          try {
+            const g = baG(); if (!g) return out;
+            const v = +S(g).vit || 0;
+            return Math.max(1, Math.round(out - v * BA_PL_HP_K + dr(eff(g, 'vit'), K.hpA, K.hpH)));
+          } catch (e) { err(e); }
+          return out;
+        };
+      }
+      if (typeof hdBaseDamage === 'function') {
+        const _w = hdBaseDamage;
+        hdBaseDamage = function () {
+          const out = _w.apply(this, arguments);
+          try {
+            const g = baG(); if (!g) return out;
+            return Math.max(BA_PL_WD_MIN, BA_PL_WD_B * (1 - dr(eff(g, 'vit'), K.wdA, K.wdH)));
+          } catch (e) { err(e); }
+          return out;
+        };
+      }
+      if (typeof critChance === 'function') {
+        const _c = critChance;
+        critChance = function () {
+          const out = _c.apply(this, arguments);
+          if (!(out > 0)) return out;
+          try {
+            const g = baG(); if (!g) return out;
+            return out - (+S(g).agi || 0) * 0.25 + dr(eff(g, 'agi'), K.crA, K.crH);
+          } catch (e) { err(e); }
+          return out;
+        };
+      }
+      if (typeof questionMs === 'function') {
+        const _q = questionMs;
+        questionMs = function () {
+          const out = _q.apply(this, arguments);
+          try {
+            const g = baG(); if (!g) return out;
+            const a = +S(g).agi || 0;
+            const old = Math.min(BA_PL_SEC_CAP, Math.floor(a / BA_PL_SEC_K));
+            return Math.max(1000, out + (dr(eff(g, 'agi'), K.tmA, K.tmH) - old) * 1000);
+          } catch (e) { err(e); }
+          return out;
+        };
+      }
+      if (typeof floorHeal === 'function') {
+        const _f = floorHeal;
+        floorHeal = function () {
+          const out = _f.apply(this, arguments);
+          try {
+            const g = baG(); if (!g) return out;
+            const old = Math.floor((+S(g).int || 0) * BA_PL_HEAL_K);
+            return Math.max(0, Math.round(out - old + g.maxHp * dr(eff(g, 'int'), K.hlA, K.hlH)));
+          } catch (e) { err(e); }
+          return out;
+        };
+      }
+      if (typeof autoCutChance === 'function') {
+        const _u = autoCutChance;
+        autoCutChance = function () {
+          const out = _u.apply(this, arguments);
+          try {
+            const g = baG(); if (!g) return out;
+            const old = Math.min(BA_PL_CUT_CAP, (+S(g).int || 0) * BA_PL_CUT_K);
+            return Math.max(0, out - old + dr(eff(g, 'int'), K.cuA, K.cuH));
+          } catch (e) { err(e); }
+          return out;
+        };
+      }
+      if (typeof goldMul === 'function') {
+        const _g = goldMul;
+        goldMul = function () {
+          const out = _g.apply(this, arguments);
+          try {
+            const g = baG(); if (!g) return out;
+            const old = Math.floor((+S(g).luk || 0) * BA_PL_GOLD_K);
+            return Math.max(0, out + (dr(eff(g, 'luk'), K.gdA, K.gdH) - old) / 100);
+          } catch (e) { err(e); }
+          return out;
+        };
+      }
+      if (typeof dropChance === 'function') {
+        const _d = dropChance;
+        dropChance = function () {
+          const out = _d.apply(this, arguments);
+          try {
+            const g = baG(); if (!g) return out;
+            const old = (+S(g).luk || 0) * BA_PL_DROP_K;
+            return Math.max(0, out - Math.min(old, 25) + dr(eff(g, 'luk'), K.dpA, K.dpH));
+          } catch (e) { err(e); }
+          return out;
+        };
+      }
+      if (typeof expDoubleChance === 'function') {
+        const _x = expDoubleChance;
+        expDoubleChance = function () {
+          const out = _x.apply(this, arguments);
+          try {
+            const g = baG(); if (!g) return out;
+            return Math.max(0, out - (+S(g).luk || 0) / 5 + dr(eff(g, 'luk'), K.xdA, K.xdH));
+          } catch (e) { err(e); }
+          return out;
+        };
+      }
+
+      function bonus(ex, tag, cls) {
+        const g = baG();
+        if (!g || g.practiceMode || !(ex > 0)) return 0;
+        ex = Math.min(Math.round(ex), Math.max(0, Math.round(g.monsterHp) - 1));
+        if (ex <= 0) return 0;
+        g.monsterHp -= ex;
+        try { renderMonsterHp(); } catch (e) {}
+        try { if (typeof baBarPaint === 'function') baBarPaint(); } catch (e) {}
+        try {
+          if (typeof AB_SEAL !== 'undefined' && AB_SEAL && !AB_SEAL.done &&
+              typeof abSealLeft === 'function' && abSealLeft() <= 0 &&
+              typeof abSealBroken === 'function') abSealBroken();
+        } catch (e) { err(e); }
+        try {
+          const t = baSpot('baFoe');
+          if (t) baLater(function () { baFloat(tag + ' -' + ex, cls || 'crit', t); }, BA_IMPACT);
+        } catch (e) { err(e); }
+        return ex;
+      }
+
+      if (typeof baStrike === 'function') {
+        const _s = baStrike;
+        baStrike = function (dmg, crit, sup) {
+          const g = baG();
+          const hp0 = g ? Math.round(g.monsterHp) : 0;
+          const r = _s.apply(this, arguments);
+          try {
+            if (g && !g.practiceMode && dmg > 0) {
+              const back = Math.max(0, Math.round(g.monsterHp) - hp0);
+              const real = Math.max(0, Math.round(dmg) - back);
+              if (real > 0) {
+                if (crit || sup) {
+                  const p = dr(eff(g, 'agi'), K.cmA, K.cmH);
+                  if (bonus(real * p, '⚡', 'crit')) N.crit++;
+                }
+                const lp = dr(eff(g, 'luk'), K.lkA, K.lkH);
+                if (lp > 0 && baRand(10000) < lp * 100) {
+                  if (bonus(real * K.lkM, '🍀', 'crit')) N.luck++;
+                }
+                if (g.hp > 0 && g.hp < g.maxHp) {
+                  const rg = Math.round(g.maxHp * dr(eff(g, 'int'), K.rgA, K.rgH));
+                  if (rg > 0 && typeof cdHeal === 'function') { cdHeal(rg); N.regen++; }
+                }
+              }
+            }
+          } catch (e) { err(e); }
+          return r;
+        };
+      }
+      if (typeof baBattleAudit === 'function') {
+        const _au = baBattleAudit;
+        baBattleAudit = function () {
+          const r = _au.apply(this, arguments);
+          try { r.v941 = { ver: 'v9.41', K: K, n: Object.assign({}, N) }; } catch (e) {}
+          return r;
+        };
+      }
+    })();
+
     </script>
 </body>
 </html>

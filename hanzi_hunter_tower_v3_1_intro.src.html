@@ -44355,7 +44355,7 @@
               BA_SK4_CASTING = true; BA_LIVE = true;
               try { cdHitMonster(hunterAtk(), h); } finally { BA_SK4_CASTING = was; BA_LIVE = lv; }
               BA_V91_ARM[0] = false; baBarSync();
-              if (g.monsterHp > 0 && baV918Gate(g)) BA_V91_CD[0] = 0;
+              if (g.monsterHp > 0 && baV918Gate(g) && cid === 'guardian') BA_V91_CD[0] = 0;   /* v9.40: นักบวชต้องติดคูลดาวน์ ไม่สแปมบอส */
               baSyncCurrentClassSkills(true);
             }
           } catch (e) {}
@@ -44396,7 +44396,7 @@
                 renderStats();
               }
               /* v9.18b · S1 ตีเกราะที่ยังไม่แตก: ผู้พิทักษ์/นักบวช (C1+C2) รีเซ็ต CD ช่อง 1 เป็น 0 */
-              if (shl) { const cid = baPlClass(g).id; if (cid === 'guardian' || cid === 'priest') BA_V91_CD[0] = 0; }
+              if (shl) { const cid = baPlClass(g).id; if (cid === 'guardian') BA_V91_CD[0] = 0; }   /* v9.40: นักบวชไม่รีเซ็ต CD */
               if (typeof baPlPips === 'function' && typeof baPlPipSet === 'function') baPlPipSet(g, baPlPips() + 2);
               if (typeof baRand === 'function' && baRand(100) < 20) {
                 const t = baSpot('baHero');
@@ -46314,11 +46314,11 @@
       kSet('guard', 1, 0, [['wdn', 35, 45], ['barr', 20, 30], ['mpr', 12, 15], ['shr', 6, 8]]);
       kSet('guard', 2, null, [['wdn', 50, 65], ['heal', 20, 35], ['tdm', 1, 1], ['sup', 1, 1]]);
       kSet('guard', 3, null, [['heal', 60, 80], ['barr', 70, 100], ['sbst', 20, 25]]);
-      kSet('priest', 0, 1, [['dmg', 200, 230], ['mwd', 60, 60], ['mwt', 3, 3]]);
+      kSet('priest', 0, 3, [['dmg', 200, 230], ['mwd', 60, 60], ['mwt', 3, 3]]);
       kSet('priest', 1, 0, [['heal', 8, 15], ['smi', 400, 600]]);
       kSet('priest', 2, null, [['mist', 0, 0], ['cut', 2, 2], ['spg', 3, 5]]);
       kSet('priest', 3, null, [['heal', 55, 70], ['jdg', 3, 3]]);
-      kSet('soulmaster', 0, 1, [['dmg', 260, 300], ['mwd', 60, 75], ['mwt', 3, 3]]);
+      kSet('soulmaster', 0, 3, [['dmg', 260, 300], ['mwd', 60, 75], ['mwt', 3, 3]]);
       kSet('soulmaster', 1, 0, [['heal', 15, 25], ['score', 10, 20], ['smi', 700, 1000]]);
       kSet('soulmaster', 2, null, [['mist', 0, 0], ['cut', 2, 3], ['acut', 20, 30], ['spg', 5, 8]]);
       kSet('soulmaster', 3, null, [['heal', 80, 100], ['barr', 30, 50], ['jdg', 3, 4]]);

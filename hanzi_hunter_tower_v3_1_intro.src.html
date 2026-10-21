@@ -34857,7 +34857,7 @@
     const BA_WV_PEN    = 0.15; /* wrongPenaltyDamage — ตอบผิดในห้องบอสเสีย HP กี่ % ของหลอด */
 
     /* Floor 20 Apex Gate — ประตูกรองความแม่นยำและกฎเหล็กของชั้นสุดท้าย */
-    const BA_WV_G_ACC  = 90;   /* ความแม่นยำสะสมขั้นต่ำที่จะเข้าห้องบอสยอดหอคอยได้ (%) */
+    const BA_WV_G_ACC  = 85;   /* ความแม่นยำสะสมขั้นต่ำที่จะเข้าห้องบอสยอดหอคอยได้ (%) */
     const BA_WV_G_MIN  = 20;   /* ต้องมีข้อสะสมอย่างน้อยเท่านี้ ประตูถึงจะตัดสินได้ */
     const BA_WV_G_BACK = 17;   /* ไม่ผ่าน = ส่งกลับไปทบทวนที่ชั้นนี้ */
     const BA_WV_DOOM   = 2;    /* ตอบผิดได้สูงสุดกี่ครั้งในชั้น 20 (ครั้งถัดไป = GameOver) */
@@ -36906,7 +36906,7 @@
     /* Patch v9.27 · เกจท่าไม้ตายต่อสายอาชีพ (C1/C2 ใช้ค่าเดียวกัน)
        BA_PL_PIP_MAX = ค่าฐาน (assassin 8) ที่ชุดเทสต์อ่านอยู่ · ทุกจุดใช้งานจริงเรียก baPlPipMax()
        guardian 4 · priest 4 · slayer 6 · assassin 8 — ขีดเป็น <i> 5px ใน flex จึงไม่มี CLS */
-    const BA_PL_PIP_BY = { guardian: 4, priest: 4, slayer: 6, assassin: 8 };
+    const BA_PL_PIP_BY = { guardian: 4, priest: 4, slayer: 6, assassin: 3 };
     function baPlPipMax(src) {
       try {
         const c = baPlClass(src);
@@ -39062,29 +39062,29 @@
     const BA_DS_FX = {
       /* ── นักลอบสังหาร C1 ── */
       assassin: [
-        { cd: 3,  e: [['win', 3.5, 3.5], ['dmg', 200, 240]] },
-        { cd: 0,  e: [['ultg', 100, 100], ['tchn', 2, 2]] },
+        { cd: 3,  e: [['win', 3.5, 3.5], ['dmg', 560, 640]] },
+        { cd: 0,  e: [['ultg', 100, 100], ['tchn', 2, 2], ['atk', 8, 14], ['atkc', 5, 7]] },
         { cd: 4,  e: [['time', 4, 4], ['wdn', 20, 30]] },
         { cd: -1, e: [['dmg', 350, 450], ['bhp', 8, 15]] }
       ],
       /* ── ราชันเงา C2 — จอมเวลาสัมบูรณ์ (God-Tier) ── */
       monarch: [
         { n: 'จอมเวลาสัมบูรณ์', cd: 3,  e: [['win', 5, 5], ['dmg', 280, 340]] },
-        { n: 'สัญชาตญาณราชัน', cd: 0,  e: [['ultg', 100, 100], ['tchn', 3, 4]] },
+        { n: 'สัญชาตญาณราชัน', cd: 0,  e: [['ultg', 100, 100], ['tchn', 3, 4], ['atk', 8, 14], ['atkc', 4, 6]] },
         { n: 'มัดวิญญาณเหวลึก', cd: 4,  e: [['time', 5, 6], ['wdn', 35, 45]] },
         { n: 'ประหารสัมบูรณ์',  cd: -1, e: [['dmg', 550, 650], ['bhp', 20, 30]] }
       ],
       /* ── นักรบสังหาร C1 (สเปกเรียกร่างนี้ว่า Blade) ── */
       blade: [
         { cd: 3,  e: [['dmg', 220, 260]] },
-        { cd: 0,  e: [['atk', 5, 10], ['atkc', 4, 7]] },
+        { cd: 0,  e: [['atk', 5, 10], ['atkc', 3, 5]] },
         { cd: 4,  e: [['dmg', 280, 320], ['score', 50, 100]] },
         { cd: -1, e: [['dmg', 500, 550]] }
       ],
       /* ── นักรบเหวลึก C2 — Blade Master (God-Tier) ── */
       slayer: [
         { n: 'เชือดมหาประลัย',  cd: 3,  e: [['dmg', 260, 320]] },
-        { n: 'คำรามจอมพล',      cd: 0,  e: [['atk', 10, 18], ['atkc', 6, 10]] },
+        { n: 'คำรามจอมพล',      cd: 0,  e: [['atk', 10, 18], ['atkc', 4, 7]] },
         { n: 'ปล้นชะตาสงคราม',  cd: 4,  e: [['dmg', 340, 400], ['score', 80, 150]] },
         { n: 'ล้างชั้นเหวลึก',  cd: -1, e: [['dmg', 700, 900], ['bhp', 25, 40]] }
       ],
@@ -46306,7 +46306,7 @@
 
       /* ตารางสกิลใหม่ — แก้ในที่ (ทั้ง C1 และ C2) แล้วทิ้งแคช */
       function kSet(role, i, cd, e) { const s = BA_DS_FX[role][i]; if (cd !== null) s.cd = cd; s.e = e; }
-      kSet('guardian', 0, 1, [['dmg', 180, 220], ['hpsc', 20, 40]]);
+      kSet('guardian', 0, 1, [['dmg', 390, 450], ['hpsc', 50, 75]]);
       kSet('guardian', 1, 0, [['wdn', 20, 30], ['barr', 10, 15], ['mpr', 10, 10], ['shr', 5, 5]]);
       kSet('guardian', 2, null, [['wdn', 30, 45], ['heal', 10, 20], ['tdm', 1, 1], ['sup', 1, 1]]);
       kSet('guardian', 3, null, [['heal', 35, 50], ['barr', 40, 60], ['sbst', 15, 20]]);
@@ -46707,11 +46707,11 @@
          ult: % ดาเมจท่าไม้ตายช่อง 4 ไล่ Lv1→Lv5 (เดิม 1200% คงที่ = บอสตายหมัดเดียว)
          gS3: ดาเมจจริงของผู้พิทักษ์ S3 = ATK×atk + MaxHP×hp · หนีบไม่เกิน cap% ของหลอดอสูร */
       const BAL = {
-        ult: { slayer: [900, 1000], assassin: [800, 900] },
-        gS3: { atk: 0.4, hp: 0.05, cap: 6 },
+        ult: { slayer: [780, 880], assassin: [1500, 1700] },
+        gS3: { atk: 0.7, hp: 0.08, cap: 8 },
         bhp: { assassin: [70, 90], monarch: [70, 90], blade: [70, 90], slayer: [70, 90], guardian: [70, 90], guard: [70, 90] },
         /* v9.32 · ต้นทุนมานาท่าไม้ตายของสายที่ MP สูงสุดต่ำ (INT ต่ำ) — เดิม 40% ทำให้ Slayer ร่ายไม่ติด */
-        ultMp: { slayer: 25 }
+        ultMp: { slayer: 25, assassin: 29, guardian: 40 }
       };
       function ultLo(k) { return (BAL.ult[k] || [100])[0]; }
       function applyBal() {

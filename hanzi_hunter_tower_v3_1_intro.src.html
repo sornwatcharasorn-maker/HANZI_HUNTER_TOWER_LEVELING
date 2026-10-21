@@ -42033,9 +42033,9 @@
        ของ baPlSwitch เอง ไม่ใช่แค่ปรับตัวเลขของค่าคงที่เดิม ══════════════════ */
 
     const BA_GAT_CFG = {
-      SW_GOLD: 35000, SW_DIA: 380, SW_TRIAL_CAP: 2,      /* เปลี่ยนสาย: F20 2x/วัน */
+      SW_GOLD: 30000, SW_DIA: 300, SW_TRIAL_CAP: 2,      /* เปลี่ยนสาย: F20 2x/วัน */
       SW_MISS_CAP: 2, SW_COMBO_NEED: 20,
-      RS_GOLD: 50000, RS_DIA: 750, RS_TRIAL_CAP: 1,       /* ล้างค่าพลัง: บอส#25 1x/วัน */
+      RS_GOLD: 20000, RS_DIA: 250, RS_TRIAL_CAP: 1,       /* ล้างค่าพลัง: บอส#25 1x/วัน */
       RS_LIMIT_MS: 75000
     };
     let GAT_READY = false;
@@ -42915,8 +42915,9 @@
     (function () {
       try {
         if (!Array.isArray(BA_PL_COST) || BA_PL_COST.length !== 4) return;
-        const rows = [[0, 50, 120, 250, 500], [0, 50, 120, 250, 500],
-                       [0, 50, 120, 250, 500], [0, 50, 120, 250, 500]];
+        /* v9.42 · ปรับสัดส่วนรายช่อง (ยอดรวมยัง 3,680) — ท่าไม้ตายแพงกว่าพาสซีฟ */
+        const rows = [[0, 40, 100, 200, 380], [0, 40, 100, 200, 380],
+                       [0, 50, 120, 240, 450], [0, 80, 200, 380, 720]];
         for (let i = 0; i < 4; i++) {
           BA_PL_COST[i].length = 0;
           rows[i].forEach(function (v) { BA_PL_COST[i].push(v); });

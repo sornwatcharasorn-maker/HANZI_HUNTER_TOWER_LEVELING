@@ -237,10 +237,10 @@ async function goFloor(p, f) {
     const p = await openGame(browser, 'plD', 390, 844);
     const a = await p.evaluate(() => baBattleAudit().polarized);
     /* v9.12 · ราคาเมทริกซ์เท่ากันทุกช่อง [0,50,120,250,500] (เคสที่พลิกโดยตั้งใจ) */
-    eq('ช่อง 1 ราคา',  a.slots[0].cost, [0, 50, 120, 250, 500]);
-    eq('ช่อง 2 ราคา',  a.slots[1].cost, [0, 50, 120, 250, 500]);
-    eq('ช่อง 3 ราคา',  a.slots[2].cost, [0, 50, 120, 250, 500]);
-    eq('ช่อง 4 ราคา',  a.slots[3].cost, [0, 50, 120, 250, 500]);
+    eq('ช่อง 1 ราคา',  a.slots[0].cost, [0, 40, 100, 200, 380]);
+    eq('ช่อง 2 ราคา',  a.slots[1].cost, [0, 40, 100, 200, 380]);
+    eq('ช่อง 3 ราคา',  a.slots[2].cost, [0, 50, 120, 240, 450]);
+    eq('ช่อง 4 ราคา',  a.slots[3].cost, [0, 80, 200, 380, 720]);
     eq('ช่อง 1 คูลดาวน์ 3', a.slots[0].cd, 3);
     eq('ช่อง 2 เป็นพาสซีฟ', a.slots[1].cd, 0);
     eq('ช่อง 3 คูลดาวน์ 4', a.slots[2].cd, 4);
@@ -254,7 +254,7 @@ async function goFloor(p, f) {
       return { okBuy, before, after: abShards(G), lv: baBattleAudit().polarized.slots[0].lv };
     });
     ok('ซื้อ Lv1→2 สำเร็จ', buy.okBuy === true);
-    eq('หัก 💎 50 พอดี (v9.12)', buy.before - buy.after, 50);
+    eq('หัก 💎 40 พอดี (v9.42)', buy.before - buy.after, 40);
     eq('ช่อง 1 เป็น Lv 2', buy.lv, 2);
 
     const full = await p.evaluate(() => {
@@ -270,7 +270,7 @@ async function goFloor(p, f) {
                again: baPlBuy(0), next: baBattleAudit().polarized.slots[0].next };
     });
     eq('อัปเต็มทั้ง 4 ช่องได้ Lv 5', full.lv, [5, 5, 5, 5]);
-    eq('ยอด 💎 ที่จ่ายทั้งหมด (หัก 50 ที่จ่ายไปแล้ว)', full.spent + 50, 3680);
+    eq('ยอด 💎 ที่จ่ายทั้งหมด (หัก 50 ที่จ่ายไปแล้ว)', full.spent + 40, 3680);
     ok('ช่องที่เต็มแล้วซื้อต่อไม่ได้', full.again === false);
     eq('ช่องเต็มแล้วราคาถัดไป = 0', full.next, 0);
 

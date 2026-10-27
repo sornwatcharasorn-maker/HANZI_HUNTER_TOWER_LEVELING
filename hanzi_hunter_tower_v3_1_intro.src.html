@@ -44947,6 +44947,10 @@
           const days = {};
           (Array.isArray(a.sessions) ? a.sessions : []).forEach(function (t) { if (typeof t === 'number') days[new Date(t).toDateString()] = 1; });
           c = Math.max(c, Object.keys(days).length);
+          /* ตีค่าจากสถิติสะสม (ไม่มีประวัติจริงให้กู้): ตอบถูกทุก 50 ข้อ ≈ 1 ภารกิจ · คอมโบ x20 เคยทำได้ + ตอบถูกทุก 80 ข้อ ≈ 1 ครั้ง */
+          const ok = Math.max(0, +a.correct || 0);
+          c = Math.max(c, Math.min(30, Math.floor(ok / 50)));
+          if (Math.max(+a.bestStreak || 0, +a.best || 0) >= 20) m.combo = Math.max(m.combo, Math.min(30, Math.floor(ok / 80)));
           if (c > m.quest) m.quest = c;
         } catch (e) {}
         return m;

@@ -48545,6 +48545,78 @@
       }
     })();
 
+    /* Patch v9.42 · CLASS BALANCE — จากการจำลองการต่อสู้ 4 อาชีพ:
+       ผู้พิทักษ์ช่อง 1 สแปมได้ทุกข้อ (CD 0 · 18 MP) จนฆ่าบอสเร็วสุด ส่วนนักรบสังหารช้าสุดและคริต ~1%
+       ห่อล้วน ไม่แก้ชั้นเก่า: คูลดาวน์ผู้พิทักษ์นับเองที่ BA_V942_CD แล้วบังคับทับ BA_V91_CD[0] หลัง resolveAnswer
+       ตัวเลขทั้งหมดอยู่ที่ B942 ก้อนเดียว */
+    (function baV942Install() {
+      const B942 = { gCd: 2, gMp: 34, slCrit1: [8, 14], slCrit2: [12, 20], dmgMul: 1.25 };
+      let BA_V942_CD = 0;
+      function g942() { try { const g = baG(); return g && baPlClass(g).id === 'guardian' ? g : null; } catch (e) { return null; } }
+
+      try {
+        const mulRow = function (role, i) {
+          const sl = BA_DS_FX[role] && BA_DS_FX[role][i]; if (!sl) return;
+          sl.e.forEach(function (a) { if (a[0] === 'dmg') { a[1] = Math.round(a[1] * B942.dmgMul); a[2] = Math.round(a[2] * B942.dmgMul); } });
+        };
+        ['blade', 'slayer'].forEach(function (r) { mulRow(r, 0); mulRow(r, 2); });
+        const c1 = BA_DS_FX.blade[1].e, c2 = BA_DS_FX.slayer[1].e;
+        if (!c1.some(function (a) { return a[0] === 'crit'; })) c1.push(['crit', B942.slCrit1[0], B942.slCrit1[1]]);
+        if (!c2.some(function (a) { return a[0] === 'crit'; })) c2.push(['crit', B942.slCrit2[0], B942.slCrit2[1]]);
+        /* ท่าไม้ตายนักรบ: ตัดเลือดบอสเป็นก้อน (เลี่ยงเพดานดาเมจต่อข้อที่กดหมัดธรรมดาไว้ 10–15%) */
+        const ub = BA_DS_FX.blade[3].e, us = BA_DS_FX.slayer[3].e;
+        if (!ub.some(function (a) { return a[0] === 'bhp'; })) ub.push(['bhp', 18, 28]);
+        us.forEach(function (a) { if (a[0] === 'bhp') { a[1] = 38; a[2] = 55; } });
+        BA_DS_CK = ''; BA_DS_CV = null;
+      } catch (e) { try { baErr(e, 'v942:fx'); } catch (x) {} }
+
+      if (typeof baV91Cost === 'function') {
+        const _c = baV91Cost;
+        baV91Cost = function (i) {
+          if (i === 0 && g942()) return B942.gMp;
+          return _c.apply(this, arguments);
+        };
+      }
+      if (typeof baV91Activate === 'function') {
+        const _a = baV91Activate;
+        baV91Activate = function (i, g, r) {
+          if (i === 0 && g942() && BA_V942_CD > 0) {
+            try { skillTip('⏳ ผู้พิทักษ์ช่อง 1 ติดคูลดาวน์อีก ' + BA_V942_CD + ' เทิร์น'); } catch (e) {}
+            return false;
+          }
+          const ok = _a.apply(this, arguments);
+          if (ok && i === 0 && g942()) { BA_V942_CD = B942.gCd; BA_V91_CD[0] = BA_V942_CD; try { baSyncCurrentClassSkills(true); } catch (e) {} }
+          return ok;
+        };
+      }
+      if (typeof resolveAnswer === 'function') {
+        const _r = resolveAnswer;
+        resolveAnswer = function () {
+          const pre = BA_V942_CD;
+          const r = _r.apply(this, arguments);
+          try {
+            if (g942()) {
+              if (pre > 0 && BA_V942_CD === pre) BA_V942_CD = pre - 1;
+              BA_V91_CD[0] = BA_V942_CD;
+            }
+          } catch (e) {}
+          return r;
+        };
+      }
+      if (typeof baV91Reset === 'function') {
+        const _rs = baV91Reset;
+        baV91Reset = function () { BA_V942_CD = 0; return _rs.apply(this, arguments); };
+      }
+      if (typeof baBattleAudit === 'function') {
+        const _au = baBattleAudit;
+        baBattleAudit = function () {
+          const o = _au.apply(this, arguments);
+          try { o.balance942 = { ver: 'v9.42', gCd: B942.gCd, gMp: B942.gMp, cd: BA_V942_CD, dmgMul: B942.dmgMul }; } catch (e) {}
+          return o;
+        };
+      }
+    })();
+
     </script>
 </body>
 </html>

@@ -13953,3 +13953,12 @@ IIFE `hfInstall` ท้ายต้นฉบับ · ห่อ `lrApply` (จ�
 #### Patch v9.41 · STAT BALANCE (A คลาสหลัก · B affinity ×1.5 · C diminishing returns · D LUK)
 
 IIFE `baV941Install` ท้ายต้นฉบับ · ห่อล้วน (`hunterAtk` `maxHpFor` `hdBaseDamage` `critChance` `questionMs` `floorHeal` `autoCutChance` `goldMul` `dropChance` `expDoubleChance` `baStrike`) · ค่าคงที่ทั้งหมดอยู่ใน `K` ก้อนเดียว · สูตร `dr(e,a,h)=a·e/(e+h)` แทนเพดานแข็ง · ค่าหลักของสาย ×`K.W` · STR เดิมตายสนิท (HP อสูร = hits×hunterAtk) จึงถอด STR ออกนอก `BA_LIVE` แล้วคูณเฉพาะระหว่างตัดสินข้อ · คริตดาเมจเสริม ⚡ / หมัดโชค 🍀 / รีเจน INT ต่อหมัด ผ่าน `baStrike` (หนีบไม่ฆ่า) · ค่าจูนมาจากโมเดลหยาบ (ไม่ใช่การเล่นจริง) ต้องเล่นดู feel · audit: `baBattleAudit().v941` · เทสต์ที่ปักสูตรเดิม (`test_polarized_class` 12 เคส · `test_lv_scaling` 12 เคส) ยังไม่ได้พลิก ต้องอัปเดตตามสูตรใหม่ · verify_arena 144/0 · verify_monsters 80/0
+
+#### Patch v9.42 · CLASS BALANCE (guardian เลิกสแปม · slayer ได้คริต)
+
+IIFE `baV942Install` ท้ายต้นฉบับ · ห่อล้วน (`baV91Cost` `baV91Activate` `resolveAnswer` `baV91Reset` `baBattleAudit`) + ปรับ `BA_DS_FX` ในที่ แล้วทิ้งแคช (`BA_DS_CK=''; BA_DS_CV=null`) · ค่าทั้งหมดอยู่ที่ก้อน `B942`
+- **guardian ช่อง 1:** CD 0→2 เทิร์น, MP 18→34 · ชั้นเก่าบังคับ `BA_V91_CD[0]=0` จึงนับคูลดาวน์ของตัวเองแล้วทับหลัง `resolveAnswer`
+- **slayer (blade/slayer):** เพิ่มอะตอม `crit` ช่อง 2 (+8–14 / +12–20 จุด%), ดาเมจช่อง 1/3 ×1.25, ult `bhp` ลดลง
+- ผลจำลอง (ชั้นบอส 4/12/20, ตอบถูกจนบอสตาย): guardian 3–4→4–5 ข้อ, ร่ายช่อง 1 ลดราวครึ่ง; slayer crit 1%→9–21% แต่ยังราว 7 ข้อ เพราะติดเพดานดาเมจต่อข้อของ v6.7 (ไม่แตะ)
+- priest จำลองได้ 0 ดาเมจหลังร่ายครั้งแรก — เป็นของเดิม ยังไม่ตรวจต้นเหตุ
+- เทสต์ที่พลิก: `test_skill_dispatch` เมทริกซ์ blade/slayer ตามค่าใหม่ (ตก 14→11) · audit `baBattleAudit().balance942`

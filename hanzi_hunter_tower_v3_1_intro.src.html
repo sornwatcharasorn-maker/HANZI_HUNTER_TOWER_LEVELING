@@ -44943,6 +44943,10 @@
           cnt(a.quest && a.quest.done);
           cnt(a.tq && a.tq.done);
           if (a.dq && Array.isArray(a.dq.done)) c += a.dq.done.filter(function (i) { return i !== 'all'; }).length;
+          /* ย้อนหลังตั้งแต่วันแรกที่เล่น: รอบวัน/สัปดาห์ถูกรีเซ็ต กู้ไม่ได้ → นับ 1 ภารกิจต่อ 1 วันที่เคยเข้าเล่น (a.sessions) */
+          const days = {};
+          (Array.isArray(a.sessions) ? a.sessions : []).forEach(function (t) { if (typeof t === 'number') days[new Date(t).toDateString()] = 1; });
+          c = Math.max(c, Object.keys(days).length);
           if (c > m.quest) m.quest = c;
         } catch (e) {}
         return m;

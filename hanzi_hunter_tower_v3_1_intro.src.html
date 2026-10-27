@@ -32927,9 +32927,9 @@
               'ซึ่งซิงก์ข้ามเครื่องอยู่แล้ว) — ยิ่งตอบไวยิ่งสะสมเร็ว ครบ 1,500 ข้อเพื่อปิดผนึกดวงนี้',
         get: function (g) { return [(g && g.fastAnswers) || 0, 1500]; } },
       { id: 'quest', icon: '📜', name: 'วินัยและภารกิจฮันเตอร์', col: '#a3e635',
-        desc: 'จำนวนภารกิจที่กดรับรางวัลสำเร็จตลอดชีพจากกระดานเควสประจำวัน (ไม่นับโบนัสรับรวมท้ายวัน) ' +
-              '— เคลียร์ภารกิจประจำวันให้ครบทุกวันสม่ำเสมอจะไต่ถึง 200 ภารกิจได้เร็วที่สุด',
-        get: function (g) { const m = baMn2Of(g); return [(m && m.quest) || 0, 200]; } },
+        desc: 'จำนวนภารกิจที่รับรางวัลสำเร็จตลอดชีพ (นับทุกกระดาน: 📜 QUESTS · เควสฮันเตอร์/หอคอย · เควสประจำวัน 💎) ' +
+              '— ทำภารกิจใดก็ได้ให้ครบ 30 ภารกิจเพื่อปิดผนึกดวงนี้',
+        get: function (g) { const m = baMn2Of(g); return [(m && m.quest) || 0, 30]; } },
       /* ── หมวดที่ 4: พิชิตความท้าทายขั้นสูงสุด ── */
       { id: 'seal',  icon: '🔓', name: 'ผนึกประตูบอส',  col: '#c084fc',
         desc: 'จำนวนประตูบอสที่ทลายเกราะผนึกสำเร็จแล้ว (ชั้น 4 · 8 · 12 · 16 · 20) — ' +
@@ -45059,6 +45059,37 @@
               baMn2Save();
             }
           } catch (e) { baMn2Err(e, 'quest'); }
+          return r;
+        };
+      }
+
+      // ── P9b · นับภารกิจจากกระดานหลัก (qClaim) และเควสฮันเตอร์/หอคอย (tqComplete) ด้วย ──
+      function baMn2QuestBump() {
+        try {
+          const g = baG();
+          if (g && g.mn2) { g.mn2.quest = (g.mn2.quest || 0) + 1; BA_MN2_N.quest++; baMn2Save(); }
+        } catch (e) { baMn2Err(e, 'quest2'); }
+      }
+      function baMn2DoneCount(o) {
+        let n = 0;
+        try { Object.keys(o || {}).forEach(function (k) { n += (o[k] && o[k].length) || 0; }); } catch (e) {}
+        return n;
+      }
+      if (typeof qClaim === 'function') {
+        const _mn2Q = qClaim;
+        qClaim = function () {
+          const b = baMn2DoneCount((baG() || {}).quest && baG().quest.done);
+          const r = _mn2Q.apply(this, arguments);
+          if (baMn2DoneCount((baG() || {}).quest && baG().quest.done) > b) baMn2QuestBump();
+          return r;
+        };
+      }
+      if (typeof tqComplete === 'function') {
+        const _mn2T = tqComplete;
+        tqComplete = function (def, t) {
+          const b = baMn2DoneCount(t && t.done);
+          const r = _mn2T.apply(this, arguments);
+          if (baMn2DoneCount(t && t.done) > b) baMn2QuestBump();
           return r;
         };
       }

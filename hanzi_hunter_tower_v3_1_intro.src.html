@@ -32928,8 +32928,8 @@
         get: function (g) { return [(g && g.fastAnswers) || 0, 1500]; } },
       { id: 'quest', icon: '📜', name: 'วินัยและภารกิจฮันเตอร์', col: '#a3e635',
         desc: 'จำนวนภารกิจที่รับรางวัลสำเร็จตลอดชีพ (นับทุกกระดาน: 📜 QUESTS · เควสฮันเตอร์/หอคอย · เควสประจำวัน 💎) ' +
-              '— ทำภารกิจใดก็ได้ให้ครบ 30 ภารกิจเพื่อปิดผนึกดวงนี้',
-        get: function (g) { const m = baMn2Of(g); return [(m && m.quest) || 0, 30]; } },
+              '— ทำภารกิจใดก็ได้ให้ครบ 100 ภารกิจเพื่อปิดผนึกดวงนี้',
+        get: function (g) { const m = baMn2Of(g); return [(m && m.quest) || 0, 100]; } },
       /* ── หมวดที่ 4: พิชิตความท้าทายขั้นสูงสุด ── */
       { id: 'seal',  icon: '🔓', name: 'ผนึกประตูบอส',  col: '#c084fc',
         desc: 'จำนวนประตูบอสที่ทลายเกราะผนึกสำเร็จแล้ว (ชั้น 4 · 8 · 12 · 16 · 20) — ' +
@@ -44949,7 +44949,7 @@
           c = Math.max(c, Object.keys(days).length);
           /* ตีค่าจากสถิติสะสม (ไม่มีประวัติจริงให้กู้): ตอบถูกทุก 50 ข้อ ≈ 1 ภารกิจ · คอมโบ x20 เคยทำได้ + ตอบถูกทุก 80 ข้อ ≈ 1 ครั้ง */
           const ok = Math.max(0, +a.correct || 0);
-          c = Math.max(c, Math.min(30, Math.floor(ok / 50)));
+          c = Math.max(c, Math.min(100, Math.floor(ok / 50)));
           if (Math.max(+a.bestStreak || 0, +a.best || 0) >= 20) m.combo = Math.max(m.combo, Math.min(30, Math.floor(ok / 80)));
           if (c > m.quest) m.quest = c;
         } catch (e) {}

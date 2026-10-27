@@ -44935,6 +44935,16 @@
           const v = Number(m[k]);
           m[k] = (isFinite(v) && v > 0) ? Math.floor(v) : 0;
         });
+        /* ย้อนหลัง: ภารกิจที่เคยรับรางวัลไปแล้วนับให้ทันที (เอาค่าสูงกว่าระหว่างตัวนับกับของที่มีบันทึกอยู่
+           — เควสรายวัน/สัปดาห์ถูกรีเซ็ตตามรอบ จึงเอาแค่เท่าที่ยังเหลือบันทึก ไม่ลดค่าที่เคยนับแล้ว) */
+        try {
+          let c = 0;
+          const cnt = function (o) { Object.keys(o || {}).forEach(function (k) { c += Array.isArray(o[k]) ? o[k].length : 0; }); };
+          cnt(a.quest && a.quest.done);
+          cnt(a.tq && a.tq.done);
+          if (a.dq && Array.isArray(a.dq.done)) c += a.dq.done.filter(function (i) { return i !== 'all'; }).length;
+          if (c > m.quest) m.quest = c;
+        } catch (e) {}
         return m;
       }
 

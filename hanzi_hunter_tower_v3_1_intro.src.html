@@ -48617,6 +48617,39 @@
       }
     })();
 
+    /* Patch v9.43 · MANA BALANCE — ตรวจพบ assassin/slayer ได้มานาแค่ +5 ต่อข้อถูก
+       (guardian +15~20 · priest +17~18) จึงขาดมานาร่ายสกิลเทียบกับอีกสองสาย
+       ห่อล้วน: เติมมานาเสริมต่อข้อถูกให้สองสายนี้ที่ resolveAnswer หนีบที่ maxMpOf
+       ไม่แตะเพดานมานา/ราคาร่าย/สายอื่น · ตัวเลขอยู่ที่ B943 ก้อนเดียว */
+    (function baV943Install() {
+      const B943 = { bonus: 10 };
+      const N943 = { paid: 0 };
+      if (typeof resolveAnswer === 'function') {
+        const _r = resolveAnswer;
+        resolveAnswer = function () {
+          let g = null, c0 = 0, id = '';
+          try { g = baG(); if (g) { c0 = g.correct | 0; id = baPlClass(g).id; } } catch (e) {}
+          const r = _r.apply(this, arguments);
+          try {
+            if (g && (id === 'assassin' || id === 'slayer') && !g.practiceMode && (g.correct | 0) > c0) {
+              const mx = maxMpOf(g), before = g.mp;
+              g.mp = Math.min(mx, g.mp + B943.bonus);
+              if (g.mp > before) { N943.paid++; renderStats(); }
+            }
+          } catch (e) {}
+          return r;
+        };
+      }
+      if (typeof baBattleAudit === 'function') {
+        const _au = baBattleAudit;
+        baBattleAudit = function () {
+          const o = _au.apply(this, arguments);
+          try { o.balance943 = { ver: 'v9.43', bonus: B943.bonus, paid: N943.paid }; } catch (e) {}
+          return o;
+        };
+      }
+    })();
+
     </script>
 </body>
 </html>

@@ -48617,6 +48617,34 @@
       }
     })();
 
+    /* Patch v9.44 · CLASS DAMAGE EQUALIZER — จำลองเล่นชั้น 1-20 ตอบถูกล้วน พบจำนวนข้อที่ใช้ต่างกันมาก
+       (slayer ~142 · assassin ~135 · priest ~212 · guardian ~246) จึงปรับตัวคูณดาเมจรายสาย
+       กดด้วย BA_LIVE เท่านั้น (HP อสูรคิดจาก hunterAtk ตัวเดียวกัน ไม่งั้นพองตาม) ค่าแก้ที่ B944 ก้อนเดียว */
+    (function baV944Install() {
+      const B944 = { slayer: .26, assassin: .14, guardian: 1.5, priest: 1 };
+      if (typeof hunterAtk === 'function') {
+        const _a = hunterAtk;
+        hunterAtk = function () {
+          const out = _a.apply(this, arguments);
+          try {
+            if (!BA_LIVE) return out;
+            const g = baG(); if (!g) return out;
+            const m = B944[baPlClass(g).id];
+            return m && m !== 1 ? Math.max(1, Math.round(out * m)) : out;
+          } catch (e) {}
+          return out;
+        };
+      }
+      if (typeof baBattleAudit === 'function') {
+        const _au = baBattleAudit;
+        baBattleAudit = function () {
+          const o = _au.apply(this, arguments);
+          try { o.balance944 = { ver: 'v9.44', mul: B944 }; } catch (e) {}
+          return o;
+        };
+      }
+    })();
+
     /* Patch v9.43 · MANA BALANCE — ตรวจพบ assassin/slayer ได้มานาแค่ +5 ต่อข้อถูก
        (guardian +15~20 · priest +17~18) จึงขาดมานาร่ายสกิลเทียบกับอีกสองสาย
        ห่อล้วน: เติมมานาเสริมต่อข้อถูกให้สองสายนี้ที่ resolveAnswer หนีบที่ maxMpOf

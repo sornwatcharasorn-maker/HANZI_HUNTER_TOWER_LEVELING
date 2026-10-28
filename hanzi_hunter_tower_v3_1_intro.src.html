@@ -48622,7 +48622,7 @@
        ห่อล้วน: เติมมานาเสริมต่อข้อถูกให้สองสายนี้ที่ resolveAnswer หนีบที่ maxMpOf
        ไม่แตะเพดานมานา/ราคาร่าย/สายอื่น · ตัวเลขอยู่ที่ B943 ก้อนเดียว */
     (function baV943Install() {
-      const B943 = { bonus: 10 };
+      const B943 = { bonus: 10, bonusC2: 15 };   /* C2 รวม +20 เท่า guardian C2 */
       const N943 = { paid: 0 };
       if (typeof resolveAnswer === 'function') {
         const _r = resolveAnswer;
@@ -48633,7 +48633,7 @@
           try {
             if (g && (id === 'assassin' || id === 'slayer') && !g.practiceMode && (g.correct | 0) > c0) {
               const mx = maxMpOf(g), before = g.mp;
-              g.mp = Math.min(mx, g.mp + B943.bonus);
+              g.mp = Math.min(mx, g.mp + (baPlTier(g) === 'c2' ? B943.bonusC2 : B943.bonus));
               if (g.mp > before) { N943.paid++; renderStats(); }
             }
           } catch (e) {}
@@ -48644,7 +48644,37 @@
         const _au = baBattleAudit;
         baBattleAudit = function () {
           const o = _au.apply(this, arguments);
-          try { o.balance943 = { ver: 'v9.43', bonus: B943.bonus, paid: N943.paid }; } catch (e) {}
+          try { o.balance943 = { ver: 'v9.43', bonus: B943.bonus, bonusC2: B943.bonusC2, paid: N943.paid }; } catch (e) {}
+          return o;
+        };
+      }
+    })();
+
+    /* Patch v9.44 · MANA CEILING BALANCE (C2) — Lv50 เพดานมานา: assassin 155 · slayer 142 ·
+       guardian 290 · priest 500 (ท่าไม้ตายนักบวชหัก 40% = 202 และเติมกลับเต็ม) ผลคือสายโจมตีร่าย
+       ไม่พอส่วนนักบวชมานาล้น · ห่อ maxMpOf: เพิ่มให้ assassin/slayer ร่าง C2 และหนีบนักบวช C2
+       ไม่แตะ C1 (93-156 ใกล้เคียงกันอยู่แล้ว) · ตัวเลขอยู่ที่ B944 ก้อนเดียว */
+    (function baV944Install() {
+      const B944 = { add: { assassin: 60, slayer: 75 }, cap: { priest: 330 } };
+      if (typeof maxMpOf === 'function') {
+        const _m = maxMpOf;
+        maxMpOf = function (src) {
+          const out = _m.apply(this, arguments);
+          try {
+            if (src && baPlTier(src) === 'c2') {
+              const id = baPlClass(src).id;
+              if (B944.add[id]) return out + B944.add[id];
+              if (B944.cap[id]) return Math.min(out, B944.cap[id]);
+            }
+          } catch (e) {}
+          return out;
+        };
+      }
+      if (typeof baBattleAudit === 'function') {
+        const _au = baBattleAudit;
+        baBattleAudit = function () {
+          const o = _au.apply(this, arguments);
+          try { o.balance944 = { ver: 'v9.44', add: B944.add, cap: B944.cap }; } catch (e) {}
           return o;
         };
       }

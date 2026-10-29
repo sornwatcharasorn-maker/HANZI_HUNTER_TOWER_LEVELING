@@ -46748,6 +46748,8 @@
       const CLS_OF = { priest: 'priest', soulmaster: 'priest', guardian: 'guardian', guard: 'guardian',
                        assassin: 'assassin', monarch: 'assassin', blade: 'slayer', slayer: 'slayer' };
       const BA_V929_DR = 0.35, BA_V929_SMITE = 4;
+      /* v9.45 · Smite ทุกข้อทำให้เจาะเกราะทุกหมัด → ยิงได้ทุก N ข้อที่ตอบถูกต่อมอนสเตอร์ */
+      const BA_V945_SMITE_EVERY = 3; let BA_V945_SM_M = null, BA_V945_SM_N = 0;
       /* v9.29c · SKILL AUDIT — ค่าที่สเปกกำหนด: ตัดฟื้นฟู 75% · พิพากษา 4T · ผู้พิทักษ์ S2 −45%
          เกราะ S4: นักบวช 50% (2 ชั้น) · ผู้พิทักษ์ 100% (4 ชั้น) · ฉีกเกราะ S3 นักลอบสังหาร 45% */
       const BA_V929_MWD = 50, BA_V929_JDG = 3, BA_V929_GWDN = 45, BA_V929_SH_MAX = 4,
@@ -46944,7 +46946,10 @@
       }
       /* ตอบถูก: Overheal Smite ของนักบวช หรือชีพจรพาสซีฟ S2 — แยกเป็นฟังก์ชันให้ตัวตรวจเรียกได้ */
       function afterRight(g, k, m0, mp0, hp0, full) {
-        if (k === 'priest' && full && m0 && g.currentMonster === m0 && g.monsterHp > 1) {
+        if (k === 'priest' && full && m0 && g.currentMonster === m0 && g.monsterHp > 1 && (function () {
+          if (BA_V945_SM_M !== m0) { BA_V945_SM_M = m0; BA_V945_SM_N = 0; }
+          return ++BA_V945_SM_N % BA_V945_SMITE_EVERY === 0;
+        })()) {
           const t = trueDmg(g, hunterAtk() * BA_V929_SMITE);
           if (t) { banner('☀️ แสงลงทัณฑ์ศักดิ์สิทธิ์', 'HP เต็ม · ดาเมจศักดิ์สิทธิ์ ' + (BA_V929_SMITE * 100) + '% -' + t); pulse(1); N.smite++; return 'smite'; }
         } else if (g.mp > mp0 || g.hp > hp0) {
@@ -47343,6 +47348,7 @@
           /* Overheal Smite */
           try {
             g.classId = 'priest'; baPlEnsure(g); recalcStats(); g.hp = g.maxHp;
+            BA_V945_SM_M = m; BA_V945_SM_N = BA_V945_SMITE_EVERY - 1; /* v9.45 · Smite ยิงทุก N ข้อ → ตั้งให้ครั้งถัดไปเข้าเงื่อนไข */
             const h0 = g.monsterHp, res = afterRight(g, 'priest', m, g.mp, g.hp, true), bt = vBanner() || '';
             rep.smite = { res: res, hpDrop: Math.round(h0 - g.monsterHp), banner: bt.indexOf('แสงลงทัณฑ์') >= 0 };
             rep.smite.ok = res === 'smite' && rep.smite.hpDrop > 0 && rep.smite.banner;

@@ -248,8 +248,8 @@ async function confirmOk(page) {
       live('s3', { mfloor: 4,  words: 80,  acc: 90, loops: 5 })    /* THP 108 */
     ]);
 
-    eq('มีปุ่มเรียงครบ 4 โหมด',
-       await page.evaluate(() => document.querySelectorAll('#baGmTools .ba-sort').length), 4);
+    eq('มีปุ่มเรียงครบ 11 โหมด (4 เดิม + 7 HPI ของ v9.43)',
+       await page.evaluate(() => document.querySelectorAll('#baGmTools .ba-sort').length), 11);
     eq('ค่าเริ่มต้นคือลำดับเดิมของ v5.3 (เรียงตามชั้น)',
        await page.evaluate(() => Array.from(document.querySelectorAll('#fbBody tr')).map(t => t.dataset.baUser)),
        ['s1', 's2', 's3']);
@@ -543,7 +543,7 @@ async function confirmOk(page) {
     const a = await page.evaluate(() => baBattleAudit().gmAdmin);
     eq('รายงานเลขรุ่น', a.ver, '7.2');
     eq('รายงานโหมดเรียงเริ่มต้น', a.sort, 'live');
-    eq('รายงานโหมดที่มีทั้งหมด', a.sorts, ['live', 'thp', 'acc', 'words']);
+    eq('รายงานโหมดที่มีทั้งหมด', a.sorts, ['live', 'thp', 'acc', 'words', 'hpi', 'hk', 'ha', 'hp', 'hd', 'hs', 'dev']);
     eq('รายงานเพดานเลเวล', a.rank.max, 99);
     eq('รายงานจำนวนขั้นแรงค์', a.rank.tiers, 10);
     eq('รายงานเกณฑ์แถบเตือน', [a.susp.acc, a.susp.lv, a.susp.min], [50, 20, 20]);

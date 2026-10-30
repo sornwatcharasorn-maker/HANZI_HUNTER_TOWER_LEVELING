@@ -2601,6 +2601,7 @@
         <input type="text" class="gm-input" id="gmSearch" placeholder="🔍 ค้นหา รหัสฮันเตอร์ / นามแฝง" oninput="gmRender()">
         <select class="gm-input" id="gmSort" style="flex:0 0 200px" onchange="gmRender()">
           <option value="level">เรียงตาม: แรงค์สูงสุด</option>
+          <option value="hpi">เรียงตาม: 🧭 HPI รวม (ทุกสถานะ)</option>
           <option value="acc">เรียงตาม: ความแม่นยำ</option>
           <option value="gold">เรียงตาม: ทองมากสุด</option>
           <option value="answers">เรียงตาม: พิชิตอักขระมากสุด</option>
@@ -47926,7 +47927,13 @@
           '.ba-hpi-me{margin:0 0 8px;padding:8px;border:1px solid rgba(46,242,208,.4);border-radius:10px;background:rgba(46,242,208,.06)}' +
           '.ba-hpi-me h4{margin:0 0 4px;font-size:13px;color:#2ef2d0}.ba-hpi-ax{display:flex;align-items:center;gap:6px;font-size:10.5px;margin-top:2px}' +
           '.ba-hpi-ax i{flex:1;height:5px;border-radius:3px;background:rgba(255,255,255,.1);overflow:hidden}' +
-          '.ba-hpi-ax i b{display:block;height:100%;background:#2ef2d0}';
+          '.ba-hpi-ax i b{display:block;height:100%;background:#2ef2d0}' +
+          '.ba-hpit{margin:4px 0;font-size:11px}.ba-hpit-r{display:grid;grid-template-columns:24px minmax(0,1fr) repeat(5,28px) 38px;gap:2px;align-items:center;padding:5px 3px;border-bottom:1px solid rgba(255,255,255,.07);text-align:center}' +
+          '.ba-hpit-r .nm{text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700}.ba-hpit-r .nm small{margin-left:4px;color:#8a97b5;font-weight:400}' +
+          '.ba-hpit-r .nm em{font-style:normal;font-size:9px;color:#2ef2d0;border:1px solid #2ef2d0;border-radius:99px;padding:0 4px;margin-left:3px}' +
+          '.ba-hpit-r .tot{font-weight:800;color:#2ef2d0;font-size:12.5px}.ba-hpit-h{color:#8a97b5;font-size:10px}.ba-hpit-r.me{background:rgba(46,242,208,.1)}' +
+          '.ba-hpit-r.t1{background:rgba(255,200,69,.12)}.ba-hpit-r.t2{background:rgba(206,218,236,.08)}.ba-hpit-r.t3{background:rgba(214,150,90,.08)}' +
+          '.ba-hpit-a{color:#8fd8ff;font-size:10px}@media(max-width:360px){.ba-hpit-r{grid-template-columns:20px minmax(0,1fr) repeat(5,24px) 34px;font-size:10px}}';
         document.head.appendChild(s);
       }
 
@@ -47969,7 +47976,8 @@
               r.hpi = Array.isArray(p.hpi) ? p.hpi : (a && !a.lrMirror ? calc(a) : null);
               r.hpiDev = r.hpi ? histOf(r.u, r.hpi[0]) : 0;
             });
-            const m = BA_SORT, ix = { hk: 1, ha: 2, hp: 3, hd: 4, hs: 5 };
+            let m = BA_SORT; const ix = { hk: 1, ha: 2, hp: 3, hd: 4, hs: 5 };
+            try { if (m === 'live' && document.getElementById('gmSort').value === 'hpi') m = 'hpi'; } catch (e) {}
             if (m === 'hpi' || m === 'dev' || ix[m]) {
               const g = function (r) { return r.hpi ? (m === 'hpi' ? r.hpi[0] : m === 'dev' ? r.hpiDev : r.hpi[ix[m]]) : -1; };
               out.sort(function (a, b) { return g(b) - g(a); });
@@ -48053,6 +48061,31 @@
                     Math.round(v[i + 1] / 10) + '%"></b></i><span>' + v[i + 1] + '</span></div>'; }).join('');
             } else {
               h = '<h4>🧭 HPI ของฉัน — ยังไม่จัดอันดับ</h4><div class="ba-hpi-ax">ตอบให้ครบ ' + MINA + ' ข้อก่อนจึงจะติดอันดับ</div>';
+            }
+            if (BOARD_MODE === 'hpi') {
+              /* ตารางจัดอันดับ HPI รวมทั้งห้อง — คะแนนรวม + 5 แกนต่อคน (ไม่ใช่ค่าเดียว) */
+              const medal = ['🥇', '🥈', '🥉'];
+              const avg = [0, 0, 0, 0, 0, 0];
+              rk.forEach(function (a) { const c = calc(a); for (let i = 0; i < 6; i++) avg[i] += c[i]; });
+              const nrk = rk.length || 1;
+              let t = '<div class="ba-hpit"><div class="ba-hpit-r ba-hpit-h"><span>#</span><span>ฮันเตอร์</span>' +
+                IC.map(function (x) { return '<span title="' + NM[IC.indexOf(x)] + '">' + x + '</span>'; }).join('') + '<span>HPI</span></div>';
+              rk.slice(0, BA_LB_MAX).forEach(function (a, i) {
+                const c = calc(a), isMe = a.user === CURRENT_USER;
+                t += '<div class="ba-hpit-r' + (isMe ? ' me' : '') + (i < 3 ? ' t' + (i + 1) : '') + '"><span>' + (medal[i] || (i + 1)) + '</span>' +
+                  '<span class="nm">' + esc(a.name || a.user) + (isMe ? ' <em>คุณ</em>' : '') + '<small>Lv.' + (a.level || 1) + '</small></span>' +
+                  [1, 2, 3, 4, 5].map(function (k) { return '<span>' + c[k] + '</span>'; }).join('') +
+                  '<span class="tot">' + c[0] + '</span></div>';
+              });
+              if (rk.length) {
+                t += '<div class="ba-hpit-r ba-hpit-a"><span></span><span class="nm">เฉลี่ยทั้งห้อง (' + rk.length + ' คน)</span>' +
+                  [1, 2, 3, 4, 5].map(function (k) { return '<span>' + Math.round(avg[k] / nrk) + '</span>'; }).join('') +
+                  '<span class="tot">' + Math.round(avg[0] / nrk) + '</span></div>';
+              }
+              t += '</div><div class="g-lb-note">รวมจาก 5 แกน: ความรู้ 30% · แม่นยำ 20% · ก้าวหน้า 20% · ขยัน 15% · ไว 15% (เต็ม 1000)</div>';
+              const rows = body.querySelectorAll('.g-lb-row');
+              for (let i = 0; i < rows.length; i++) rows[i].remove();
+              body.insertAdjacentHTML('beforeend', t);
             }
             body.insertAdjacentHTML('afterbegin', '<div class="ba-hpi-me">' + h + '</div>');
           } catch (e) {}
